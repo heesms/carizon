@@ -6,16 +6,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -24,17 +25,26 @@ public class ChutchaCrawler {
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper = new ObjectMapper();
+
+    // OkHttp: 커넥션 풀 + 동시성 튜닝
     private final OkHttpClient http = new OkHttpClient.Builder()
+            .connectionPool(new ConnectionPool(100, 60, TimeUnit.SECONDS))
+            .dispatcher(new Dispatcher(new ThreadPoolExecutor(
+                    0, 64, 60L, TimeUnit.SECONDS, new SynchronousQueue<>())))
             .retryOnConnectionFailure(true)
             .build();
 
-    // ---------- Config ----------
-    private static final String LIST_URL = "https://web.chutcha.net/web001/car/getSearchCarList";
-    private static final int PAGE_SIZE = 50;          // 고정
-    private static final int TOUCH_DELAY_MS = 120;    // 공유페이지 접근 간 딜레이
-    private static final int PAGE_DELAY_MS = 250;     // 페이지 간 딜레이
+    // 상세 병렬 처리 풀 (너무 높이면 차단 위험 — 12~16 추천)
+    private final ExecutorService detailPool = Executors.newFixedThreadPool(12);
 
-    // ---------- Public entry ----------
+    // --------------------- CONST ---------------------
+    private static final String HOST = "https://web.chutcha.net";
+    private static final String SEARCH_PAGE = HOST + "/bmc/search?brandGroup=1&modelTree=%7B%7D&priceRange=0,0&mileage=0,0&year=&saleType=&accident=&fuel=&transmission=&region=&color=&option=&cpo=&theme=&sort=1&carType=";
+    private static final String LIST_URL = HOST + "/web001/car/getSearchCarList"; // 너가 준 JSON API
+    private static final int PAGE_SIZE = 50;
+    private static final int PAGE_DELAY_MS = 200;
+
+    // --------------------- ENTRY ---------------------
     public void runOnceFull() {
         final Instant started = Instant.now();
         final String runId = recordStart("CHUTCHA", started);
@@ -44,53 +54,46 @@ public class ChutchaCrawler {
             jdbc.update("TRUNCATE TABLE raw_chutcha");
             log.info("[CHUTCHA] TRUNCATE raw_chutcha 완료");
 
-            // 페이지네이션 seed
-            String cp = "";      // 첫 요청은 빈값
-            String lp = "";      // 첫 요청은 빈값
+            // 상세 JSON 호출용 buildId 확보 (1회)
+            String buildId = fetchBuildId();
+            log.info("[CHUTCHA] buildId={}", buildId);
+
+            String cp = "";  // next 요청에 사용될 cp
+            String lp = "";  // next 요청에 사용될 lp
             String ts = String.valueOf(Instant.now().getEpochSecond());
 
             // 첫 페이지
-            PageResult first = fetchPage(cp, lp, ts);
-            if (first == null || first.items.isEmpty()) {
-                recordSuccess(runId, total);
-                log.info("[CHUTCHA] 결과 0건 → 종료");
-                return;
-            }
-            cp = first.nextCp;   // 다음 요청 cp는 첫 응답의 np
-            lp = first.lastLp;   // 다음 요청 lp는 첫 응답의 lp
-            total += persistBatchAndTouch(first.items);
+            PageResult pr = fetchPage(cp, lp, ts);
+            while (pr != null && !pr.items.isEmpty()) {
+                total += persistAndEnrich(buildId, pr.items);
+                log.info("[CHUTCHA] 누적 저장 {}건 (np={}, lp={})", total, pr.nextCp, pr.lastLp);
 
-            // 다음 페이지 반복
-            while (true) {
-                if (cp == null || cp.isBlank() || (lp != null && !lp.isBlank() && cp.equals(lp))) {
-                    log.info("[CHUTCHA] 페이지 종료조건 도달 cp={}, lp={}", cp, lp);
+                if (pr.nextCp == null || pr.nextCp.isBlank() || (pr.lastLp != null && pr.nextCp.equals(pr.lastLp))) {
+                    log.info("[CHUTCHA] 페이지 종료조건 도달 cp=np={}, lp={}", pr.nextCp, pr.lastLp);
                     break;
                 }
 
-                Thread.sleep(PAGE_DELAY_MS);
-                PageResult pr = fetchPage(cp, lp, ts);
-                if (pr == null || pr.items.isEmpty()) break;
-
-                total += persistBatchAndTouch(pr.items);
-                log.info("[CHUTCHA] 누적 저장 {}건 (cp={}, lp={})", total, cp, lp);
-
                 cp = pr.nextCp;
                 lp = pr.lastLp;
+
+                Thread.sleep(PAGE_DELAY_MS);
+                pr = fetchPage(cp, lp, ts);
             }
 
             recordSuccess(runId, total);
             log.info("[CHUTCHA] 완료 total={}", total);
-
         } catch (Exception e) {
-            recordFail(runId, total, e.getMessage());
+            recordFail(runId, total, e.toString());
             log.error("[CHUTCHA] runOnceFull 실패", e);
+        } finally {
+            detailPool.shutdown();
         }
     }
 
-    // ---------- Core fetch ----------
+    // --------------------- LIST FETCH ---------------------
     private PageResult fetchPage(String cp, String lp, String ts) throws Exception {
         Map<String, Object> body = new LinkedHashMap<>();
-        // 필터 파라미터들: 빈값 유지
+        // 필터 파라미터: 빈값 유지
         body.put("brand_id", "");
         body.put("model_id", "");
         body.put("sub_model_id", "");
@@ -113,6 +116,7 @@ public class ChutchaCrawler {
         body.put("theme_id", "");
         body.put("year", "");
         body.put("saleType", "");
+
         // 정렬/페이징
         body.put("sort", "1");
         body.put("page_size", String.valueOf(PAGE_SIZE));
@@ -133,9 +137,9 @@ public class ChutchaCrawler {
             int code = resp.code();
             byte[] bytes = resp.body() != null ? resp.body().bytes() : new byte[0];
             if (code != 200) {
-                String peek = new String(bytes, 0, Math.min(bytes.length, 160), StandardCharsets.ISO_8859_1)
+                String peek = new String(bytes, 0, Math.min(bytes.length, 200), StandardCharsets.ISO_8859_1)
                         .replaceAll("\\p{Cntrl}", ".");
-                throw new IllegalStateException("HTTP " + code + " url=" + LIST_URL + " peek=" + peek);
+                throw new IllegalStateException("HTTP " + code + " LIST peek=" + peek);
             }
 
             Map<String, Object> root = mapper.readValue(bytes, new TypeReference<>() {});
@@ -159,123 +163,145 @@ public class ChutchaCrawler {
                 }
             }
 
-            log.debug("[CHUTCHA] page fetched: items={}, np={}, lp={}", items.size(), np, newLp);
+            log.debug("[CHUTCHA] LIST fetched: items={}, np={}, lp={}", items.size(), np, newLp);
             return new PageResult(items, np, newLp);
         }
     }
 
-    // ---------- Persist & touch ----------
-    private int persistBatchAndTouch(List<Map<String, Object>> items) throws Exception {
-        int cnt = 0;
+    // --------------------- DETAIL (JSON) + BATCH PERSIST ---------------------
+    private int persistAndEnrich(String buildId, List<Map<String, Object>> items) throws Exception {
+        // 1) raw payload + hash 선 저장 (UPSERT)
+        List<Object[]> rawParams = new ArrayList<>(items.size());
+        List<String> hashes = new ArrayList<>(items.size());
+
         for (Map<String, Object> car : items) {
             String payload = mapper.writeValueAsString(car);
-
             String hash = optStr(car, "detail_link_hash");
-            if (hash == null) hash = optStr(car, "detailLinkHash");
+            if (hash == null || hash.isBlank()) {
+                hash = optStr(car, "detailLinkHash"); // 혹시 키 이름이 다를 경우 대비
+            }
 
             if (hash != null && !hash.isBlank()) {
-                // payload + 해시 저장 (UPSERT)
-                jdbc.update(
-                        "INSERT INTO raw_chutcha(payload, share_hash) VALUES (CAST(? AS JSON), ?) " +
-                                "ON DUPLICATE KEY UPDATE payload=VALUES(payload)",
-                        payload, hash
-                );
-
-                // 공유 상세 페이지 터치 → __NEXT_DATA__ 파싱으로 번호판 등 보강
-                ShareParsed parsed = fetchFromSharePage(hash);
-                if (parsed != null) {
-                    // 기본: number_plate만 업데이트
-                    jdbc.update("UPDATE raw_chutcha SET number_plate=? WHERE share_hash=?",
-                            parsed.numberPlate, hash);
-
-                    // 선택: detail_keys / car_id 칼럼이 있다면 함께 업데이트 (없으면 무시)
-                    try {
-                        jdbc.update("UPDATE raw_chutcha SET detail_keys=?, car_id=? WHERE share_hash=?",
-                                parsed.keys, parsed.carId, hash);
-                    } catch (Exception ignore) { /* 칼럼 없으면 무시 */ }
-                }
-                Thread.sleep(TOUCH_DELAY_MS);
+                hashes.add(hash);
+                rawParams.add(new Object[]{ payload, hash });
             } else {
-                jdbc.update("INSERT INTO raw_chutcha(payload) VALUES (CAST(? AS JSON))", payload);
+                // hash가 없으면 일단 payload만 저장
+                rawParams.add(new Object[]{ payload, null });
             }
-            cnt++;
         }
-        return cnt;
+
+        if (!rawParams.isEmpty()) {
+            jdbc.batchUpdate(
+                    "INSERT INTO raw_chutcha(payload, share_hash) VALUES (CAST(? AS JSON), ?) " +
+                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload)",
+                    rawParams
+            );
+        }
+
+        // 2) 상세 JSON 병렬 조회
+        List<CompletableFuture<DetailParsed>> futures = new ArrayList<>();
+        for (String hash : hashes) {
+            if (hash == null || hash.isBlank()) continue;
+            final String h = hash;
+            futures.add(CompletableFuture.supplyAsync(() -> {
+                try {
+                    return fetchDetailJson(buildId, h);
+                } catch (Exception e) {
+                    log.debug("[CHUTCHA] DETAIL fail hash={} {}", h, e.toString());
+                    return null;
+                }
+            }, detailPool));
+        }
+
+        // 3) 결과 모아 배치 업데이트
+        List<Object[]> updPlate = new ArrayList<>();
+        List<Object[]> updCarId = new ArrayList<>();
+        for (CompletableFuture<DetailParsed> f : futures) {
+            DetailParsed d = f.join();
+            if (d == null) continue;
+            if (d.numberPlate != null && !d.numberPlate.isBlank()) {
+                updPlate.add(new Object[]{ d.numberPlate, d.keys });
+            }
+            if (d.carId != null && !d.carId.isBlank()) {
+                updCarId.add(new Object[]{ d.carId, d.keys });
+            }
+        }
+        if (!updPlate.isEmpty()) {
+            jdbc.batchUpdate("UPDATE raw_chutcha SET number_plate=? WHERE share_hash=?", updPlate);
+        }
+        if (!updCarId.isEmpty()) {
+            try {
+                jdbc.batchUpdate("UPDATE raw_chutcha SET car_id=? WHERE share_hash=?", updCarId);
+            } catch (Exception ignore) { /* 칼럼 없으면 무시 */ }
+        }
+
+        return items.size();
     }
 
-    // ---------- Share page touch (parse __NEXT_DATA__) ----------
-    private ShareParsed fetchFromSharePage(String hash) {
-        String url = "https://www.chutcha.net/share/car/detail/" + hash;
+    /**
+     * 상세 JSON (Next.js 데이터) 직접 호출
+     *   GET https://web.chutcha.net/_next/data/{buildId}/bmc/detail/{keys}.json?keys={keys}
+     */
+    private DetailParsed fetchDetailJson(String buildId, String keys) throws Exception {
+        String enc = URLEncoder.encode(keys, StandardCharsets.UTF_8);
+        String url = String.format("%s/_next/data/%s/bmc/detail/%s.json?keys=%s", HOST, buildId, enc, enc);
+
         Request req = new Request.Builder()
                 .url(url)
+                .header("Accept", "application/json")
                 .header("User-Agent", "Mozilla/5.0")
-                .header("Accept", "text/html,application/xhtml+xml")
-                .header("Referer", "https://web.chutcha.net/")
                 .build();
 
         try (Response resp = http.newCall(req).execute()) {
-            if (resp.code() != 200) {
-                log.warn("[CHUTCHA] share touch HTTP {} url={}", resp.code(), url);
-                return null;
-            }
-            byte[] body = resp.body() != null ? resp.body().bytes() : new byte[0];
-            String html = new String(body, StandardCharsets.UTF_8);
-
-            Document doc = Jsoup.parse(html);
-            Element next = doc.selectFirst("script#__NEXT_DATA__");
-            if (next == null) {
-                log.warn("[CHUTCHA] __NEXT_DATA__ not found hash={}", hash);
-                return null;
+            int code = resp.code();
+            byte[] bytes = resp.body() != null ? resp.body().bytes() : new byte[0];
+            if (code != 200) {
+                String peek = new String(bytes, 0, Math.min(bytes.length, 180), StandardCharsets.ISO_8859_1)
+                        .replaceAll("\\p{Cntrl}", ".");
+                throw new IllegalStateException("HTTP " + code + " DETAIL peek=" + peek);
             }
 
-            JsonNode root = mapper.readTree(next.data());
-
-            // keys (pageProps.keys 또는 pageProps.qs.keys)
-            String keys = textOrNull(root.at("/props/pageProps/keys"));
-            if (keys == null || keys.isEmpty()) {
-                keys = textOrNull(root.at("/props/pageProps/qs/keys"));
+            JsonNode root = mapper.readTree(bytes);
+            // Next 13/14: 루트가 {pageProps: {dehydratedState: {queries: [...]}}}
+            JsonNode queries = root.at("/pageProps/dehydratedState/queries"); // (또는 /props/pageProps/..., 빌드에 따라)
+            if (queries.isMissingNode()) {
+                // fallback (빌드 구조가 약간 다를 수 있음)
+                queries = root.at("/props/pageProps/dehydratedState/queries");
             }
 
-            // number_plate & car_id
             String plate = null;
             String carId = null;
-            JsonNode queries = root.at("/props/pageProps/dehydratedState/queries");
             if (queries.isArray()) {
                 for (JsonNode q : queries) {
-                    JsonNode baseInfo = q.at("/state/data/base_info");
-                    if (!baseInfo.isMissingNode()) {
-                        String np = textOrNull(baseInfo.get("number_plate"));
-                        if (np != null && !np.isEmpty()) {
-                            plate = np;
-                            carId = textOrNull(baseInfo.get("car_id"));
-                            break;
-                        }
+                    JsonNode base = q.at("/state/data/base_info");
+                    if (!base.isMissingNode()) {
+                        if (plate == null) plate = text(base.get("number_plate"));
+                        if (carId == null) carId = text(base.get("car_id"));
                     }
                 }
             }
-
-            if (plate == null) {
-                // fallback: DOM에 노출된 번호판 (구조 바뀔 때 대비)
-                Element plateEl = doc.selectFirst(".car_platenumber_wrap .txt");
-                if (plateEl != null && !plateEl.text().isBlank()) {
-                    plate = plateEl.text().trim();
-                }
-            }
-
-            if (plate == null) {
-                log.debug("[CHUTCHA] plate not found in NEXT_DATA hash={}", hash);
-                return null;
-            }
-
-            return new ShareParsed(plate, keys, carId);
-
-        } catch (Exception e) {
-            log.warn("[CHUTCHA] share parse fail hash={} msg={}", hash, e.toString());
-            return null;
+            return new DetailParsed(keys, plate, carId);
         }
     }
 
-    // ---------- Crawl-run logging ----------
+    // --------------------- buildId fetch ---------------------
+    private String fetchBuildId() throws Exception {
+        Request req = new Request.Builder()
+                .url(SEARCH_PAGE)
+                .header("Accept", "text/html,application/xhtml+xml")
+                .header("User-Agent", "Mozilla/5.0")
+                .build();
+
+        try (Response resp = http.newCall(req).execute()) {
+            if (resp.code() != 200) throw new IllegalStateException("HTTP " + resp.code());
+            String html = new String(resp.body().bytes(), StandardCharsets.UTF_8);
+            Matcher m = Pattern.compile("\"buildId\"\\s*:\\s*\"([^\"]+)\"").matcher(html);
+            if (m.find()) return m.group(1);
+            throw new IllegalStateException("buildId not found");
+        }
+    }
+
+    // --------------------- crawl_run helpers ---------------------
     private String recordStart(String source, Instant startedAt) {
         String runId = UUID.randomUUID().toString();
         jdbc.update("INSERT INTO crawl_run(run_id, source, started_at, status, total_items) VALUES (?,?,?,?,?)",
@@ -294,14 +320,14 @@ public class ChutchaCrawler {
                 Timestamp.from(Instant.now()), total, "FAIL", cut(message, 1000), runId);
     }
 
-    // ---------- Utils ----------
+    // --------------------- utils ---------------------
     private static String optStr(Map<String, ?> m, String key) {
         if (m == null) return null;
         Object v = m.get(key);
         return v == null ? null : String.valueOf(v);
     }
 
-    private static String textOrNull(JsonNode n) {
+    private static String text(JsonNode n) {
         return (n == null || n.isMissingNode() || n.isNull()) ? null : n.asText();
     }
 
@@ -311,5 +337,5 @@ public class ChutchaCrawler {
     }
 
     private record PageResult(List<Map<String, Object>> items, String nextCp, String lastLp) {}
-    private record ShareParsed(String numberPlate, String keys, String carId) {}
+    private record DetailParsed(String keys, String numberPlate, String carId) {}
 }
