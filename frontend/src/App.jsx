@@ -1,24 +1,14 @@
-import React from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
-import Header from './components/Header'
-import Home from './pages/Home'
-import Search from './pages/Search'
-import List from './pages/List'
-import Detail from './pages/Detail'
+// App.tsx
+import { Routes, Route, Navigate } from "react-router-dom";
+import CarsPage from "./pages/CarsPage";
 
 export default function App() {
-  return (
-    <div className="app">
-      <Header />
-      <main className="wrap">
+    return (
         <Routes>
-          <Route path="/" element={<Home/>} />
-          <Route path="/search" element={<Search/>} />
-          <Route path="/list" element={<List/>} />
-          <Route path="/car/:carUid" element={<Detail/>} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="/" element={<Navigate to="/cars" replace />} />
+            <Route path="/cars" element={<CarsPage />} />
+            <Route path="/list" element={<CarsPage />} />  {/* 🔹 추가 */}
+            <Route path="*" element={<div>Not Found</div>} />
         </Routes>
-      </main>
-    </div>
-  )
+    );
 }

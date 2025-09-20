@@ -59,6 +59,12 @@
       <artifactId>jsoup</artifactId>
       <version>1.17.2</version> <!-- 최신 버전 확인 가능 -->
     </dependency>
+    <!-- https://mvnrepository.com/artifact/org.apache.maven.plugins/maven-compiler-plugin -->
+    <dependency>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-compiler-plugin</artifactId>
+      <version>3.11.0</version>
+    </dependency>
 
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -69,13 +75,15 @@
   <build>
     <plugins>
       <plugin>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-maven-plugin</artifactId>
-      </plugin>
-      <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <configuration><release>21</release></configuration>
+        <version>3.11.0</version> <!-- 최신 안정 버전 사용 -->
+        <configuration>
+          <release>21</release>
+          <compilerArgs>
+            <arg>-parameters</arg> <!-- 파라미터 이름을 바이트코드에 남기려면 -->
+          </compilerArgs>
+        </configuration>
       </plugin>
     </plugins>
   </build>
