@@ -72,17 +72,21 @@ public class BatchService {
     private void insertChachacha(LocalDate bizDate) {
         final String sql = """
             INSERT IGNORE INTO platform_car
-              (platform_name, platform_car_key, car_id, title, price, status, url, extra, last_seen_date, created_at, updated_at)
+              (platform_name, platform_car_key, CAR_NO, car_id, 
+                MAKER_CODE, MODEL_GROUP_CODE, MODEL_CODE, TRIM_CODE, GRADE_CODE,
+                MAKER_NAME, MODEL_GROUP_NAME, MODEL_NAME, TRIM_NAME, GRADE_NAME,
+                price, KM, YYMM, status, COLOR, FUEL, TRANSMISSON, BODY_TYPE, 
+                M_URL, 
+                PC_url, 
+                FIRST_AD_DAY, created_at, updated_at , extra, last_seen_date)
             SELECT
-              'CHACHACHA',
-             r.car_seq ,
-              NULL,
-              CONCAT(r.maker_name,' ',r.model_name),
-              r.sell_amt,
-              NULL,
+              'CHACHACHA', r.car_seq , r.car_no, NULL,
+              R.MAKER_CODE, r.CLASS_CODE, r.CAR_CODE, r.MODEL_CODE, r.GRADE_CODE,
+              R.MAKER_NAME, r.CLASS_NAME, r.CAR_NAME, r.MODEL_NAME, r.GRADE_NAME,
+              R.SELL_AMT, R.KM, R.YYMM, 'ONSALE', R.COLOR, R.GAS_NAME, R.auto_gbn_name, R.use_code_name, 
+              CONCAT('https://m.kbchachacha.com/public/web/car/detail.kbc?carSeq=', R.CAR_SEQ),
               CONCAT('https://www.kbchachacha.com/public/car/detail.kbc?carSeq=', r.car_seq),
-              r.payload,
-              ?, NOW(), NOW()
+              R.FIRST_AD_DAY,  NOW(), NOW() , r.payload, ?
             FROM raw_chachacha r
             LEFT JOIN platform_car p
               ON p.platform_name='CHACHACHA'
@@ -96,15 +100,23 @@ public class BatchService {
     private void insertEncar(LocalDate bizDate) {
         final String sql = """
             INSERT IGNORE INTO platform_car
-              (platform_name, platform_car_key, car_id, title, price, status, url, extra, last_seen_date, created_at, updated_at)
+              (platform_name, platform_car_key, plate_no, car_id, title, price, status, url, extra, last_seen_date, created_at, updated_at)
+            
+             INSERT IGNORE INTO platform_car
+              (platform_name, platform_car_key, CAR_NO, car_id, 
+                MAKER_CODE, MODEL_GROUP_CODE, MODEL_CODE, TRIM_CODE, GRADE_CODE,
+                MAKER_NAME, MODEL_GROUP_NAME, MODEL_NAME, TRIM_NAME, GRADE_NAME,
+                price, KM, YYMM, status, COLOR, FUEL, TRANSMISSON, BODY_TYPE, 
+                M_URL, 
+                PC_url, 
+                FIRST_AD_DAY, created_at, updated_at , extra, last_seen_date)
             SELECT
-              'ENCAR',
-              r.vehicle_id ,
-              NULL,
-              JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.title')),
-              COALESCE(CAST(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.price')), ',', '') AS UNSIGNED), 0),
-              JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.status')),
-              CONCAT('https://fem.encar.com/cars/detail/', CAST(r.vehicle_id AS CHAR(64))),
+              'ENCAR', r.vehicle_id , r.vehicle_no, NULL,
+              R.manufacturer_code, R.model_group_code, R.MODEL_CODE, R.GRADE_CODE, R.GRADE_DETAIL_CODE,
+              R.manufacturer_NAME, R.model_group_NAME, R.MODEL_NAME, R.GRADE_NAME, R.GRADE_DETAIL_NAME,
+              R.price, R.MILEAGE, R.form_year, 'ONSALE', R.COLOR, R.FUEL, R.TRANSMISSION, R.BODY_TYPE,
+              CONCAT('https://fem.encar.com/cars/detail/', r.vehicle_id ),
+              CONCAT('https://fem.encar.com/cars/detail/', r.vehicle_id ),
               r.payload,
               ?, NOW(), NOW()
             FROM raw_encar r
@@ -120,10 +132,11 @@ public class BatchService {
     private void insertKcar(LocalDate bizDate) {
         final String sql = """
             INSERT IGNORE INTO platform_car
-              (platform_name, platform_car_key, car_id, title, price, status, url, extra, last_seen_date, created_at, updated_at)
+              (platform_name, platform_car_key, plate_no, car_id, title, price, status, url, extra, last_seen_date, created_at, updated_at)
             SELECT
               'KCAR',
               r.car_cd,
+              r.cno,
               NULL,
               r.model_full,
               r.price,
@@ -144,10 +157,11 @@ public class BatchService {
     private void insertChutcha(LocalDate bizDate) {
         final String sql = """
             INSERT IGNORE INTO platform_car
-              (platform_name, platform_car_key, car_id, title, price, status, url, extra, last_seen_date, created_at, updated_at)
+              (platform_name, platform_car_key, plate_no, car_id,  title, price, status, url, extra, last_seen_date, created_at, updated_at)
             SELECT
               'CHUTCHA',
-              JSON_UNQUOTE(JSON_EXTRACT(payload,'$.detail_link_hash')),
+               r.car_id,
+               r.number_plate,
               NULL,
               CONCAT(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.brand_name')),' ', JSON_UNQUOTE(JSON_EXTRACT(payload,'$.model_name'))),
               COALESCE(CAST(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.price')), ',', '') AS UNSIGNED), 0),
@@ -287,7 +301,7 @@ public class BatchService {
         // 1) Insert CAR_MASTER rows using platform_car.extra (payload). We'll create one master per platform_car without car_id.
         //    For simplicity, create minimal CAR_MASTER with some attributes from JSON; more mapping can be added later.
         jdbc.update("""
-            INSERT INTO car_master (maker_code, model_group_code, model_code, trim_code, grade_code, YEAR, MILEAGE, COLOR, TRANSMISSION, FUEL, created_at, updated_at)
+            INSERT INTO car_master (maker_code, model_group_code, model_code, trim_code, grade_code, YEAR, MILEAGE, COLOR, TRANSMISSION, FUEL, created_at, updated_at, plate_no)
             SELECT
                 NULL, NULL, NULL, NULL, NULL,
                 COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(p.extra, '$.category.yearMonth')) AS UNSIGNED)/100, NULL),
@@ -295,7 +309,7 @@ public class BatchService {
                 JSON_UNQUOTE(JSON_EXTRACT(p.extra, '$.color')) ,
                 JSON_UNQUOTE(JSON_EXTRACT(p.extra, '$.transmission')),
                 JSON_UNQUOTE(JSON_EXTRACT(p.extra, '$.fuel')),
-                NOW(), NOW()
+                NOW(), NOW(), plate_no
             FROM platform_car p
             WHERE p.car_id IS NULL
             LIMIT 10000
