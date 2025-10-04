@@ -1,9 +1,6 @@
 package com.carizon.batch;
 
-import com.carizon.crawler.ChachachaCrawler;
-import com.carizon.crawler.ChutchaCrawler;
-import com.carizon.crawler.EncarCrawler;
-import com.carizon.crawler.KcarCrawler;
+import com.carizon.crawler.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -16,18 +13,23 @@ public class CrawlJobService {
     private final ChachachaCrawler chachacha;
     private final EncarCrawler encar;
     private final KcarCrawler kcar;         // ✅ 추가
-    // CrawlJobService
     private final ChutchaCrawler chutcha;
+
+    private final CharanchaCrawler charancha;
+    private final TcarCrawler tcar;
+
 
 
     // 매일 새벽 03:15 KST
     @Scheduled(cron = "0 15 3 * * *", zone = "Asia/Seoul")
     public void runDaily() {
         log.info("[CRAWL] daily schedule start");
-        chachacha.runOnce();
-        encar.runOnce();
-        kcar.runOnceFull();                 // ✅ 추가
-        chutcha.runOnceFull();
+        //chachacha.runOnce();
+        //encar.runOnce();
+        //kcar.runOnceFull();                 // ✅ 추가
+        //chutcha.runOnceFull();
+        //charancha.runOnceFull();
+        //tcar.runOnceFull();
         log.info("[CRAWL] daily schedule end");
     }
 
@@ -53,6 +55,16 @@ public class CrawlJobService {
     public void runNowChutcha() {
         log.info("[CRAWL] manual runNowChutcha run start");
         chutcha.runOnceFull();
+        log.info("[CRAWL] manual runNowChutcha run end");}
+
+    public void runNowCharancha() {
+        log.info("[CRAWL] manual runNowChutcha run start");
+        charancha.runOnceFull();
+        log.info("[CRAWL] manual runNowChutcha run end");}
+
+    public void runNowTcar() {
+        log.info("[CRAWL] manual runNowChutcha run start");
+        tcar.runOnceFull();
         log.info("[CRAWL] manual runNowChutcha run end");}
 
 }

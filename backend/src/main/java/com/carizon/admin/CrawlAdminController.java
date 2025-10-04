@@ -23,6 +23,8 @@ public class CrawlAdminController {
     @PostMapping("/kcar")    public Map<String, Object> runNowKcar()  { job.runNowKcar(); return Map.of("ok", true); }
     @PostMapping("/cha")    public Map<String, Object> runNowCha()  { job.runNowCha(); return Map.of("ok", true); }
     @PostMapping("/chutcha") public Map<String,Object> runChutcha(){ job.runNowChutcha(); return Map.of("ok", true); }
+    @PostMapping("/charancha") public Map<String,Object> runCharancha(){ job.runNowCharancha(); return Map.of("ok", true); }
+    @PostMapping("/tcar") public Map<String,Object> runTcar(){ job.runNowTcar(); return Map.of("ok", true); }
 
 
     @GetMapping("/runs")
