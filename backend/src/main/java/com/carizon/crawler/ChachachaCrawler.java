@@ -26,7 +26,7 @@ public class ChachachaCrawler {
                     "warrantyYn,kbLeaseYn,orderDate,certifiedShopYn,kbCertifiedYn,hasOverThreeFileNames,diagYn," +
                     "diagGbn,lineAdYn,carAccidentNo,colorCodeName,gasName,homeserviceYn2,labsDanjiNo2,premiumYn," +
                     "t34SellGbn,t34MonthAmt,t34DiscountAmt,adState,paymentPremiumYn,contractingYn," +
-                    "makerCode,classCode,carCode,modelCode,gradeCode,useCodeName,autoGbnName";
+                    "makerCode,classCode,carCode,modelCode,gradeCode,useCodeName,autoGbnName,numCc";
 
     private final OkHttpClient http = new OkHttpClient();
     private final ObjectMapper mapper = new ObjectMapper();

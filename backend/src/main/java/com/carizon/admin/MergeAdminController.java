@@ -14,7 +14,7 @@ import java.util.Map;
 @RequestMapping("/api/admin/merge")
 public class MergeAdminController {
     private final MergeService mergeService;
-
+/*
     // 전체 배치: merge(플랫폼->platform_car, master 생성) + snapshot(가격이력) + sold 처리
     @PostMapping("/run")
     public ResponseEntity<?> runFullBatch(
@@ -23,6 +23,7 @@ public class MergeAdminController {
         var result = mergeService.runFullBatch(d);
         return ResponseEntity.ok(result);
     }
+*/
 
     // 개별 단계 호출도 가능
     @PostMapping("/all")
@@ -62,6 +63,14 @@ public class MergeAdminController {
     public ResponseEntity<?> runMergeChutcha(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate bizDate) {
         LocalDate d = bizDate != null ? bizDate : LocalDate.now();
         int merged = mergeService.mergeChutcha(d);
+        return ResponseEntity.ok(Map.of("mergedPlatforms", merged));
+    }
+
+    // 개별 단계 호출도 가능
+    @PostMapping("/charancha")
+    public ResponseEntity<?> runMergeCharancha(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate bizDate) {
+        LocalDate d = bizDate != null ? bizDate : LocalDate.now();
+        int merged = mergeService.mergeCharancha(d);
         return ResponseEntity.ok(Map.of("mergedPlatforms", merged));
     }
 
