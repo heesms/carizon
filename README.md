@@ -24,7 +24,10 @@ carizon/
 | `jobs` | Batch and scheduled jobs for price snapshots & QC stubs |
 
 The backend uses Flyway for schema management and expects the canonical DDL in
-`backend/core/src/main/resources/db/migration/V20251010__initial.sql`.
+`backend/core/src/main/resources/db/migration/V20251010__initial.sql`. Flyway is
+configured with `baselineOnMigrate` at version `20251010`, so pointing the
+services at an already-provisioned `carizon` schema will only register the
+baseline without attempting to create or alter tables.
 
 ### Frontend
 
