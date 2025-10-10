@@ -19,7 +19,7 @@ jobs:
       - name: Build backend
         run: |
           cd backend
-          ./gradlew build
+          mvn -B package
       - name: Build backend image
         run: |
           docker build -f infra/docker/backend.Dockerfile -t carizon-backend:ci .

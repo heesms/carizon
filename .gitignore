@@ -2,7 +2,11 @@
 web/node_modules
 web/dist
 
-# Gradle
+# Maven
+backend/target
+backend/*/target
+
+# Legacy Gradle directories
 backend/.gradle
 backend/build
 backend/*/build

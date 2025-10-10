@@ -1,5 +1,0 @@
-rootProject.name = "carizon-backend"
-include("api", "core", "jobs")
-project(":api").projectDir = file("api")
-project(":core").projectDir = file("core")
-project(":jobs").projectDir = file("jobs")

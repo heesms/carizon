@@ -36,7 +36,7 @@ patterns. Routes are defined for customer and admin experiences and guard admin 
 ### Prerequisites
 
 - Java 17
-- Gradle 8+
+- Maven 3.9+
 - Node.js 20+
 - pnpm 8+
 - MySQL 8 (or compatible)
@@ -69,7 +69,7 @@ VITE_ENV=dev
 
 ```bash
 cd backend
-gradle :api:bootRun
+mvn -pl api -am spring-boot:run
 ```
 
 This launches the API service at `http://localhost:8080/api` with Google OAuth login.
@@ -78,7 +78,7 @@ To run scheduled jobs:
 
 ```bash
 cd backend
-gradle :jobs:bootRun
+mvn -pl jobs -am spring-boot:run
 ```
 
 ### Frontend setup
@@ -95,7 +95,7 @@ Access the UI at `http://localhost:5173`.
 
 ```bash
 cd backend
-gradle build
+mvn clean verify
 
 cd web
 pnpm build
@@ -120,7 +120,7 @@ openapi/openapi_carizon.yaml
 
 1. Fork and clone the repository.
 2. Create feature branches from `main`.
-3. Run formatting (`gradle build`, `pnpm build`) before submitting pull requests.
+3. Run formatting (`mvn clean verify`, `pnpm build`) before submitting pull requests.
 4. Update documentation when behaviour changes.
 
 ## License
