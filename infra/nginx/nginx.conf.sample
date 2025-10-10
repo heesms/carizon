@@ -1,0 +1,29 @@
+worker_processes auto;
+
+events {
+  worker_connections 1024;
+}
+
+http {
+  sendfile on;
+
+  upstream carizon_api {
+    server api:8080;
+  }
+
+  server {
+    listen 80;
+
+    location /api/ {
+      proxy_pass http://carizon_api;
+      proxy_set_header Host $host;
+      proxy_set_header X-Forwarded-For $remote_addr;
+      add_header Cache-Control "no-store";
+    }
+
+    location /images/ {
+      root /var/lib/carizon;
+      add_header Cache-Control "public, max-age=86400";
+    }
+  }
+}

@@ -1,0 +1,2 @@
+-- Placeholder Flyway migration referencing authoritative schema.
+-- The actual DDL is expected to be maintained externally and copied here.

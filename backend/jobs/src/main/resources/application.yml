@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: carizon-jobs
+  datasource:
+    url: jdbc:mysql://localhost:3306/carizon
+    username: carizon
+    password: carizon
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: false
+
+logging:
+  level:
+    root: INFO

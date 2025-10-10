@@ -1,0 +1,217 @@
+openapi: 3.0.3
+info:
+  title: Carizon API
+  version: 0.1.0
+servers:
+  - url: /api
+paths:
+  /me:
+    get:
+      summary: Current user profile
+      responses:
+        '200':
+          description: OK
+  /cars:
+    get:
+      summary: Search & list vehicles
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: priceMin
+          schema:
+            type: integer
+        - in: query
+          name: priceMax
+          schema:
+            type: integer
+        - in: query
+          name: kmMax
+          schema:
+            type: integer
+        - in: query
+          name: yymmFrom
+          schema:
+            type: integer
+        - in: query
+          name: yymmTo
+          schema:
+            type: integer
+        - in: query
+          name: fuel
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - in: query
+          name: transmission
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - in: query
+          name: body
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - in: query
+          name: region
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - price_asc
+              - km_asc
+              - latest
+              - value_desc
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - in: query
+          name: size
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: OK
+  /cars/{id}:
+    get:
+      summary: Vehicle detail + cross-platform comparison
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+  /cars/{id}/history:
+    get:
+      summary: Price & visibility history
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+  /favorites:
+    get:
+      summary: List favorites
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Add favorite
+      responses:
+        '201':
+          description: Created
+  /favorites/{id}:
+    delete:
+      summary: Remove favorite
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: No Content
+  /alerts:
+    get:
+      summary: List alerts
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create alert
+      responses:
+        '201':
+          description: Created
+  /alerts/{id}:
+    delete:
+      summary: Remove alert
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: No Content
+  /admin/ingest/status:
+    get:
+      summary: Ingestion status
+      responses:
+        '200':
+          description: OK
+  /admin/ingest/run:
+    post:
+      summary: Trigger ingestion
+      parameters:
+        - in: query
+          name: platform
+          required: true
+          schema:
+            type: string
+            enum:
+              - ENCAR
+              - KCAR
+              - CHACHACHA
+              - CHUTCHA
+              - CHARANCHA
+      responses:
+        '202':
+          description: Accepted
+  /admin/mapping/failures:
+    get:
+      summary: Unresolved mapping queue
+      responses:
+        '200':
+          description: OK
+  /admin/mapping/resolve:
+    post:
+      summary: Resolve mapping
+      responses:
+        '200':
+          description: OK
+  /admin/qc/anomalies:
+    get:
+      summary: Price/quality anomalies
+      responses:
+        '200':
+          description: OK
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: CARIZON_SESSION
+security:
+  - sessionCookie: []

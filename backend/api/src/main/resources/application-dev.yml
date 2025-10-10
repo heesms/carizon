@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/carizon
+    username: carizon
+    password: carizon
+carizon:
+  redis:
+    enabled: false
+  rate-limit:
+    enabled: false

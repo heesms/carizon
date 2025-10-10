@@ -1,0 +1,15 @@
+# Node
+web/node_modules
+web/dist
+
+# Gradle
+backend/.gradle
+backend/build
+backend/*/build
+
+# IDE
+.idea
+.vscode
+
+# OS
+.DS_Store
