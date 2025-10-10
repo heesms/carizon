@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* === reset: 링크 기본 밑줄/색 제거 (전역) === */
 a { text-decoration: none; color: inherit; }
 a:visited { color: inherit; }
