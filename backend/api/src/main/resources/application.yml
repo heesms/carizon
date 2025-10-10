@@ -2,10 +2,24 @@ spring:
   application:
     name: carizon-api
   datasource:
-    url: 
-    username: 
-    password: 
+    url:
+    username:
+    password:
     driver-class-name: com.mysql.cj.jdbc.Driver
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:your-google-client-id}
+            client-secret: ${GOOGLE_CLIENT_SECRET:your-google-client-secret}
+            scope:
+              - openid
+              - profile
+              - email
+        provider:
+          google:
+            issuer-uri: https://accounts.google.com
   jpa:
     hibernate:
       ddl-auto: none
