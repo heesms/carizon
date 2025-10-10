@@ -15,7 +15,7 @@ import java.util.*;
 
 @Service
 @RequiredArgsConstructor
-public class CarQueryService {
+public class MyCarQueryService {
 
     private final MyCarMasterRepo masterRepo;
     private final PlatformListingRepo listingRepo;
