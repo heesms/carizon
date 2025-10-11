@@ -1,6 +1,6 @@
 package com.carizon.core.domain.web;
 
-import com.carizon.core.domain.service.CarQueryService;
+import com.carizon.core.domain.service.MyCarQueryService;
 import com.carizon.core.domain.web.dto.CarDetailDto;
 import com.carizon.core.domain.web.dto.CarListItemDto;
 import lombok.RequiredArgsConstructor;
@@ -9,10 +9,10 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/cars")
+@RequestMapping("/api/my-cars")
 public class CarController {
 
-    private final CarQueryService service;
+    private final MyCarQueryService service;
 
     @GetMapping
     public Page<CarListItemDto> search(

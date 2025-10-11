@@ -1,6 +1,5 @@
 import React from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import logo from '../assets/logo.png'
 
 export default function Header(){
   const { pathname } = useLocation()
@@ -9,7 +8,7 @@ export default function Header(){
       <header className="header">
         <div className="header__inner">
           <Link to="/" className="header__brand" style={{textDecoration:'none',color:'inherit'}}>
-            <img src={logo} alt="Carizon" />
+            <span className="text-2xl">🚗</span>
             <span style={{fontWeight:800}}>Carizon</span>
           </Link>
 
