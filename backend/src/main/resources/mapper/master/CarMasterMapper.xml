@@ -7,22 +7,22 @@
     <sql id="searchConditions">
         <where>
             <if test="maker != null and maker != ''">
-                AND MAKER_CODE = #{maker}
+                AND maker_code = #{maker}
             </if>
             <if test="modelGroup != null and modelGroup != ''">
-                AND MODEL_GROUP_CODE = #{modelGroup}
+                AND model_group_code = #{modelGroup}
             </if>
             <if test="model != null and model != ''">
-                AND MODEL_CODE = #{model}
+                AND model_code = #{model}
             </if>
             <if test="trim != null and trim != ''">
-                AND TRIM_CODE = #{trim}
+                AND trim_code = #{trim}
             </if>
             <if test="grade != null and grade != ''">
-                AND GRADE_CODE = #{grade}
+                AND grade_code = #{grade}
             </if>
             <if test="year != null">
-                AND YEAR = #{year}
+                AND year = #{year}
             </if>
             <if test="region != null and region != ''">
                 AND region = #{region}
@@ -35,61 +35,61 @@
 
     <select id="getMasterById" resultType="com.carizon.api.dto.CarMasterRow">
         SELECT
-            CAR_ID AS carId,
-            CAR_NO AS carNo,
-            MAKER_CODE AS makerCode,
-            MODEL_GROUP_CODE AS modelGroupCode,
-            MODEL_CODE AS modelCode,
-            TRIM_CODE AS trimCode,
-            GRADE_CODE AS gradeCode,
-            MAKER_NAME AS makerName,
-            MODEL_GROUP_NAME AS modelGroupName,
-            MODEL_NAME AS modelName,
-            TRIM_NAME AS trimName,
-            YEAR AS year,
-            MILEAGE AS mileage,
-            COLOR AS color,
+            car_id AS carId,
+            car_no AS carNo,
+            maker_code AS makerCode,
+            model_group_code AS modelGroupCode,
+            model_code AS modelCode,
+            trim_code AS trimCode,
+            grade_code AS gradeCode,
+            maker_name AS makerName,
+            model_group_name AS modelGroupName,
+            model_name AS modelName,
+            trim_name AS trimName,
+            year AS year,
+            mileage AS mileage,
+            color AS color,
             transmission AS transmission,
-            FUEL AS fuel,
+            fuel AS fuel,
             region AS region,
             displacement AS displacement,
-            BODY_TYPE AS bodyType,
+            body_type AS bodyType,
             adv_status AS advStatus,
             last_seen_date AS lastSeenDate,
-            CREATED_AT AS createdAt,
-            UPDATED_AT AS updatedAt
+            created_at AS createdAt,
+            updated_at AS updatedAt
         FROM car_master
-        WHERE CAR_ID = #{carId}
+        WHERE car_id = #{carId}
     </select>
 
     <select id="searchMaster" resultType="com.carizon.api.dto.CarMasterRow">
         SELECT
-            CAR_ID AS carId,
-            CAR_NO AS carNo,
-            MAKER_CODE AS makerCode,
-            MODEL_GROUP_CODE AS modelGroupCode,
-            MODEL_CODE AS modelCode,
-            TRIM_CODE AS trimCode,
-            GRADE_CODE AS gradeCode,
-            MAKER_NAME AS makerName,
-            MODEL_GROUP_NAME AS modelGroupName,
-            MODEL_NAME AS modelName,
-            TRIM_NAME AS trimName,
-            YEAR AS year,
-            MILEAGE AS mileage,
-            COLOR AS color,
+            car_id AS carId,
+            car_no AS carNo,
+            maker_code AS makerCode,
+            model_group_code AS modelGroupCode,
+            model_code AS modelCode,
+            trim_code AS trimCode,
+            grade_code AS gradeCode,
+            maker_name AS makerName,
+            model_group_name AS modelGroupName,
+            model_name AS modelName,
+            trim_name AS trimName,
+            year AS year,
+            mileage AS mileage,
+            color AS color,
             transmission AS transmission,
-            FUEL AS fuel,
+            fuel AS fuel,
             region AS region,
             displacement AS displacement,
-            BODY_TYPE AS bodyType,
+            body_type AS bodyType,
             adv_status AS advStatus,
             last_seen_date AS lastSeenDate,
-            CREATED_AT AS createdAt,
-            UPDATED_AT AS updatedAt
+            created_at AS createdAt,
+            updated_at AS updatedAt
         FROM car_master
         <include refid="searchConditions"/>
-        ORDER BY UPDATED_AT DESC
+        ORDER BY updated_at DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 

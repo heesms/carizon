@@ -7,28 +7,27 @@
     <sql id="searchConditions">
         <where>
             <if test="maker != null and maker != ''">
-                AND MAKER_CODE = #{maker}
+                AND maker_code = #{maker}
             </if>
             <if test="modelGroup != null and modelGroup != ''">
-                AND MODEL_GROUP_CODE = #{modelGroup}
+                AND model_group_code = #{modelGroup}
             </if>
             <if test="model != null and model != ''">
-                AND MODEL_CODE = #{model}
+                AND model_code = #{model}
             </if>
             <if test="trim != null and trim != ''">
-                AND TRIM_CODE = #{trim}
+                AND trim_code = #{trim}
             </if>
             <if test="grade != null and grade != ''">
-                AND GRADE_CODE = #{grade}
+                AND grade_code = #{grade}
             </if>
             <if test="q != null and q != ''">
                 AND (
-                    MAKER_NAME LIKE CONCAT('%', #{q}, '%')
-                    OR MODEL_GROUP_NAME LIKE CONCAT('%', #{q}, '%')
-                    OR MODEL_NAME LIKE CONCAT('%', #{q}, '%')
-                    OR TRIM_NAME LIKE CONCAT('%', #{q}, '%')
-                    OR GRADE_NAME LIKE CONCAT('%', #{q}, '%')
-                    OR CAR_NO LIKE CONCAT('%', #{q}, '%')
+                    maker_name LIKE CONCAT('%', #{q}, '%')
+                    OR model_group_name LIKE CONCAT('%', #{q}, '%')
+                    OR model_name LIKE CONCAT('%', #{q}, '%')
+                    OR trim_name LIKE CONCAT('%', #{q}, '%')
+                    OR car_no LIKE CONCAT('%', #{q}, '%')
                 )
             </if>
         </where>
@@ -36,41 +35,40 @@
 
     <select id="searchCars" resultType="com.carizon.api.dto.CarListItem">
         SELECT
-            PLATFORM_CAR_ID AS platformCarId,
-            PLATFORM_NAME AS platformName,
-            PLATFORM_CAR_KEY AS platformCarKey,
-            CAR_NO AS carNo,
-            CAR_ID AS carId,
-            MAKER_CODE AS makerCode,
-            MODEL_GROUP_CODE AS modelGroupCode,
-            MODEL_CODE AS modelCode,
-            TRIM_CODE AS trimCode,
-            GRADE_CODE AS gradeCode,
-            MAKER_NAME AS makerName,
-            MODEL_GROUP_NAME AS modelGroupName,
-            MODEL_NAME AS modelName,
-            TRIM_NAME AS trimName,
-            GRADE_NAME AS gradeName,
-            PRICE AS price,
-            KM AS km,
-            YYMM AS yymm,
-            STATUS AS status,
-            COLOR AS color,
-            FUEL AS fuel,
+            platform_car_id AS platformCarId,
+            platform_name AS platformName,
+            platform_car_key AS platformCarKey,
+            car_no AS carNo,
+            car_id AS carId,
+            maker_code AS makerCode,
+            model_group_code AS modelGroupCode,
+            model_code AS modelCode,
+            trim_code AS trimCode,
+            grade_code AS gradeCode,
+            maker_name AS makerName,
+            model_group_name AS modelGroupName,
+            model_name AS modelName,
+            trim_name AS trimName,
+            price AS price,
+            km AS km,
+            yymm AS yymm,
+            status AS status,
+            color AS color,
+            fuel AS fuel,
             transmission AS transmission,
-            BODY_TYPE AS bodyType,
-            M_URL AS mUrl,
-            PC_URL AS pcUrl,
-            FIRST_AD_DAY AS firstAdDay,
-            CREATED_AT AS createdAt,
-            UPDATED_AT AS updatedAt,
+            body_type AS bodyType,
+            m_url AS mUrl,
+            pc_url AS pcUrl,
+            first_ad_day AS firstAdDay,
+            created_at AS createdAt,
+            updated_at AS updatedAt,
             extra AS extra,
             last_seen_date AS lastSeenDate,
             region AS region,
             displacement AS displacement
         FROM platform_car
         <include refid="searchConditions"/>
-        ORDER BY UPDATED_AT DESC
+        ORDER BY updated_at DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -82,48 +80,48 @@
 
     <select id="getCarDetailById" resultType="com.carizon.api.dto.CarDetailDto">
         SELECT
-            CAR_ID AS carId,
-            CAR_NO AS carNo,
-            MAKER_CODE AS makerCode,
-            MODEL_GROUP_CODE AS modelGroupCode,
-            MODEL_CODE AS modelCode,
-            TRIM_CODE AS trimCode,
-            GRADE_CODE AS gradeCode,
-            MAKER_NAME AS makerName,
-            MODEL_GROUP_NAME AS modelGroupName,
-            MODEL_NAME AS modelName,
-            TRIM_NAME AS trimName,
-            YEAR AS year,
-            MILEAGE AS mileage,
-            COLOR AS color,
+            car_id AS carId,
+            car_no AS carNo,
+            maker_code AS makerCode,
+            model_group_code AS modelGroupCode,
+            model_code AS modelCode,
+            trim_code AS trimCode,
+            grade_code AS gradeCode,
+            maker_name AS makerName,
+            model_group_name AS modelGroupName,
+            model_name AS modelName,
+            trim_name AS trimName,
+            year AS year,
+            mileage AS mileage,
+            color AS color,
             transmission AS transmission,
-            FUEL AS fuel,
+            fuel AS fuel,
             displacement AS displacement,
-            BODY_TYPE AS bodyType,
+            body_type AS bodyType,
             region AS region,
             adv_status AS advStatus,
             last_seen_date AS lastSeenDate,
-            CREATED_AT AS createdAt,
-            UPDATED_AT AS updatedAt
+            created_at AS createdAt,
+            updated_at AS updatedAt
         FROM car_master
-        WHERE CAR_ID = #{carId}
+        WHERE car_id = #{carId}
     </select>
 
     <select id="getPlatformCarsByCarId" resultType="com.carizon.api.dto.PlatformListingDto">
         SELECT
-            PLATFORM_CAR_ID AS platformCarId,
-            PLATFORM_NAME AS platformName,
-            PLATFORM_CAR_KEY AS platformCarKey,
-            PRICE AS price,
-            KM AS km,
-            STATUS AS status,
-            M_URL AS mUrl,
-            PC_URL AS pcUrl,
-            FIRST_AD_DAY AS firstAdDay,
+            platform_car_id AS platformCarId,
+            platform_name AS platformName,
+            platform_car_key AS platformCarKey,
+            price AS price,
+            km AS km,
+            status AS status,
+            m_url AS mUrl,
+            pc_url AS pcUrl,
+            first_ad_day AS firstAdDay,
             last_seen_date AS lastSeenDate
         FROM platform_car
-        WHERE CAR_ID = #{carId}
-        ORDER BY UPDATED_AT DESC
+        WHERE car_id = #{carId}
+        ORDER BY updated_at DESC
     </select>
 
 </mapper>
