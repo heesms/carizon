@@ -4,9 +4,10 @@ Complete guide for running Carizon locally, testing, and troubleshooting.
 
 ## Prerequisites
 
-- **Docker & Docker Compose** (for MySQL, Redis, Meilisearch)
-- **Java 21** (for backend)
+- **JDK 21** (for backend)
 - **Node.js 20+** (for frontend)
+- **MySQL 8+** (local installation, not in Docker)
+- **Docker & Docker Compose** (for Redis and MeiliSearch only)
 - **Git**
 
 ## Quick Start
@@ -18,31 +19,65 @@ git clone https://github.com/heesms/carizon.git
 cd carizon
 ```
 
-### 2. Start Infrastructure Services
+### 2. Setup Local MySQL
 
-Start MySQL, Redis, and Meilisearch using Docker Compose:
+**Important**: MySQL is NOT run in Docker. You need a local MySQL installation.
+
+Install MySQL 8+ and create the database and user:
+
+```sql
+-- Connect to MySQL as root
+mysql -u root -p
+
+-- Create database with utf8mb4
+CREATE DATABASE carizon CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+
+-- Create user and grant permissions
+CREATE USER 'carizon'@'localhost' IDENTIFIED BY 'carizon!1';
+GRANT ALL PRIVILEGES ON carizon.* TO 'carizon'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+**Default connection settings:**
+- Host: `127.0.0.1`
+- Port: `3306`
+- Database: `carizon`
+- User: `carizon`
+- Password: `carizon!1`
+
+You can override these using environment variables (see `.env.example`).
+
+**Optional: Oracle Cloud (Heartwave) MySQL**
+
+If using Oracle Cloud MySQL instance:
+1. Add your IP to the security group whitelist in Oracle Cloud console
+2. Update connection details in `.env` or `backend/src/main/resources/application.yaml`
+3. Ensure the database uses utf8mb4 charset and Asia/Seoul timezone
+
+### 3. Start Infrastructure Services
+
+Start Redis and MeiliSearch using Docker Compose:
 
 ```bash
 cd infra
-docker-compose up -d
+docker compose -f docker-compose.yml up -d
 ```
 
 Verify services are running:
 
 ```bash
-docker-compose ps
+docker compose ps
 ```
 
 You should see:
-- `carizon-mysql` on port 3306
 - `carizon-redis` on port 6379
 - `carizon-meilisearch` on port 7700
 
-### 3. Start Backend (Spring Boot)
+### 4. Start Backend (Spring Boot)
 
 The backend will automatically:
-- Connect to MySQL
-- Run Flyway migrations (V1__init.sql, V2__seed.sql)
+- Connect to external MySQL (127.0.0.1:3306)
+- Run Flyway migrations (V1__init.sql, V2__seed.sql, V3__cz_model_image.sql)
 - Seed sample data
 
 ```bash
@@ -52,6 +87,8 @@ cd backend
 
 Backend will start on **http://localhost:8080**
 
+**Flyway migrations** run automatically on startup, creating all necessary tables.
+
 Check the API:
 ```bash
 curl http://localhost:8080/api/cars
@@ -59,7 +96,7 @@ curl http://localhost:8080/api/cars
 
 Swagger UI available at: **http://localhost:8080/swagger-ui.html**
 
-### 4. Start Frontend (React + Vite)
+### 5. Start Frontend (React + Vite)
 
 ```bash
 cd frontend
@@ -146,12 +183,13 @@ Vite dev server logs are shown in the terminal. Browser console shows runtime lo
 Connect to MySQL:
 
 ```bash
-docker exec -it carizon-mysql mysql -u carizon -p
+# Local MySQL
+mysql -u carizon -p -h 127.0.0.1
 # Password: carizon!1
 ```
 
 Or use any MySQL client:
-- Host: `localhost`
+- Host: `127.0.0.1`
 - Port: `3306`
 - Database: `carizon`
 - User: `carizon`
@@ -289,18 +327,22 @@ If Flyway fails to migrate:
 
 1. **Check MySQL is running:**
    ```bash
-   docker-compose ps mysql
+   mysql -u carizon -p -h 127.0.0.1
    ```
 
-2. **Verify database connection:**
-   ```bash
-   docker exec -it carizon-mysql mysql -u carizon -p carizon
+2. **Verify database connection and charset:**
+   ```sql
+   USE carizon;
+   SHOW VARIABLES LIKE 'char%';
+   SHOW VARIABLES LIKE 'collation%';
    ```
 
 3. **Reset Flyway (CAUTION: drops all data):**
    ```sql
    DROP DATABASE carizon;
    CREATE DATABASE carizon CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+   GRANT ALL PRIVILEGES ON carizon.* TO 'carizon'@'localhost';
+   FLUSH PRIVILEGES;
    ```
 
 4. **Restart backend to re-run migrations**
@@ -338,6 +380,8 @@ SELECT @@global.time_zone, @@session.time_zone;
 
 **Docker Compose:**
 ```yaml
+# MySQL is now external, not in Docker
+# Only Redis and MeiliSearch run in Docker
 environment:
   TZ: Asia/Seoul
 ```
@@ -407,9 +451,11 @@ Sample data is automatically loaded via `V2__seed.sql`. To reset:
 ```bash
 # Stop backend
 # Drop and recreate database
-docker exec -it carizon-mysql mysql -u root -p
+mysql -u carizon -p -h 127.0.0.1
 > DROP DATABASE carizon;
 > CREATE DATABASE carizon CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+> GRANT ALL PRIVILEGES ON carizon.* TO 'carizon'@'localhost';
+> FLUSH PRIVILEGES;
 > exit
 
 # Restart backend - migrations will run again
