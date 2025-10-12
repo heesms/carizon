@@ -4,7 +4,8 @@ Complete guide for running Carizon locally, testing, and troubleshooting.
 
 ## Prerequisites
 
-- **Docker & Docker Compose** (for MySQL, Redis, Meilisearch)
+- **Docker & Docker Compose** (for Redis, Meilisearch)
+- **MySQL 8** (running externally, not in Docker)
 - **Java 21** (for backend)
 - **Node.js 20+** (for frontend)
 - **Git**
@@ -20,23 +21,23 @@ cd carizon
 
 ### 2. Start Infrastructure Services
 
-Start MySQL, Redis, and Meilisearch using Docker Compose:
+Start Redis and Meilisearch using Docker Compose:
 
 ```bash
-cd infra
-docker-compose up -d
+docker compose -f infra/docker-compose.yml up -d
 ```
 
 Verify services are running:
 
 ```bash
-docker-compose ps
+docker compose -f infra/docker-compose.yml ps
 ```
 
 You should see:
-- `carizon-mysql` on port 3306
 - `carizon-redis` on port 6379
 - `carizon-meilisearch` on port 7700
+
+**Note:** MySQL should be running externally (not in Docker). Ensure MySQL 8 is installed and accessible on `localhost:3306`.
 
 ### 3. Start Backend (Spring Boot)
 
@@ -104,15 +105,13 @@ curl "http://localhost:8080/api/cars/1/price-history?platformCarId=1"
 
 View all service logs:
 ```bash
-cd infra
-docker-compose logs -f
+docker compose -f infra/docker-compose.yml logs -f
 ```
 
 View specific service:
 ```bash
-docker-compose logs -f mysql
-docker-compose logs -f redis
-docker-compose logs -f meilisearch
+docker compose -f infra/docker-compose.yml logs -f redis
+docker compose -f infra/docker-compose.yml logs -f meilisearch
 ```
 
 ### Spring Boot Backend
@@ -143,10 +142,10 @@ Vite dev server logs are shown in the terminal. Browser console shows runtime lo
 
 ## Database Access
 
-Connect to MySQL:
+Connect to MySQL (running externally):
 
 ```bash
-docker exec -it carizon-mysql mysql -u carizon -p
+mysql -u carizon -p
 # Password: carizon!1
 ```
 
@@ -289,16 +288,17 @@ If Flyway fails to migrate:
 
 1. **Check MySQL is running:**
    ```bash
-   docker-compose ps mysql
+   mysql -u carizon -p -e "SELECT 1"
    ```
 
 2. **Verify database connection:**
    ```bash
-   docker exec -it carizon-mysql mysql -u carizon -p carizon
+   mysql -u carizon -p carizon
    ```
 
 3. **Reset Flyway (CAUTION: drops all data):**
    ```sql
+   mysql -u carizon -p
    DROP DATABASE carizon;
    CREATE DATABASE carizon CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
    ```
@@ -314,12 +314,7 @@ SHOW VARIABLES LIKE 'char%';
 SHOW VARIABLES LIKE 'collation%';
 ```
 
-If incorrect, restart MySQL with correct configuration:
-
-```bash
-docker-compose down
-docker-compose up -d
-```
+If incorrect, restart MySQL service.
 
 ### Timezone Issues
 
@@ -407,7 +402,7 @@ Sample data is automatically loaded via `V2__seed.sql`. To reset:
 ```bash
 # Stop backend
 # Drop and recreate database
-docker exec -it carizon-mysql mysql -u root -p
+mysql -u root -p
 > DROP DATABASE carizon;
 > CREATE DATABASE carizon CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 > exit
