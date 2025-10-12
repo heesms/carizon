@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.carizon.integration.mapper.CarizonMapper">
+
+    <resultMap id="CarPickMap" type="com.carizon.integration.dto.CarPick">
+        <result column="model_code" property="modelCode"/>
+        <result column="car_code"   property="carCode"/>   <!-- 추가 -->
+        <result column="car_seq"    property="carSeq"/>
+        <result column="payload"    property="payload"/>
+    </resultMap>
+
+    <select id="selectRepresentativeCars" resultMap="CarPickMap">
+        WITH candidates AS (
+        SELECT
+        model_code,
+        car_code,
+        CAST(car_seq AS UNSIGNED) AS car_seq,
+        payload,
+        order_dt,
+        /* Y/true 처리 */
+        CASE WHEN JSON_EXTRACT(payload,'$.kbCertifiedYn')      IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.kbCertifiedYn')))='Y'      THEN 1 ELSE 0 END AS kbCertified,
+        CASE WHEN JSON_EXTRACT(payload,'$.paymentPremiumYn')   IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.paymentPremiumYn')))='Y'   THEN 1 ELSE 0 END AS premium,
+        CASE WHEN JSON_EXTRACT(payload,'$.certifiedShopYn')    IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.certifiedShopYn')))='Y'    THEN 1 ELSE 0 END AS cshop,
+        CASE WHEN JSON_EXTRACT(payload,'$.homeserviceYn2')     IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.homeserviceYn2')))='Y'     THEN 1 ELSE 0 END AS homesvc,
+        CASE WHEN JSON_EXTRACT(payload,'$.diagYn')             IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.diagYn')))='Y'             THEN 1 ELSE 0 END AS diagv
+        FROM raw_chachacha
+        WHERE (
+        JSON_EXTRACT(payload,'$.hasOverThreeFileNames') = TRUE
+        OR JSON_EXTRACT(payload,'$.hasOverThreeFileNames') = 1
+        OR UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.hasOverThreeFileNames'))) IN ('TRUE','Y','1')
+        )
+        ),
+        ranked AS (
+        SELECT
+        model_code,
+        car_code,
+        car_seq,
+        payload,
+        ROW_NUMBER() OVER (
+        PARTITION BY car_code
+        ORDER BY (kbCertified + premium + cshop + homesvc + diagv) DESC,
+        order_dt DESC
+        ) AS rn
+        FROM candidates
+        )
+        SELECT model_code, car_code, car_seq, payload
+        FROM ranked
+        WHERE rn = 1
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+</mapper>

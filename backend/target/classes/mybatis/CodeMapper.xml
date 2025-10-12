@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.carizon.api.mapper.CodeMapper">
+
+    <select id="getMakers" resultType="com.carizon.api.dto.CodeRow">
+        SELECT DISTINCT 
+            maker_code AS makerCode,
+            maker_name AS makerName
+        FROM cz_maker
+        ORDER BY maker_order, maker_name
+    </select>
+
+    <select id="getModelGroups" resultType="com.carizon.api.dto.CodeRow">
+        SELECT DISTINCT
+            maker_code AS makerCode,
+            model_group_code AS modelGroupCode,
+            model_group_name AS modelGroupName
+        FROM cz_model_group
+        <where>
+            <if test="maker != null and maker != ''">
+                AND maker_code = #{maker}
+            </if>
+        </where>
+        ORDER BY class_order, model_group_name
+    </select>
+
+    <select id="getModels" resultType="com.carizon.api.dto.CodeRow">
+        SELECT DISTINCT
+            maker_code AS makerCode,
+            model_group_code AS modelGroupCode,
+            model_code AS modelCode,
+            model_name AS modelName
+        FROM cz_model
+        <where>
+            <if test="maker != null and maker != ''">
+                AND maker_code = #{maker}
+            </if>
+            <if test="modelGroup != null and modelGroup != ''">
+                AND model_group_code = #{modelGroup}
+            </if>
+        </where>
+        ORDER BY car_order, model_name
+    </select>
+
+    <select id="getTrims" resultType="com.carizon.api.dto.CodeRow">
+        SELECT DISTINCT
+            maker_code AS makerCode,
+            model_group_code AS modelGroupCode,
+            model_code AS modelCode,
+            trim_code AS trimCode,
+            trim_name AS trimName
+        FROM cz_trim
+        <where>
+            <if test="maker != null and maker != ''">
+                AND maker_code = #{maker}
+            </if>
+            <if test="modelGroup != null and modelGroup != ''">
+                AND model_group_code = #{modelGroup}
+            </if>
+            <if test="model != null and model != ''">
+                AND model_code = #{model}
+            </if>
+        </where>
+        ORDER BY model_order, trim_name
+    </select>
+
+    <select id="getGrades" resultType="com.carizon.api.dto.CodeRow">
+        SELECT DISTINCT
+            maker_code AS makerCode,
+            model_group_code AS modelGroupCode,
+            model_code AS modelCode,
+            trim_code AS trimCode,
+            grade_code AS gradeCode,
+            grade_name AS gradeName
+        FROM cz_grade
+        <where>
+            <if test="maker != null and maker != ''">
+                AND maker_code = #{maker}
+            </if>
+            <if test="modelGroup != null and modelGroup != ''">
+                AND model_group_code = #{modelGroup}
+            </if>
+            <if test="model != null and model != ''">
+                AND model_code = #{model}
+            </if>
+            <if test="trim != null and trim != ''">
+                AND trim_code = #{trim}
+            </if>
+        </where>
+        ORDER BY grade_order, grade_name
+    </select>
+
+</mapper>
