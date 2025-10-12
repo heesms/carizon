@@ -1,22 +1,6 @@
 version: "3.9"
 
 services:
-  mysql:
-    image: mysql:8
-    container_name: carizon-mysql
-    environment:
-      MYSQL_DATABASE: carizon
-      MYSQL_USER: carizon
-      MYSQL_PASSWORD: carizon!1
-      MYSQL_ROOT_PASSWORD: root!1
-      TZ: Asia/Seoul
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    restart: unless-stopped
-
   redis:
     image: redis:7-alpine
     container_name: carizon-redis
@@ -40,5 +24,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  mysql_data:
   meili_data:
