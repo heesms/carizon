@@ -25,9 +25,11 @@ public class CzModelImage {
     private String imageUrl;
 
     @Column(name = "sort_order", nullable = false)
+    @Builder.Default
     private Integer sortOrder = 0;
 
     @Column(name = "is_main", nullable = false)
+    @Builder.Default
     private Boolean isMain = false;
 
     @Column(name = "created_at", nullable = false, updatable = false)
