@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.carizon.api.mapper.PriceHistoryMapper">
+
+    <select id="getPriceHistoryByPlatformCarId" resultType="com.carizon.api.dto.PriceHistoryPointDto">
+        SELECT
+            h.CHECKED_AT AS checkedAt,
+            h.PRICE AS price,
+            pc.PLATFORM_NAME AS platformName
+        FROM car_price_history h
+        JOIN platform_car pc ON h.PLATFORM_CAR_ID = pc.PLATFORM_CAR_ID
+        WHERE h.PLATFORM_CAR_ID = #{platformCarId}
+        ORDER BY h.CHECKED_AT ASC
+    </select>
+
+    <select id="getPriceHistoryByCarId" resultType="com.carizon.api.dto.PriceHistoryPointDto">
+        SELECT
+            h.CHECKED_AT AS checkedAt,
+            h.PRICE AS price,
+            pc.PLATFORM_NAME AS platformName
+        FROM car_price_history h
+        JOIN platform_car pc ON h.PLATFORM_CAR_ID = pc.PLATFORM_CAR_ID
+        WHERE pc.CAR_ID = #{carId}
+        ORDER BY h.CHECKED_AT ASC
+    </select>
+
+</mapper>

@@ -8,22 +8,16 @@ spring:
   profiles:
     active: dev
   
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+  
   datasource:
     url: jdbc:mysql://127.0.0.1:3306/carizon?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Seoul
     username: carizon
     password: carizon!1
     hikari:
       maximum-pool-size: 10
-  
-  jpa:
-    hibernate:
-      ddl-auto: none
-    show-sql: false
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.MySQLDialect
-        format_sql: true
-        default_batch_fetch_size: 100
   
   flyway:
     enabled: true
@@ -44,7 +38,7 @@ spring:
       port: 6379
 
 mybatis:
-  mapper-locations: classpath*:mybatis/**/*.xml
+  mapper-locations: classpath*:mapper/**/*.xml
   type-aliases-package: com.carizon.api.dto
   configuration:
     map-underscore-to-camel-case: true
@@ -84,8 +78,6 @@ spring:
   config:
     activate:
       on-profile: dev
-  jpa:
-    show-sql: true
 
 ---
 # Test profile

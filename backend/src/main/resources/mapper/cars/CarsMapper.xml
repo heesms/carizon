@@ -80,4 +80,50 @@
         <include refid="searchConditions"/>
     </select>
 
+    <select id="getCarDetailById" resultType="com.carizon.api.dto.CarDetailDto">
+        SELECT
+            CAR_ID AS carId,
+            CAR_NO AS carNo,
+            MAKER_CODE AS makerCode,
+            MODEL_GROUP_CODE AS modelGroupCode,
+            MODEL_CODE AS modelCode,
+            TRIM_CODE AS trimCode,
+            GRADE_CODE AS gradeCode,
+            MAKER_NAME AS makerName,
+            MODEL_GROUP_NAME AS modelGroupName,
+            MODEL_NAME AS modelName,
+            TRIM_NAME AS trimName,
+            YEAR AS year,
+            MILEAGE AS mileage,
+            COLOR AS color,
+            transmission AS transmission,
+            FUEL AS fuel,
+            displacement AS displacement,
+            BODY_TYPE AS bodyType,
+            region AS region,
+            adv_status AS advStatus,
+            last_seen_date AS lastSeenDate,
+            CREATED_AT AS createdAt,
+            UPDATED_AT AS updatedAt
+        FROM car_master
+        WHERE CAR_ID = #{carId}
+    </select>
+
+    <select id="getPlatformCarsByCarId" resultType="com.carizon.api.dto.PlatformListingDto">
+        SELECT
+            PLATFORM_CAR_ID AS platformCarId,
+            PLATFORM_NAME AS platformName,
+            PLATFORM_CAR_KEY AS platformCarKey,
+            PRICE AS price,
+            KM AS km,
+            STATUS AS status,
+            M_URL AS mUrl,
+            PC_URL AS pcUrl,
+            FIRST_AD_DAY AS firstAdDay,
+            last_seen_date AS lastSeenDate
+        FROM platform_car
+        WHERE CAR_ID = #{carId}
+        ORDER BY UPDATED_AT DESC
+    </select>
+
 </mapper>
