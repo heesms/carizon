@@ -58,7 +58,7 @@ dependencies {
     // Jsoup (for existing crawlers)
     implementation 'org.jsoup:jsoup:1.17.2'
     
-    // MyBatis (for existing code compatibility)
+    // MyBatis
     implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.3'
     
     // Test dependencies
