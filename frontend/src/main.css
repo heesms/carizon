@@ -1,8 +1,7 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* 카드 텍스트 한 줄 자르기 */
+.line-clamp-1{ display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden; }
 
-/* 기본 리셋 */
-:root { color-scheme: light; }
-a { color: inherit; text-decoration: none; }
-img { display: block; max-width: 100%; height: auto; }
+/* 이미지가 부모 카드에서 삐져나오지 않도록 */
+img { max-width: 100%; height: auto; }
+
+/* 모바일에서 sticky 해제는 클래스에서 lg:sticky로 처리 */

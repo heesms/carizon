@@ -36,8 +36,8 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props){
   }
 
   return (
-      <aside className="bg-white border rounded-xl p-4 space-y-3 sticky top-4 h-fit">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <aside className="bg-white border rounded-xl p-4 space-y-3 lg:sticky lg:top-4 lg:h-fit">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Field label="제조사">
             <select value={makerCode} onChange={onField('makerCode')} className="border rounded px-2 py-2">
               <option value="">전체</option>
@@ -92,7 +92,6 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props){
       </aside>
   )
 }
-
 function Field({label,children}:{label:string;children:React.ReactNode}){
   return (<label className="flex flex-col gap-1 text-sm"><span className="text-gray-600">{label}</span>{children}</label>)
 }
