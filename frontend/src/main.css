@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 기본 리셋 */
 :root { color-scheme: light; }
 a { color: inherit; text-decoration: none; }
-img { display:block; max-width:100%; }
+img { display: block; max-width: 100%; height: auto; }
