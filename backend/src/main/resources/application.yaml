@@ -20,3 +20,31 @@ logging:
     org.mybatis: DEBUG
     com.zaxxer.hikari: DEBUG
     com.carizon: DEBUG
+
+# RAG 설정
+rag:
+  # Chroma 벡터 DB (로컬 실행: docker run -p 8000:8000 chromadb/chroma)
+  chroma:
+    base-url: http://localhost:8000
+    collection-name: car_listings
+  
+  # Hugging Face Inference API (무료 티어, API 키 필요)
+  # 또는 로컬 Ollama 사용 시 ollama 설정 사용
+  embedding:
+    provider: huggingface # huggingface 또는 ollama
+    huggingface:
+      api-key: ${HUGGINGFACE_API_KEY:} # 환경변수로 설정
+      model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 # 한국어 지원 모델
+    ollama:
+      base-url: http://localhost:11434
+      model: nomic-embed-text # 또는 다른 임베딩 모델
+  
+  # LLM 설정 (Ollama 로컬 실행)
+  llm:
+    provider: ollama # ollama 또는 huggingface
+    ollama:
+      base-url: http://localhost:11434
+      model: llama3.1:8b # 또는 qwen2.5:7b 등
+    huggingface:
+      api-key: ${HUGGINGFACE_API_KEY:}
+      model: meta-llama/Llama-3.1-8B-Instruct

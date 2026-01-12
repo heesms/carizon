@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  # Chroma 벡터 DB
+  # MySQL은 별도로 실행 중이므로 제외됨
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: carizon-chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  chroma_data:

@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.carizon.domain.mapper.CarMapper">
+
+  <sql id="CommonWhere">
+    <where>
+      <if test="makerCode != null and makerCode != ''"> AND cm.maker_code = #{makerCode} </if>
+      <if test="modelGroupCode != null and modelGroupCode != ''"> AND cm.model_group_code = #{modelGroupCode} </if>
+      <if test="modelCode != null and modelCode != ''"> AND cm.model_code = #{modelCode} </if>
+      <if test="trimCode != null and trimCode != ''"> AND cm.trim_code = #{trimCode} </if>
+      <if test="gradeCode != null and gradeCode != ''"> AND cm.grade_code = #{gradeCode} </if>
+      <if test="yearMin != null"> AND cm.year &gt;= #{yearMin} </if>
+      <if test="yearMax != null"> AND cm.year &lt;= #{yearMax} </if>
+      <if test="kmMax != null"> AND cm.mileage &lt;= #{kmMax} </if>
+      <if test="priceMin != null"> AND pc.price &gt;= #{priceMin} </if>
+      <if test="priceMax != null"> AND pc.price &lt;= #{priceMax} </if>
+      <if test="fuel != null and fuel != ''"> AND cm.fuel = #{fuel} </if>
+      <if test="transmission != null and transmission != ''"> AND cm.transmission = #{transmission} </if>
+      <if test="bodyType != null and bodyType != ''"> AND cm.body_type = #{bodyType} </if>
+      <if test="region != null and region != ''"> AND cm.region = #{region} </if>
+    </where>
+  </sql>
+
+  <select id="selectCars" parameterType="map" resultType="com.carizon.dto.CarListItemDto">
+    SELECT cm.car_id AS carId,
+           (SELECT MAKER_NAME FROM CZ_MAKER Z WHERE CM.MAKER_CODE = Z.MAKER_CODE) MAKER_NAME,
+           (SELECT MODEL_NAME FROM CZ_MODEL Z WHERE CM.MODEL_CODE = Z.MODEL_CODE) MODEL_NAME,
+           (SELECT TRIM_NAME FROM CZ_TRIM Z WHERE CM.TRIM_CODE = Z.TRIM_CODE) TRIM_NAME,
+           cm.year AS year,
+           cm.mileage AS km,
+           MIN(pc.price) AS priceMin,
+           MAX(pc.price) AS priceMax,
+           MAX(pc.updated_at) AS priceUpdatedAt,
+           (SELECT image_url FROM cz_model_image mi
+             WHERE mi.model_code = cm.model_code
+             ORDER BY is_main DESC, sort_order ASC LIMIT 1
+           ) AS representativeImageUrl,
+            cm.MODEL_CODE
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+    <include refid="CommonWhere"/>
+    GROUP BY cm.car_id
+    <choose>
+      <when test="sort == 'LOW_PRICE'"> ORDER BY priceMin ASC </when>
+      <when test="sort == 'LOW_KM'"> ORDER BY km ASC </when>
+      <when test="sort == 'NEW_YEAR'"> ORDER BY year DESC </when>
+      <otherwise> ORDER BY priceUpdatedAt DESC </otherwise>
+    </choose>
+    LIMIT #{limit} OFFSET #{offset}
+  </select>
+
+  <select id="countCars" parameterType="map" resultType="long">
+    SELECT COUNT(DISTINCT cm.car_id)
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+    <include refid="CommonWhere"/>
+  </select>
+
+  <select id="selectCarDetail" parameterType="long" resultType="com.carizon.dto.CarDetailRow">
+    SELECT cm.car_id AS carId,
+           cm.maker_name, cm.model_group_name, cm.model_name, cm.trim_name,
+           cm.year, cm.mileage, cm.displacement, cm.fuel, cm.transmission, cm.color, cm.body_type, cm.region,
+           pc.platform_car_id AS platformCarId, pc.platform_name, pc.price, pc.status, pc.pc_url, pc.m_url, DATE_FORMAT(pc.last_seen_date, '%Y-%m-%d') AS lastSeenDate
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+    WHERE cm.car_id = #{carId}
+  </select>
+
+  <select id="selectAnyPlatformCarId" parameterType="long" resultType="long">
+    SELECT pc.platform_car_id
+    FROM platform_car pc
+    WHERE pc.car_id = #{carId}
+    ORDER BY pc.updated_at DESC
+    LIMIT 1
+  </select>
+
+  <select id="selectPriceHistory" parameterType="long" resultType="com.carizon.dto.PricePoint">
+    SELECT checked_at AS ts, price
+    FROM car_price_history
+    WHERE platform_car_id = #{platformCarId}
+    ORDER BY checked_at ASC
+  </select>
+
+  <select id="selectModelImages" parameterType="string" resultType="com.carizon.dto.ModelImageDto">
+    SELECT image_url AS imageUrl, is_main AS isMain, sort_order AS sortOrder
+    FROM cz_model_image
+    WHERE model_code = #{modelCode}
+    ORDER BY is_main DESC, sort_order ASC, id ASC
+  </select>
+
+  <select id="selectMakers" resultType="map">
+    SELECT MAKER_CODE AS code, MAKER_NAME AS name FROM CZ_MAKER ORDER BY name
+  </select>
+
+  <select id="selectModelGroups" resultType="map">
+    SELECT model_group_code AS code, model_group_name AS name
+    FROM cz_model_group
+    WHERE MAKER_CODE = #{makerCode}
+    ORDER BY name
+  </select>
+
+  <select id="selectModels" resultType="map">
+    SELECT model_code AS code, model_name AS name
+    FROM cz_model
+    WHERE MAKER_CODE = #{makerCode}
+      AND model_group_code = #{modelGroupCode}
+    ORDER BY name
+  </select>
+
+  <select id="selectTrims" resultType="map">
+    SELECT trim_code AS code, trim_name AS name
+    FROM cz_trim
+    WHERE MAKER_CODE = #{makerCode}
+      AND model_group_code = #{modelGroupCode}
+      AND MODEL_CODE = #{modelCode}
+    ORDER BY name
+  </select>
+
+  <select id="selectGrades" resultType="map">
+    SELECT grade_code AS code, grade_name AS name
+    FROM cz_grade
+    WHERE MAKER_CODE = #{makerCode}
+      AND model_group_code = #{modelGroupCode}
+      AND MODEL_CODE = #{modelCode}
+      AND TRIM_CODE = #{trimCode}
+    ORDER BY name
+  </select>
+
+</mapper>
