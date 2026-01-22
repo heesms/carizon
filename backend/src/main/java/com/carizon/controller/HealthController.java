@@ -9,7 +9,7 @@ import java.util.Map;
 @RestController
 public class HealthController {
     
-    @GetMapping("/api/health")
+  @GetMapping("/api/health")
     public ApiResponse<Map<String, Object>> health() {
         return ApiResponse.success(Map.of("ok", true, "service", "carizon-api"));
     }

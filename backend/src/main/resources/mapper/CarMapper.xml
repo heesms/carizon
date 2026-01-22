@@ -58,12 +58,18 @@
 
   <select id="selectCarDetail" parameterType="long" resultType="com.carizon.dto.CarDetailRow">
     SELECT cm.car_id AS carId,
-           cm.maker_name, cm.model_group_name, cm.model_name, cm.trim_name,
-           cm.year, cm.mileage, cm.displacement, cm.fuel, cm.transmission, cm.color, cm.body_type, cm.region,
+           pc.maker_name, pc.model_group_name, pc.model_name, pc.trim_name,
+           cm.year, cm.mileage, cm.displacement, 
+           COALESCE(pc.fuel, cm.fuel) AS fuel,
+           COALESCE(pc.transmission, cm.transmission) AS transmission,
+           COALESCE(pc.color, cm.color) AS color,
+           COALESCE(pc.body_type, cm.body_type) AS body_type,
+           COALESCE(pc.region, cm.region) AS region,
            pc.platform_car_id AS platformCarId, pc.platform_name, pc.price, pc.status, pc.pc_url, pc.m_url, DATE_FORMAT(pc.last_seen_date, '%Y-%m-%d') AS lastSeenDate
     FROM car_master cm
-    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+    INNER JOIN platform_car pc ON pc.car_id = cm.car_id
     WHERE cm.car_id = #{carId}
+    LIMIT 1
   </select>
 
   <select id="selectAnyPlatformCarId" parameterType="long" resultType="long">
@@ -124,6 +130,105 @@
       AND MODEL_CODE = #{modelCode}
       AND TRIM_CODE = #{trimCode}
     ORDER BY name
+  </select>
+
+  <!-- Meilisearch 인덱싱용 쿼리: 필터링에 필요한 모든 필드 포함 -->
+  <select id="selectCarsForIndexing" parameterType="map" resultType="map">
+    SELECT cm.car_id AS carId,
+           cm.maker_code AS makerCode,
+           cm.model_group_code AS modelGroupCode,
+           cm.model_code AS modelCode,
+           cm.trim_code AS trimCode,
+           cm.grade_code AS gradeCode,
+           (SELECT MAKER_NAME FROM CZ_MAKER Z WHERE CM.MAKER_CODE = Z.MAKER_CODE) AS makerName,
+           (SELECT MODEL_NAME FROM CZ_MODEL Z WHERE CM.MODEL_CODE = Z.MODEL_CODE) AS modelName,
+           (SELECT TRIM_NAME FROM CZ_TRIM Z WHERE CM.TRIM_CODE = Z.TRIM_CODE) AS trimName,
+           cm.year AS year,
+           cm.mileage AS km,
+           MIN(pc.price) AS priceMin,
+           MAX(pc.price) AS priceMax,
+           MAX(pc.updated_at) AS priceUpdatedAt,
+           COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
+           COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
+           COALESCE(MAX(pc.body_type), cm.body_type) AS bodyType,
+           COALESCE(MAX(pc.region), cm.region) AS region,
+           (SELECT image_url FROM cz_model_image mi
+             WHERE mi.model_code = cm.model_code
+             ORDER BY is_main DESC, sort_order ASC LIMIT 1
+           ) AS representativeImageUrl
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+    WHERE cm.adv_status = 'ONSALE'
+    GROUP BY cm.car_id, cm.maker_code, cm.model_group_code, cm.model_code, cm.trim_code, 
+             cm.grade_code, cm.year, cm.mileage, cm.fuel, cm.transmission, cm.body_type, cm.region
+    ORDER BY cm.car_id
+    LIMIT #{limit} OFFSET #{offset}
+  </select>
+
+  <!-- 증분 인덱싱용: 업데이트된 차량만 조회 -->
+  <select id="selectCarsForIndexingUpdated" parameterType="map" resultType="map">
+    SELECT cm.car_id AS carId,
+           cm.maker_code AS makerCode,
+           cm.model_group_code AS modelGroupCode,
+           cm.model_code AS modelCode,
+           cm.trim_code AS trimCode,
+           cm.grade_code AS gradeCode,
+           (SELECT MAKER_NAME FROM CZ_MAKER Z WHERE CM.MAKER_CODE = Z.MAKER_CODE) AS makerName,
+           (SELECT MODEL_NAME FROM CZ_MODEL Z WHERE CM.MODEL_CODE = Z.MODEL_CODE) AS modelName,
+           (SELECT TRIM_NAME FROM CZ_TRIM Z WHERE CM.TRIM_CODE = Z.TRIM_CODE) AS trimName,
+           cm.year AS year,
+           cm.mileage AS km,
+           MIN(pc.price) AS priceMin,
+           MAX(pc.price) AS priceMax,
+           MAX(pc.updated_at) AS priceUpdatedAt,
+           COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
+           COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
+           COALESCE(MAX(pc.body_type), cm.body_type) AS bodyType,
+           COALESCE(MAX(pc.region), cm.region) AS region,
+           (SELECT image_url FROM cz_model_image mi
+             WHERE mi.model_code = cm.model_code
+             ORDER BY is_main DESC, sort_order ASC LIMIT 1
+           ) AS representativeImageUrl
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+    WHERE cm.adv_status = 'ONSALE'
+      AND cm.updated_at &gt;= #{updatedSince}
+    GROUP BY cm.car_id, cm.maker_code, cm.model_group_code, cm.model_code, cm.trim_code, 
+             cm.grade_code, cm.year, cm.mileage, cm.fuel, cm.transmission, cm.body_type, cm.region
+    ORDER BY cm.updated_at ASC
+    LIMIT #{limit} OFFSET #{offset}
+  </select>
+
+  <!-- 단일 차량 인덱싱용: carId로 조회 -->
+  <select id="selectCarsForIndexingById" parameterType="map" resultType="map">
+    SELECT cm.car_id AS carId,
+           cm.maker_code AS makerCode,
+           cm.model_group_code AS modelGroupCode,
+           cm.model_code AS modelCode,
+           cm.trim_code AS trimCode,
+           cm.grade_code AS gradeCode,
+           (SELECT MAKER_NAME FROM CZ_MAKER Z WHERE CM.MAKER_CODE = Z.MAKER_CODE) AS makerName,
+           (SELECT MODEL_NAME FROM CZ_MODEL Z WHERE CM.MODEL_CODE = Z.MODEL_CODE) AS modelName,
+           (SELECT TRIM_NAME FROM CZ_TRIM Z WHERE CM.TRIM_CODE = Z.TRIM_CODE) AS trimName,
+           cm.year AS year,
+           cm.mileage AS km,
+           MIN(pc.price) AS priceMin,
+           MAX(pc.price) AS priceMax,
+           MAX(pc.updated_at) AS priceUpdatedAt,
+           COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
+           COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
+           COALESCE(MAX(pc.body_type), cm.body_type) AS bodyType,
+           COALESCE(MAX(pc.region), cm.region) AS region,
+           (SELECT image_url FROM cz_model_image mi
+             WHERE mi.model_code = cm.model_code
+             ORDER BY is_main DESC, sort_order ASC LIMIT 1
+           ) AS representativeImageUrl
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+    WHERE cm.car_id = #{carId}
+    GROUP BY cm.car_id, cm.maker_code, cm.model_group_code, cm.model_code, cm.trim_code, 
+             cm.grade_code, cm.year, cm.mileage, cm.fuel, cm.transmission, cm.body_type, cm.region
+    LIMIT 1
   </select>
 
 </mapper>

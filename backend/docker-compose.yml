@@ -1,8 +1,64 @@
 version: '3.8'
 
 services:
+  # MySQL 데이터베이스
+  mysql:
+    image: mysql:8.0
+    container_name: carizon-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: carizon
+      MYSQL_USER: carizon
+      MYSQL_PASSWORD: carizon!1
+      TZ: Asia/Seoul
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d  # 초기 스크립트 (선택사항)
+    command: 
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=Asia/Seoul
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis 캐시
+  redis:
+    image: redis:7-alpine
+    container_name: carizon-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Meilisearch 검색 엔진
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    container_name: carizon-meilisearch
+    ports:
+      - "7700:7700"
+    environment:
+      - MEILI_MASTER_KEY=XIczFckMSgIl7hflj3Xo91iBznGx1Sej4-oIhEf6pjs
+      - MEILI_ENV=development
+    volumes:
+      - meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Chroma 벡터 DB
-  # MySQL은 별도로 실행 중이므로 제외됨
   chroma:
     image: chromadb/chroma:latest
     container_name: carizon-chroma
@@ -18,6 +74,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    depends_on:
+      mysql:
+        condition: service_healthy
 
 volumes:
+  mysql_data:
+  redis_data:
+  meilisearch_data:
   chroma_data:

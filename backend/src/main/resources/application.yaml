@@ -3,20 +3,33 @@ server:
 
 spring:
   datasource:
-    url: jdbc:mysql://127.0.0.1:3306/carizon?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Seoul
+    url: jdbc:mysql://localhost:3306/carizon?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true
     username: carizon
     password: carizon!1
   jackson:
     time-zone: Asia/Seoul
+  # Redis 설정 (선택사항)
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
 
 mybatis:
   mapper-locations: classpath:/mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true
 
+# Meilisearch 설정
+meilisearch:
+  host: http://localhost:7700
+  api-key: ${MEILISEARCH_API_KEY:XIczFckMSgIl7hflj3Xo91iBznGx1Sej4-oIhEf6pjs}
+  index-name: cars
+
 logging:
   level:
     org.springframework.jdbc: DEBUG
+    org.springframework.jdbc.core.StatementCreatorUtils: WARN  # 파라미터 메타데이터 fallback 로그 억제
     org.mybatis: DEBUG
     com.zaxxer.hikari: DEBUG
     com.carizon: DEBUG
@@ -26,12 +39,14 @@ rag:
   # Chroma 벡터 DB (로컬 실행: docker run -p 8000:8000 chromadb/chroma)
   chroma:
     base-url: http://localhost:8000
+    tenant: default_tenant
+    database: default_database
     collection-name: car_listings
   
   # Hugging Face Inference API (무료 티어, API 키 필요)
   # 또는 로컬 Ollama 사용 시 ollama 설정 사용
   embedding:
-    provider: huggingface # huggingface 또는 ollama
+    provider: ollama # huggingface 또는 ollama
     huggingface:
       api-key: ${HUGGINGFACE_API_KEY:} # 환경변수로 설정
       model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 # 한국어 지원 모델
@@ -44,7 +59,43 @@ rag:
     provider: ollama # ollama 또는 huggingface
     ollama:
       base-url: http://localhost:11434
-      model: llama3.1:8b # 또는 qwen2.5:7b 등
+      model: llama3.1:8b # 추천: llama3.1:8b (안정적, 성능 우수)
+      # 기타 옵션: qwen2.5:7b (한국어 특화, 일부 불안정), gemma2:9b (경량)
     huggingface:
       api-key: ${HUGGINGFACE_API_KEY:}
       model: meta-llama/Llama-3.1-8B-Instruct
+  
+  # 추천 로직 설정 (사용자 수정 가능)
+  recommendation:
+    # 추천 이유 생성 로직
+    reason:
+      # 유사도 점수 임계값 (0.0 ~ 1.0)
+      high-similarity-threshold: 0.7
+      # 높은 유사도일 때 표시할 메시지 (${score}는 유사도 점수로 치환됨)
+      high-similarity-message: "요구사항과 높은 유사도(${score}%)를 보입니다. "
+      # 예산 범위 내일 때 표시할 메시지
+      within-budget-message: "예산 범위 내의 가격입니다. "
+      # 주행거리 임계값 (km)
+      low-mileage-threshold: 50000
+      # 주행거리가 적을 때 표시할 메시지
+      low-mileage-message: "주행거리가 적어 상태가 양호할 가능성이 높습니다. "
+      # 기본 추천 이유 메시지
+      default-message: "검색 조건과 일치합니다."
+    
+    # LLM 프롬프트 설정
+    prompt:
+      # 프롬프트 시작 부분
+      intro: "사용자가 다음과 같은 요구사항으로 중고차를 찾고 있습니다:"
+      # 가격 범위 표시 형식
+      price-range-format: "가격 범위: ${minPrice}만원 이상 ${maxPrice}만원 이하"
+      # 차량 목록 제목
+      car-list-title: "검색된 차량 목록:"
+      # 차량 정보 형식 (${index}, ${maker}, ${model}, ${trim}, ${year}, ${mileage}, ${price} 사용 가능)
+      car-format: "${index}. ${maker} ${model} ${trim} (${year}년식) 주행거리: ${mileage}km 가격: ${price}만원"
+      # LLM에게 보낼 지시사항
+      instruction: |
+        위 차량 목록을 바탕으로 사용자에게 친절하고 자연스러운 한국어로 추천 설명을 작성해주세요.
+        각 차량의 특징과 사용자 요구사항과의 매칭 포인트를 설명해주세요.
+        너무 길지 않게 3-5문장 정도로 간결하게 작성해주세요.
+      # LLM 실패 시 기본 메시지
+      default-recommendation: "검색된 차량 중에서 요구사항에 맞는 차량을 추천드립니다."

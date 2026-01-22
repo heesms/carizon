@@ -176,13 +176,14 @@ public class ChutchaCrawler {
             }
 
             String mergedPayload = mapper.writeValueAsString(merged);
-            batch.add(new Object[]{ mergedPayload, hash });
+            String carImageUrl = buildChutchaImageUrl(car);
+            batch.add(new Object[]{ mergedPayload, hash, carImageUrl, Timestamp.from(Instant.now()) });
         }
 
         if (!batch.isEmpty()) {
             jdbc.batchUpdate(
-                    "INSERT INTO raw_chutcha(payload, share_hash) VALUES (CAST(? AS JSON), ?) " +
-                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload)",
+                    "INSERT INTO raw_chutcha(payload, share_hash, car_image_url, fetched_at) VALUES (CAST(? AS JSON), ?, ?, ?) " +
+                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload), car_image_url=VALUES(car_image_url), fetched_at=VALUES(fetched_at)",
                     batch
             );
         }
@@ -316,6 +317,31 @@ public class ChutchaCrawler {
     private static String cut(String s, int max) {
         if (s == null) return null;
         return s.length() <= max ? s : s.substring(0, max);
+    }
+
+    /**
+     * CHUTCHA car_image_url 생성
+     * 규칙: list_img_path 사용
+     * URL 형식: https://img.chutcha.kr/files/car_resist/202601/16/268525803b3ec5677284d1347801188c.jpg
+     */
+    private String buildChutchaImageUrl(Map<String, Object> car) {
+        try {
+            Object listImgPathObj = car.get("list_img_path");
+            if (listImgPathObj == null) return null;
+            
+            String listImgPath = String.valueOf(listImgPathObj);
+            if (listImgPath.isBlank()) return null;
+            
+            // 경로가 /로 시작하면 제거
+            if (listImgPath.startsWith("/")) {
+                listImgPath = listImgPath.substring(1);
+            }
+            
+            return "https://img.chutcha.kr/" + listImgPath;
+        } catch (Exception e) {
+            log.warn("[CHUTCHA] car_image_url 생성 실패: {}", e.getMessage());
+            return null;
+        }
     }
 
     // --------------------- record types ---------------------

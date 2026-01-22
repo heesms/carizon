@@ -91,11 +91,13 @@ public class CharanchaCrawler {
                         break;
                     }
 
-                    // 원본 item 그대로 저장 (raw_charancha.payload JSON)
-                    String sql = "INSERT INTO raw_charancha(payload) VALUES (CAST(? AS JSON))";
+                    // 원본 item 그대로 저장 (raw_charancha.payload JSON) + car_image_url 생성
+                    String sql = "INSERT INTO raw_charancha(payload, car_image_url) VALUES (CAST(? AS JSON), ?)";
                     List<Object[]> params = new ArrayList<>(batchCount);
                     for (Map<String, Object> item : list) {
-                        params.add(new Object[]{ mapper.writeValueAsString(item) });
+                        String payloadJson = mapper.writeValueAsString(item);
+                        String carImageUrl = buildCharanchaImageUrl(item);
+                        params.add(new Object[]{ payloadJson, carImageUrl });
                     }
                     int[] res = jdbc.batchUpdate(sql, params);
                     fetchedTotal += res.length;
@@ -154,5 +156,28 @@ public class CharanchaCrawler {
         p.put("optionCnt", "");
         p.put("optionSearch", "");
         return p;
+    }
+
+    /**
+     * CHARANCHA car_image_url 생성
+     * 규칙: carImg 컬럼 사용
+     * URL 형식: https://charancha.com/uploads/carimg/xxlarge/2026/3fc447ac-7900-48bd-a7b5-4bfaa2aeba31.jpg?w=480&h=360&f=webp
+     */
+    private String buildCharanchaImageUrl(Map<String, Object> item) {
+        try {
+            Object carImgObj = item.get("carImg");
+            if (carImgObj == null) return null;
+            
+            String carImg = String.valueOf(carImgObj);
+            if (carImg.isBlank()) return null;
+            
+            // 현재 연도 추출 (2026)
+            String year = String.valueOf(java.time.Year.now().getValue());
+            
+            return String.format("https://charancha.com/uploads/carimg/xxlarge/%s/%s?w=480&h=360&f=webp", year, carImg);
+        } catch (Exception e) {
+            log.warn("[CHARANCHA] car_image_url 생성 실패: {}", e.getMessage());
+            return null;
+        }
     }
 }

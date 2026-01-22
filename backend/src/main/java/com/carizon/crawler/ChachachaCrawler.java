@@ -26,7 +26,7 @@ public class ChachachaCrawler {
                     "warrantyYn,kbLeaseYn,orderDate,certifiedShopYn,kbCertifiedYn,hasOverThreeFileNames,diagYn," +
                     "diagGbn,lineAdYn,carAccidentNo,colorCodeName,gasName,homeserviceYn2,labsDanjiNo2,premiumYn," +
                     "t34SellGbn,t34MonthAmt,t34DiscountAmt,adState,paymentPremiumYn,contractingYn," +
-                    "makerCode,classCode,carCode,modelCode,gradeCode,useCodeName,autoGbnName,numCc";
+                    "makerCode,classCode,carCode,modelCode,gradeCode,useCodeName,autoGbnName,numCc,fileNameArray";
 
     private final OkHttpClient http = new OkHttpClient();
     private final ObjectMapper mapper = new ObjectMapper();
@@ -106,11 +106,13 @@ public class ChachachaCrawler {
                         break;
                     }
 
-                    // 원본 JSON 저장
-                    String sql = "INSERT INTO raw_chachacha(payload) VALUES (CAST(? AS JSON))";
+                    // 원본 JSON 저장 + car_image_url 생성
+                    String sql = "INSERT INTO raw_chachacha(payload, car_image_url) VALUES (CAST(? AS JSON), ?)";
                     List<Object[]> params = new ArrayList<>(batchCount);
                     for (Map<String, Object> item : list) {
-                        params.add(new Object[]{ mapper.writeValueAsString(item) });
+                        String payloadJson = mapper.writeValueAsString(item);
+                        String carImageUrl = buildChachachaImageUrl(item);
+                        params.add(new Object[]{ payloadJson, carImageUrl });
                     }
                     int[] res = jdbc.batchUpdate(sql, params);
                     log.debug("[CRAWL] page={} dbInserted={}", page, res.length);
@@ -143,5 +145,48 @@ public class ChachachaCrawler {
         }
 
         log.info("[CRAWL] 완료 totalItems={} elapsed={}s", fetchedTotal, Duration.between(started, Instant.now()).toSeconds());
+    }
+
+    /**
+     * CHACHACHA car_image_url 생성
+     * 규칙: fileNameArray 첫번째 파일명 사용
+     * URL 형식: https://img.kbchachacha.com/IMG/carimg/l/img08/img2758/27587540_7561184939553420.jpeg?width=720
+     * - img08: car_seq의 4번째 자리수 (0이면 img10)
+     * - img2758: car_seq의 1~4번째 자리수
+     */
+    private String buildChachachaImageUrl(Map<String, Object> item) {
+        try {
+            Object carSeqObj = item.get("carSeq");
+            if (carSeqObj == null) return null;
+            
+            String carSeq = String.valueOf(carSeqObj);
+            if (carSeq.length() < 4) return null;
+            
+            // fileNameArray에서 첫번째 파일명 가져오기
+            Object fileNameArrayObj = item.get("fileNameArray");
+            String fileName = null;
+            if (fileNameArrayObj instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<Object> fileNameList = (List<Object>) fileNameArrayObj;
+                if (!fileNameList.isEmpty()) {
+                    fileName = String.valueOf(fileNameList.get(0));
+                }
+            }
+            if (fileName == null || fileName.isBlank()) return null;
+            
+            // car_seq에서 경로 추출
+            // 4번째 자리수 (인덱스 3)
+            int fourthDigit = Character.getNumericValue(carSeq.charAt(3));
+            String imgFolder = (fourthDigit == 0) ? "img10" : "img" + String.format("%02d", fourthDigit);
+            
+            // 1~4번째 자리수 (인덱스 0~3)
+            String imgPath = carSeq.substring(0, Math.min(4, carSeq.length()));
+            
+            return String.format("https://img.kbchachacha.com/IMG/carimg/l/%s/img%s/%s?width=720",
+                    imgFolder, imgPath, fileName);
+        } catch (Exception e) {
+            log.warn("[CHACHACHA] car_image_url 생성 실패: {}", e.getMessage());
+            return null;
+        }
     }
 }

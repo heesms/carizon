@@ -34,6 +34,7 @@ public class RecommendationResponse {
         private String transmission;
         private String color;
         private String url;
+        private String imageUrl; // 차량 이미지 URL
         private Double relevanceScore; // 유사도 점수
         private String reason; // 추천 이유
     }

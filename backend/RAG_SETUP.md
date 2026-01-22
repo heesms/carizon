@@ -176,9 +176,11 @@ Content-Type: application/json
 ### LLM 모델
 
 1. **Ollama (로컬)**: 
-   - `llama3.1:8b` - 추천
-   - `qwen2.5:7b` - 한국어 성능 우수
-   - `gemma2:9b` - 경량화
+   - `llama3.1:8b` - **추천** ✅ (안정적, 전반적 성능 우수)
+   - `qwen2.5:7b` - 한국어 성능 우수하나 일부 사용자 경험에서 불안정
+   - `gemma2:9b` - 경량화, 한국어 지원 제한적
+   
+   **모델 선택 및 파인튜닝 가이드:** [LLM_MODEL_GUIDE.md](./LLM_MODEL_GUIDE.md) 참조
    
 2. **Hugging Face Inference API**: 무료 티어 사용 가능
    - `meta-llama/Llama-3.1-8B-Instruct`

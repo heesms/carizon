@@ -112,7 +112,7 @@ public class KcarCrawler {
                     }
                     emptyCount = 0;
 
-                    // UPSERT (car_cd UNIQUE)
+                    // UPSERT (car_cd UNIQUE) + car_image_url은 main_img 컬럼에서 추출 (머지 시 처리)
                     String sql = "INSERT INTO raw_kcar(payload) VALUES (CAST(? AS JSON)) " +
                             "ON DUPLICATE KEY UPDATE payload=VALUES(payload), fetched_at=CURRENT_TIMESTAMP";
                     List<Object[]> params = new ArrayList<>(rows.size());

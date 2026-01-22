@@ -185,11 +185,13 @@ public class EncarCrawler {
                 }
 
                 if (!vehicles.isEmpty()) {
-                    String sql = "INSERT INTO raw_encar(payload) VALUES (CAST(? AS JSON)) " +
-                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload), fetched_at=CURRENT_TIMESTAMP";
+                    String sql = "INSERT INTO raw_encar(payload, car_image_url) VALUES (CAST(? AS JSON), ?) " +
+                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload), car_image_url=VALUES(car_image_url), fetched_at=CURRENT_TIMESTAMP";
                     List<Object[]> params = new ArrayList<>(vehicles.size());
                     for (Map<String, Object> v : vehicles) {
-                        params.add(new Object[]{mapper.writeValueAsString(v)});
+                        String payloadJson = mapper.writeValueAsString(v);
+                        String carImageUrl = buildEncarImageUrl(v);
+                        params.add(new Object[]{payloadJson, carImageUrl});
                     }
                     int[] res = jdbc.batchUpdate(sql, params);
                     inserted += res.length;
@@ -250,5 +252,41 @@ public class EncarCrawler {
             }
         }
         throw (last != null ? last : new IllegalStateException("fetch failed"));
+    }
+
+    /**
+     * ENCAR car_image_url 생성
+     * 규칙: payload의 photos 오브젝트에서 code=001인 path 사용
+     * URL 형식: https://ci.encar.com/carpicture/carpicture08/pic4128/41289848_001.jpg?impolicy=heightRate&rh=384&cw=640&ch=384&cg=Center&wtmk=https://ci.encar.com/wt_mark/w_mark_04.png&t=20260106171453
+     */
+    private String buildEncarImageUrl(Map<String, Object> vehicle) {
+        try {
+            Object photosObj = vehicle.get("photos");
+            if (photosObj == null) return null;
+            
+            if (photosObj instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> photos = (List<Map<String, Object>>) photosObj;
+                for (Map<String, Object> photo : photos) {
+                    Object codeObj = photo.get("code");
+                    if (codeObj != null && "001".equals(String.valueOf(codeObj))) {
+                        Object pathObj = photo.get("path");
+                        if (pathObj != null) {
+                            String path = String.valueOf(pathObj);
+                            if (path.startsWith("/")) {
+                                path = path.substring(1); // 앞의 / 제거
+                            }
+                            return "https://ci.encar.com/carpicture/" + path + 
+                                    "?impolicy=heightRate&rh=384&cw=640&ch=384&cg=Center&wtmk=https://ci.encar.com/wt_mark/w_mark_04.png&t=" + 
+                                    System.currentTimeMillis();
+                        }
+                    }
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            log.warn("[ENCAR] car_image_url 생성 실패: {}", e.getMessage());
+            return null;
+        }
     }
 }

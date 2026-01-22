@@ -126,6 +126,19 @@
       <version>0.29.1</version>
     </dependency>
 
+    <!-- Meilisearch Java Client -->
+    <dependency>
+      <groupId>com.meilisearch.sdk</groupId>
+      <artifactId>meilisearch-java</artifactId>
+      <version>0.11.4</version>
+    </dependency>
+
+    <!-- Redis -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis</artifactId>
+    </dependency>
+
   </dependencies>
   <build>
     <plugins>

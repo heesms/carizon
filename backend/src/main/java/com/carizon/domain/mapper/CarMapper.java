@@ -20,4 +20,7 @@ public interface CarMapper {
   List<Map<String,Object>> selectModels(@Param("makerCode") String makerCode, @Param("modelGroupCode") String modelGroupCode);
   List<Map<String,Object>> selectTrims(@Param("makerCode") String makerCode, @Param("modelGroupCode") String modelGroupCode, @Param("modelCode") String modelCode);
   List<Map<String,Object>> selectGrades(@Param("makerCode") String makerCode, @Param("modelGroupCode") String modelGroupCode, @Param("modelCode") String modelCode, @Param("trimCode") String trimCode);
+  List<Map<String,Object>> selectCarsForIndexing(Map<String,Object> params);
+  List<Map<String,Object>> selectCarsForIndexingUpdated(Map<String,Object> params);
+  List<Map<String,Object>> selectCarsForIndexingById(Map<String,Object> params);
 }

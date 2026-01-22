@@ -8,8 +8,6 @@ import okhttp3.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -51,6 +49,16 @@ public class TcarCrawler {
         int fetchedTotal = 0;
 
         try {
+            // ★ 시작 시 한 번만 전체 초기화
+            try {
+                log.warn("[TCAR] TRUNCATE raw_tcar 시작");
+                jdbc.execute("TRUNCATE TABLE raw_tcar");
+                log.warn("[TCAR] TRUNCATE raw_tcar 완료");
+            } catch (Exception e) {
+                log.error("[TCAR] TRUNCATE 실패: {}", e.toString(), e);
+                return; // 초기화 안 되면 적재하지 않음
+            }
+
             log.info("[TCAR] 시작: perPage={}", perPage);
 
             while (true) {
@@ -86,11 +94,14 @@ public class TcarCrawler {
                         break;
                     }
 
-                    // 원본 item 그대로 저장 (raw_tcar.payload)
-                    String sql = "INSERT INTO raw_tcar(payload) VALUES (CAST(? AS JSON))";
+                    // 원본 item 그대로 저장 (raw_tcar.payload) + car_image_url2 생성
+                    // car_image_url은 GENERATED COLUMN이므로 car_image_url2 사용
+                    String sql = "INSERT INTO raw_tcar(payload, car_image_url2) VALUES (CAST(? AS JSON), ?)";
                     List<Object[]> params = new ArrayList<>(batchCount);
                     for (Map<String, Object> item : list) {
-                        params.add(new Object[]{ mapper.writeValueAsString(item) });
+                        String payloadJson = mapper.writeValueAsString(item);
+                        String carImageUrl = buildTcarImageUrl(item);
+                        params.add(new Object[]{ payloadJson, carImageUrl });
                     }
                     int[] res = jdbc.batchUpdate(sql, params);
                     fetchedTotal += res.length;
@@ -170,5 +181,30 @@ public class TcarCrawler {
         // shuffleKey 등 유동 파라미터는 생략해도 목록 반환됨
 
         return b.build();
+    }
+
+    /**
+     * TCAR car_image_url 생성
+     * 규칙: carThumbnail 사용
+     * URL 형식: https://img-mycarsave.lotterentacar.net/uploadFile/2025/09/19/LFILE_000070902320250919081733.png
+     */
+    private String buildTcarImageUrl(Map<String, Object> item) {
+        try {
+            Object carThumbnailObj = item.get("carThumbnail");
+            if (carThumbnailObj == null) return null;
+            
+            String carThumbnail = String.valueOf(carThumbnailObj);
+            if (carThumbnail.isBlank()) return null;
+            
+            // 경로가 /로 시작하면 제거
+            if (carThumbnail.startsWith("/")) {
+                carThumbnail = carThumbnail.substring(1);
+            }
+            
+            return "https://img-mycarsave.lotterentacar.net/uploadFile/" + carThumbnail;
+        } catch (Exception e) {
+            log.warn("[TCAR] car_image_url 생성 실패: {}", e.getMessage());
+            return null;
+        }
     }
 }
