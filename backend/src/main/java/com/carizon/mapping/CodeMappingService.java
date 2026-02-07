@@ -49,12 +49,20 @@ public class CodeMappingService {
         log.debug("preloadPlateStd : {}", plateStd) ;
         var forced = preloadForced(platform);
         var dict = preloadStandardDictionaries(); // maker→groups→models→trims→grades 이름 캐시
+        Set<String> existingKeys = preloadExistingMappings(platform, rows); // 이미 cz_code_map에 있는 매핑들 (모든 status)
 
         // 3) 배치 업서트 버퍼
         List<Param> buffer = new ArrayList<>(BATCH_SIZE);
         int total = 0;
+        int skipped = 0;
 
         for (Row r : rows) {
+            // 이미 cz_code_map에 있는 매핑은 스킵 (모든 status)
+            String key = makeKey(platform, r.p_maker_code, r.p_model_group_code, r.p_model_code, r.p_trim_code, r.p_grade_code);
+            if (existingKeys.contains(key)) {
+                skipped++;
+                continue;
+            }
             // 플랫폼 정규화 이름
             String pmkN = normalize(r.p_maker_name, Level.MAKER);
             String pmgN = normalize(r.p_model_group_name, Level.MODEL_GROUP);
@@ -122,7 +130,7 @@ public class CodeMappingService {
         }
         if (!buffer.isEmpty()) total += upsertBatch(buffer);
 
-        log.info("auto-mapping v2 platform={} scope={} affected={}", platform, scope, total);
+        log.info("auto-mapping v2 platform={} scope={} affected={} skipped={}", platform, scope, total, skipped);
         return total;
     }
 
@@ -290,6 +298,37 @@ public class CodeMappingService {
     }
     private Dict preloadStandardDictionaries() { return new Dict(); }
 
+    // 이미 cz_code_map에 있는 매핑들을 미리 조회 (스킵 최적화 - 모든 status)
+    private Set<String> preloadExistingMappings(String platform, List<Row> rows) {
+        if (rows.isEmpty()) return new HashSet<>();
+        
+        // cz_code_map에서 해당 플랫폼의 모든 매핑 조회 (status 무관)
+        // unique key는 (platform_name, p_maker_code, p_model_group_code, p_model_code, p_trim_code, p_grade_code) 조합
+        List<String> existing = jdbc.query("""
+            SELECT CONCAT(COALESCE(platform_name, ''), '|',
+                   COALESCE(p_maker_code, ''), '|',
+                   COALESCE(p_model_group_code, ''), '|',
+                   COALESCE(p_model_code, ''), '|',
+                   COALESCE(p_trim_code, ''), '|',
+                   COALESCE(p_grade_code, '')) AS mapping_key
+            FROM cz_code_map
+            WHERE platform_name = ?
+        """, (rs, i) -> rs.getString(1), platform);
+        
+        return new HashSet<>(existing);
+    }
+    
+    // 매핑 unique key 생성 (platform_name|p_maker_code|p_model_group_code|p_model_code|p_trim_code|p_grade_code)
+    private String makeKey(String platform, String mk, String mg, String md, String tr, String gr) {
+        return String.format("%s|%s|%s|%s|%s|%s",
+            platform != null ? platform : "",
+            mk != null ? mk : "",
+            mg != null ? mg : "",
+            md != null ? md : "",
+            tr != null ? tr : "",
+            gr != null ? gr : "");
+    }
+
     private Std findForced(List<Forced> forced, Row r) {
         for (Forced f : forced) {
             if (f.depth>=1 && neq(f.p_mk, r.p_maker_code)) continue;
@@ -337,6 +376,9 @@ public class CodeMappingService {
                 Param p = list.get(i);
                 int x=1;
                 // 1) platform_name
+                if (i == 0) { // 첫 번째 행만 로그
+                    log.debug("[코드매핑] platform={}, reason={}, status={}", p.platform, p.reason, p.status);
+                }
                 ps.setString(x++, p.platform);
                 // 2~6) p_*_code
                 ps.setString(x++, p.row.p_maker_code);

@@ -1,5 +1,15 @@
 # Cursor IDE에서 JVM 옵션 추가 방법
 
+## "java.lang.Object cannot be resolved" 오류가 날 때
+
+IDE가 JDK를 찾지 못할 때 발생합니다. 다음을 확인하세요.
+
+1. **JDK 21 설치**: 프로젝트는 Java 21을 사용합니다 (`pom.xml`).
+2. **`.vscode/settings.json`**: 이 프로젝트에는 Java 21 런타임 경로가 설정되어 있습니다.
+   - JDK가 다른 경로에 있으면 `.vscode/settings.json`의 `java.configuration.runtimes[].path`와 `java.jdt.ls.java.home` 값을 **실제 JDK 21 설치 경로**로 바꾸세요.
+   - 예: `C:\Program Files\Eclipse Adoptium\jdk-21.0.x`, `C:\Users\<사용자>\.jdks\temurin-21` 등.
+3. **Cursor 재시작** 또는 **Command Palette → "Java: Clean Java Language Server Workspace"** 후 재시작.
+
 ## 방법 1: launch.json 설정 (권장)
 
 1. `.vscode` 폴더에 `launch.json` 파일 생성 또는 수정

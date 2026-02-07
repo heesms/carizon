@@ -24,6 +24,8 @@ npm run dev
 
 **중요**: 백엔드 서버(`http://localhost:8080`)가 실행 중이어야 합니다.
 
+- Cursor 터미널에서 `npm run dev` 시 포트 권한 오류(EACCES)가 나면, **Git Bash·PowerShell 등 별도 터미널**에서 `admin-frontend`로 이동 후 `npm run dev` 실행하면 됩니다.
+
 ## LLM 프롬프트 및 설정 관리
 
 ### LLM 프롬프트란?

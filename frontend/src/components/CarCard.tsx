@@ -1,8 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 
-// Search.tsx에서 쓴 타입을 그대로 복사(또는 import)
-// (여기서 다시 선언해도 무방)
 type CarListItem = {
     carId: number
     maker: string
@@ -16,7 +14,7 @@ type CarListItem = {
     modelCode?: string
 }
 
-const NO_IMAGE = '/image/car/noimage/no_image.png' // public/ 아래 경로
+const NO_IMAGE = '/image/car/noimage/no_image.png'
 
 function modelImageUrl(modelCode?: string, fallback?: string) {
     if (modelCode) return `/image/car/model/${modelCode}.webp`
@@ -24,11 +22,9 @@ function modelImageUrl(modelCode?: string, fallback?: string) {
 }
 
 export default function CarCard({
-                                    item,
-                                    compact = true,
-                                }: { item: CarListItem; compact?: boolean }) {
-
-    // 방어: item이 비어있을 일은 거의 없지만 혹시 몰라 체크
+    item,
+    compact = true,
+}: { item: CarListItem; compact?: boolean }) {
     if (!item) return null
 
     const [imgSrc, setImgSrc] = React.useState(
@@ -37,54 +33,86 @@ export default function CarCard({
 
     const price =
         item.priceMin && item.priceMax && item.priceMin !== item.priceMax
-            ? `${item.priceMin.toLocaleString()} ~ ${item.priceMax.toLocaleString()} 원`
-            : (item.priceMin ? `${item.priceMin.toLocaleString()} 원` : '가격정보 없음')
+            ? `${item.priceMin.toLocaleString()} ~ ${item.priceMax.toLocaleString()}원`
+            : (item.priceMin ? `${item.priceMin.toLocaleString()}원` : '가격정보 없음')
 
     if (compact) {
         return (
-            <Link to={`/cars/${item.carId}`} className="group flex gap-3 bg-white rounded-xl border p-3 hover:shadow transition">
-                <div className="w-28 h-20 bg-gray-100 overflow-hidden rounded">
+            <Link 
+                to={`/cars/${item.carId}`} 
+                className="group modern-card p-4 flex gap-4 hover-lift animate-fade-in"
+            >
+                <div className="w-32 h-24 sm:w-36 sm:h-28 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden rounded-xl flex-shrink-0 shadow-inner">
                     <img
                         src={imgSrc}
-                        alt=""
-                        className="w-full h-full object-cover"
+                        alt={`${item.maker} ${item.model}`}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                         loading="lazy"
                         onError={() => setImgSrc(NO_IMAGE)}
                     />
                 </div>
-                <div className="min-w-0">
-                    <div className="font-semibold leading-tight line-clamp-1">
-                        {item.maker} {item.model}{item.trim ? ` ${item.trim}` : ''}
+                <div className="min-w-0 flex-1 flex flex-col justify-between">
+                    <div>
+                        <h3 className="font-bold text-lg leading-tight line-clamp-2 group-hover:text-blue-600 transition mb-1">
+                            {item.maker} {item.model}{item.trim ? ` ${item.trim}` : ''}
+                        </h3>
+                        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                            {item.year && (
+                                <span className="flex items-center gap-1">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                    {item.year}년식
+                                </span>
+                            )}
+                            {item.km && (
+                                <span className="flex items-center gap-1">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                    {item.km.toLocaleString()}km
+                                </span>
+                            )}
+                        </div>
                     </div>
-                    <div className="text-xs text-gray-600">
-                        {item.year ?? '-'} · {item.km?.toLocaleString() ?? '-'} km
+                    <div className="mt-2">
+                        <div className="text-xl font-bold text-blue-600">{price}</div>
                     </div>
-                    <div className="text-sm font-bold mt-0.5">{price}</div>
+                </div>
+                <div className="flex-shrink-0 self-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
                 </div>
             </Link>
         )
     }
 
-    // (옵션) 큰 카드 모드
+    // 큰 카드 모드
     return (
-        <Link to={`/cars/${item.carId}`} className="group block bg-white rounded-2xl border hover:shadow-lg transition-shadow overflow-hidden">
-            <div className="aspect-[16/10] bg-gray-100 overflow-hidden">
+        <Link 
+            to={`/cars/${item.carId}`} 
+            className="group block modern-card overflow-hidden hover-lift"
+        >
+            <div className="aspect-[16/10] bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden relative">
                 <img
                     src={imgSrc}
-                    alt=""
-                    className="h-full w-full object-cover group-hover:scale-[1.02] transition-transform"
+                    alt={`${item.maker} ${item.model}`}
+                    className="h-full w-full object-cover group-hover:scale-110 transition-transform duration-500"
                     loading="lazy"
                     onError={() => setImgSrc(NO_IMAGE)}
                 />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
             </div>
-            <div className="p-3 space-y-1.5">
-                <div className="font-semibold leading-tight line-clamp-1">
+            <div className="p-4 space-y-2">
+                <h3 className="font-bold text-lg leading-tight line-clamp-1 group-hover:text-blue-600 transition">
                     {item.maker} {item.model}{item.trim ? ` ${item.trim}` : ''}
+                </h3>
+                <div className="flex items-center gap-3 text-sm text-gray-600">
+                    {item.year && <span>{item.year}년식</span>}
+                    {item.km && <span>{item.km.toLocaleString()}km</span>}
                 </div>
-                <div className="text-sm text-gray-600">
-                    {item.year ?? '-'} · {item.km?.toLocaleString() ?? '-'} km
-                </div>
-                <div className="text-[15px] font-bold">{price}</div>
+                <div className="text-xl font-bold text-blue-600">{price}</div>
             </div>
         </Link>
     )

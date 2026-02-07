@@ -35,7 +35,7 @@ public class WeeklyBestCarController {
         
         log.info("[주간 Best] 모델별 조회: modelCode={}, limit={}", modelCode, limit);
         
-        List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, limit);
+        List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, null, limit);
         
         return ApiResponse.success(bestCars);
     }
@@ -48,7 +48,7 @@ public class WeeklyBestCarController {
         
         log.info("[주간 Best] 전체 조회: limit={}", limit);
         
-        List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(null, limit);
+        List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(null, null, limit);
         
         return ApiResponse.success(bestCars);
     }
@@ -62,7 +62,7 @@ public class WeeklyBestCarController {
         
         log.info("[블로그 포스팅] 내용 생성: modelCode={}, limit={}", modelCode, limit);
         
-        List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, limit);
+        List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, null, limit);
         
         if (bestCars.isEmpty()) {
             return ApiResponse.error("매물이 없습니다.");
@@ -75,7 +75,7 @@ public class WeeklyBestCarController {
         }
 
         String title = blogPostService.generateBlogPostTitle(modelName);
-        String content = blogPostService.generateBlogPostContent(modelCode, modelName, bestCars);
+        String content = blogPostService.generateBlogPostContent(modelCode, modelName, null, null, bestCars);
 
         return ApiResponse.success(Map.of(
                 "title", title,

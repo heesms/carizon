@@ -268,7 +268,7 @@ public class MergeService {
                       DATE_FORMAT(r.first_ad_dt, '%Y%m%d'),
                       NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
                     FROM raw_encar r
-                    WHERE r.id > ? AND r.id <= ?
+                    WHERE r.id > ? AND r.id <= ? AND r.sell_type = 'NORMAL'
                     ON DUPLICATE KEY UPDATE
                       price          = VALUES(price),
                       status         = VALUES(status),
@@ -502,10 +502,8 @@ public class MergeService {
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.subgradeName')),
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.gradeName')),
                       COALESCE(
-                               CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.price')), ',', ''), 'null') AS UNSIGNED),
-                               CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.priceNew')), ',', ''), 'null') AS UNSIGNED),
-                               CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.priceSell')), ',', ''), 'null') AS UNSIGNED),
-                               CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.promotionPrice')), ',', ''), 'null') AS UNSIGNED)),
+                        NULLIF(CAST(NULLIF(TRIM(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.returnPrice')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.return_price'))), ',', '')), '') AS UNSIGNED), 0) DIV 10000,
+                        CAST(NULLIF(TRIM(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.price')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.priceNew')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.priceSell')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.promotionPrice'))), ',', '')), '') AS UNSIGNED)),
                       CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.mileage')), ',', ''), 'null') AS UNSIGNED),
                       CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.displacement')), ',', ''), 'null') AS UNSIGNED),
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.regYear')),
@@ -579,6 +577,337 @@ public class MergeService {
         snapshotPrices(bizDate);
         closeMissingAds(bizDate);
         return linked;
+    }
+
+    /** TRUNCATE 후 platform_car와 car_master 재생성 (순수 INSERT만 사용, 더 빠름) */
+    public Map<String, Object> rebuildFromScratch(LocalDate bizDate) {
+        log.warn("[merge] rebuildFromScratch: platform_car, car_master, car_price_history를 TRUNCATE하고 재생성합니다!");
+        
+        // 1단계: TRUNCATE (car_price_history → car_master → platform_car 순서)
+        jdbc.execute("TRUNCATE TABLE car_price_history");
+        log.info("[merge] car_price_history TRUNCATE 완료");
+        
+        jdbc.execute("TRUNCATE TABLE car_master");
+        log.info("[merge] car_master TRUNCATE 완료");
+        
+        jdbc.execute("TRUNCATE TABLE platform_car");
+        log.info("[merge] platform_car TRUNCATE 완료");
+        
+        // 2단계: platform_car 재생성 (raw_*에서 INSERT만 - ON DUPLICATE KEY UPDATE 제거)
+        log.info("[merge] platform_car 재생성 시작...");
+        int platformCarCount = mergeAllPlatformsInsertOnly(bizDate);
+        log.info("[merge] platform_car 재생성 완료: {}건", platformCarCount);
+        
+        return Map.of("platformCarCount", platformCarCount);
+    }
+
+    /** raw_*에서 platform_car로 INSERT만 수행 (ON DUPLICATE KEY UPDATE 없음) */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    private int mergeAllPlatformsInsertOnly(LocalDate bizDate) {
+        if (PARALLEL_ALL) {
+            var ex = Executors.newFixedThreadPool(6);
+            try {
+                CompletableFuture.allOf(
+                        CompletableFuture.runAsync(() -> mergeChachachaDetailInsertOnly(bizDate), ex),
+                        CompletableFuture.runAsync(() -> mergeEncarDetailInsertOnly(bizDate), ex),
+                        CompletableFuture.runAsync(() -> mergeKcarDetailInsertOnly(bizDate), ex),
+                        CompletableFuture.runAsync(() -> mergeChutchaDetailInsertOnly(bizDate), ex),
+                        CompletableFuture.runAsync(() -> mergeCharanchaDetailInsertOnly(bizDate), ex),
+                        CompletableFuture.runAsync(() -> mergeTcarDetailInsertOnly(bizDate), ex)
+                ).join();
+            } finally { ex.shutdown(); }
+        } else {
+            mergeChachachaDetailInsertOnly(bizDate);
+            mergeEncarDetailInsertOnly(bizDate);
+            mergeKcarDetailInsertOnly(bizDate);
+            mergeChutchaDetailInsertOnly(bizDate);
+            mergeCharanchaDetailInsertOnly(bizDate);
+            mergeTcarDetailInsertOnly(bizDate);
+        }
+        
+        // 재생성 후 개수 조회
+        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM platform_car", Integer.class);
+        return count != null ? count : 0;
+    }
+
+    /** CHACHACHA INSERT만 (ON DUPLICATE KEY UPDATE 제거) */
+    private void mergeChachachaDetailInsertOnly(LocalDate bizDate) {
+        long from = 0L;
+        final String lockName = "merge:CHACHACHA";
+        String bizDateStr = bizDate.toString();
+        
+        while (true) {
+            Long to = nextUpperIdFor("raw_chachacha", from, UPSERT_BATCH_SIZE);
+            if (to == null) break;
+            final long cursorFrom = from;
+            final long cursorTo   = to;
+
+            inTxWithNamedLock(lockName, () -> {
+                String sql = """
+                    INSERT IGNORE INTO platform_car
+                      (platform_name, platform_car_key, car_no, car_id,
+                       maker_code, model_group_code, model_code, trim_code, grade_code,
+                       maker_name, model_group_name, model_name, trim_name, grade_name,
+                       price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
+                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                    SELECT
+                       'CHACHACHA', r.car_seq, r.car_no, NULL,
+                       r.MAKER_CODE, r.CLASS_CODE, r.CAR_CODE, r.MODEL_CODE, r.GRADE_CODE,
+                       r.MAKER_NAME, r.CLASS_NAME, r.CAR_NAME, r.MODEL_NAME, r.GRADE_NAME,
+                       r.SELL_AMT, r.KM, r.displacement, r.YYMM, 'ONSALE', r.COLOR, r.GAS_NAME, r.auto_gbn_name, r.use_code_name, r.REGION,
+                       CONCAT('https://m.kbchachacha.com/public/web/car/detail.kbc?carSeq=', r.CAR_SEQ),
+                       CONCAT('https://www.kbchachacha.com/public/car/detail.kbc?carSeq=', r.car_seq),
+                       r.FIRST_AD_DAY, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
+                    FROM raw_chachacha r
+                    WHERE r.id > ? AND r.id <= ?
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                jdbc.update(sql, cursorFrom, cursorTo);
+                return null;
+            });
+
+            from = cursorTo;
+        }
+    }
+
+    /** ENCAR INSERT만 */
+    private void mergeEncarDetailInsertOnly(LocalDate bizDate) {
+        long from = 0L;
+        final String lockName = "merge:ENCAR";
+        String bizDateStr = bizDate.toString();
+        
+        while (true) {
+            Long to = nextUpperIdFor("raw_encar", from, UPSERT_BATCH_SIZE);
+            if (to == null) break;
+            final long cursorFrom = from;
+            final long cursorTo   = to;
+
+            inTxWithNamedLock(lockName, () -> {
+                String sql = """
+                    INSERT IGNORE INTO platform_car
+                      (platform_name, platform_car_key, car_no, car_id,
+                       maker_code, model_group_code, model_code, trim_code, grade_code,
+                       maker_name, model_group_name, model_name, trim_name, grade_name,
+                       price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
+                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                    SELECT DISTINCT
+                      'ENCAR', r.vehicle_id, r.vehicle_no, NULL,
+                      r.manufacturer_code, r.model_group_code, r.model_code, r.grade_code, r.grade_detail_code,
+                      r.manufacturer_name, r.model_group_name, r.model_name, r.grade_name, r.grade_detail_name,
+                      COALESCE(CAST(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.price')), ',', '') AS UNSIGNED), r.price),
+                      r.mileage, r.displacement , r.form_year,
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.status')),
+                      r.color, r.fuel, r.transmission, r.body_type, r.region,
+                      CONCAT('https://fem.encar.com/cars/detail/', r.vehicle_id),
+                      CONCAT('https://fem.encar.com/cars/detail/', r.vehicle_id),
+                      DATE_FORMAT(r.first_ad_dt, '%Y%m%d'),
+                      NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
+                    FROM raw_encar r
+                    WHERE r.id > ? AND r.id <= ? AND r.sell_type = 'NORMAL'
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                jdbc.update(sql, cursorFrom, cursorTo);
+                return null;
+            });
+
+            from = cursorTo;
+        }
+    }
+
+    /** KCAR INSERT만 */
+    private void mergeKcarDetailInsertOnly(LocalDate bizDate) {
+        long from = 0L;
+        final String lockName = "merge:KCAR";
+        String bizDateStr = bizDate.toString();
+        
+        while (true) {
+            Long to = nextUpperIdFor("raw_kcar", from, UPSERT_BATCH_SIZE);
+            if (to == null) break;
+            final long cursorFrom = from;
+            final long cursorTo   = to;
+
+            inTxWithNamedLock(lockName, () -> {
+                String sql = """
+                    INSERT IGNORE INTO platform_car
+                      (platform_name, platform_car_key, car_no, car_id,
+                       maker_code, model_group_code, model_code, trim_code, grade_code,
+                       maker_name, model_group_name, model_name, trim_name, grade_name,
+                       price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
+                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                    SELECT
+                      'KCAR', r.car_cd, r.cno, NULL,
+                      r.maker_code, r.model_group_code, r.model_code, r.grade_code, r.grade_detail_code,
+                      r.maker_name, r.model_group_name, r.model_name, r.grade_name, r.grade_detail_name,
+                      r.price, r.mileage, r.displacement, r.yymm, 'SALE',
+                      r.color, r.fuel, r.transmission, r.body_type, r.region,
+                      CONCAT('https://m.kcar.com/bc/detail/carInfoDtl?i_sCarCd=', r.car_cd),
+                      CONCAT('https://www.kcar.com/bc/detail/carInfoDtl?i_sCarCd=', r.car_cd),
+                      NULL, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.main_img
+                    FROM raw_kcar r
+                    WHERE r.id > ? AND r.id <= ?
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                jdbc.update(sql, cursorFrom, cursorTo);
+                return null;
+            });
+
+            from = cursorTo;
+        }
+    }
+
+    /** CHUTCHA INSERT만 */
+    private void mergeChutchaDetailInsertOnly(LocalDate bizDate) {
+        long from = 0L;
+        final String lockName = "merge:CHUTCHA";
+        String bizDateStr = bizDate.toString();
+        
+        while (true) {
+            Long to = nextUpperIdFor("raw_chutcha", from, UPSERT_BATCH_SIZE);
+            if (to == null) break;
+            final long cursorFrom = from;
+            final long cursorTo   = to;
+
+            inTxWithNamedLock(lockName, () -> {
+                String sql = """
+                    INSERT IGNORE INTO platform_car
+                      (platform_name, platform_car_key, car_no, car_id,
+                       maker_name, model_group_name, model_name, trim_name, grade_name,
+                       price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
+                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                    SELECT
+                      'CHUTCHA', r.car_id, r.number_plate, NULL,
+                      r.brand_name, r.model_name, r.sub_model_name, r.grade_name, r.sub_grade_name,
+                      r.price, r.mileage, r.displacement, r.first_reg_year, NULL,
+                      r.color, r.fuel_name, r.transmission_name, r.car_type, r.shop_addr_short,
+                      CONCAT('https://www.chutcha.net/share/car/detail/', JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.detail_link_hash'))),
+                      CONCAT('https://web.chutcha.net/bmc/detail/', JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.detail_link_hash'))),
+                      NULL, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
+                    FROM raw_chutcha r
+                    WHERE r.id > ? AND r.id <= ? AND r.CAR_ID IS NOT NULL
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                jdbc.update(sql, cursorFrom, cursorTo);
+                return null;
+            });
+
+            from = cursorTo;
+        }
+    }
+
+    /** CHARANCHA INSERT만 */
+    private void mergeCharanchaDetailInsertOnly(LocalDate bizDate) {
+        long from = 0L;
+        final String lockName = "merge:CHARANCHA";
+        String bizDateStr = bizDate.toString();
+        
+        while (true) {
+            Long to = nextUpperIdFor("raw_charancha", from, UPSERT_BATCH_SIZE);
+            if (to == null) break;
+            final long cursorFrom = from;
+            final long cursorTo   = to;
+
+            inTxWithNamedLock(lockName, () -> {
+                String sql = """
+                    INSERT IGNORE INTO platform_car
+                      (platform_name, platform_car_key, car_no, car_id,
+                       maker_code, model_group_code, model_code, trim_code,
+                       maker_name, model_group_name, model_name, trim_name,
+                       price, km, displacement, yymm, status,
+                       color, fuel, transmission, body_type, region,
+                       m_url, pc_url,
+                       first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                    SELECT
+                      'CHARANCHA', R.SELL_NO, R.CAR_NO, NULL,
+                      R.maker_code, R.model_code, R.model_detail_code, R.grade_code,
+                      R.maker_name, R.model_name, R.model_detail_name, R.grade_name,
+                      r.sell_price, r.mileage, r.displacement, substr(r.yyyymm,1,4), 'SALE',
+                      R.color_name, R.fuel_name, R.transmission_name, R.car_type, r.region_name,
+                      CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
+                      CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
+                      NULL, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
+                    FROM RAW_CHARANCHA r
+                    WHERE r.id > ? AND r.id <= ?
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                jdbc.update(sql, cursorFrom, cursorTo);
+                return null;
+            });
+
+            from = cursorTo;
+        }
+    }
+
+    /** TCAR INSERT만 */
+    private void mergeTcarDetailInsertOnly(LocalDate bizDate) {
+        long from = 0L;
+        final String lockName = "merge:TCAR";
+        String bizDateStr = bizDate.toString();
+        
+        while (true) {
+            Long to = nextUpperIdFor("raw_tcar", from, UPSERT_BATCH_SIZE);
+            if (to == null) break;
+            final long cursorFrom = from;
+            final long cursorTo   = to;
+
+            inTxWithNamedLock(lockName, () -> {
+                String sql = """
+                    INSERT IGNORE INTO platform_car
+                      (platform_name, platform_car_key, car_no, car_id,
+                       maker_code, model_group_code, model_code, trim_code, grade_code,
+                       maker_name, model_group_name, model_name, trim_name, grade_name,
+                       price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
+                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                    SELECT
+                      'TCAR', 
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.plateNumber')),
+                      NULL,
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.brandId')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelgroupId')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelId')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.subgradeId')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.gradeId')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.brandName')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelgroupName')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelName')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.subgradeName')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.gradeName')),
+                      COALESCE(
+                        (COALESCE(
+                               CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.return_price')), ',', ''), 'null') AS UNSIGNED),
+                               CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.returnPrice')), ',', ''), 'null') AS UNSIGNED))) DIV 10000,
+                        COALESCE(
+                               CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.price')), ',', ''), 'null') AS UNSIGNED),
+                               CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.priceNew')), ',', ''), 'null') AS UNSIGNED),
+                               CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.priceSell')), ',', ''), 'null') AS UNSIGNED),
+                               CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.promotionPrice')), ',', ''), 'null') AS UNSIGNED))),
+                      CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.mileage')), ',', ''), 'null') AS UNSIGNED),
+                      CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.displacement')), ',', ''), 'null') AS UNSIGNED),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.regYear')),
+                      CASE WHEN JSON_EXTRACT(r.payload, '$.status') = 0 THEN 'ONSALE' 
+                           WHEN JSON_EXTRACT(r.payload, '$.status') = 1 THEN 'SOLD'
+                           ELSE 'ONSALE' END,
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.color')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuel')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.trans')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.shapeType')),
+                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.areaCd')),
+      CONCAT('https://mycarsave.lotterentacar.net/cr/detail/', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
+      CONCAT('https://mycarsave.lotterentacar.net/cr/detail/', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
+      CASE 
+        WHEN JSON_EXTRACT(r.payload, '$.postStartDt') IS NULL 
+             OR JSON_EXTRACT(r.payload, '$.postStartDt') = JSON_QUOTE('null')
+             OR JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.postStartDt')) = 'null'
+             OR JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.postStartDt')) = ''
+             OR JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.postStartDt')) IS NULL
+        THEN NULL
+        ELSE DATE_FORMAT(STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.postStartDt')), '%Y-%m-%d %H:%i:%s.%f'), '%Y%m%d')
+      END,
+                      NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url2
+                    FROM raw_tcar r
+                    WHERE r.id > ? AND r.id <= ?
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                jdbc.update(sql, cursorFrom, cursorTo);
+                return null;
+            });
+
+            from = cursorTo;
+        }
     }
 
     public int linkToMaster() {

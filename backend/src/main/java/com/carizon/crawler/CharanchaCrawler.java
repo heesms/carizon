@@ -158,26 +158,64 @@ public class CharanchaCrawler {
         return p;
     }
 
+    private static final String CARIMG_BASE = "https://charancha.com/uploads/carimg/xxlarge";
+    private static final String CARIMG_QUERY = "?w=480&h=360&f=webp";
+
     /**
-     * CHARANCHA car_image_url 생성
-     * 규칙: carImg 컬럼 사용
-     * URL 형식: https://charancha.com/uploads/carimg/xxlarge/2026/3fc447ac-7900-48bd-a7b5-4bfaa2aeba31.jpg?w=480&h=360&f=webp
+     * CHARANCHA 차량 이미지 URL 생성
+     * - API 응답에서 이미지 식별자 추출 (carImg, car_img, carImage 등 시도)
+     * - URL 형식: https://charancha.com/uploads/carimg/xxlarge/{연도}/{파일명}?w=480&h=360&f=webp
+     * - UUID만 오면 연도는 payload.regDt 기준 (예: "2025-10-23 14:31:59" → 2025), 없으면 올해
      */
     private String buildCharanchaImageUrl(Map<String, Object> item) {
         try {
-            Object carImgObj = item.get("carImg");
-            if (carImgObj == null) return null;
-            
-            String carImg = String.valueOf(carImgObj);
+            String carImg = getFirstNonBlank(item, "carImg", "car_img", "carImage", "mainImg", "imgUrl", "thumbnail", "img");
+            if (carImg == null || carImg.isBlank()) return null;
+
+            carImg = carImg.trim();
+            if (carImg.startsWith("http://") || carImg.startsWith("https://")) return carImg;
+
+            if (carImg.startsWith("/")) carImg = carImg.substring(1);
             if (carImg.isBlank()) return null;
-            
-            // 현재 연도 추출 (2026)
-            String year = String.valueOf(java.time.Year.now().getValue());
-            
-            return String.format("https://charancha.com/uploads/carimg/xxlarge/%s/%s?w=480&h=360&f=webp", year, carImg);
+
+            String path;
+            if (carImg.contains("/")) {
+                path = carImg;
+            } else {
+                // UUID만 오면 연도 = payload.regDt 기준, 없으면 올해
+                String year = extractYearFromRegDt(item);
+                if (!carImg.contains(".")) carImg = carImg + ".jpg";
+                path = year + "/" + carImg;
+            }
+
+            return CARIMG_BASE + "/" + path + CARIMG_QUERY;
         } catch (Exception e) {
             log.warn("[CHARANCHA] car_image_url 생성 실패: {}", e.getMessage());
             return null;
         }
+    }
+
+    /** payload.regDt 에서 연도 추출 (예: "2025-10-23 14:31:59" → "2025"), 실패 시 올해 */
+    private String extractYearFromRegDt(Map<String, Object> item) {
+        Object regDtObj = item != null ? item.get("regDt") : null;
+        if (regDtObj != null) {
+            String regDt = String.valueOf(regDtObj).trim();
+            if (!regDt.isBlank() && regDt.length() >= 4) {
+                // "2025-10-23 ..." 또는 "20251023" 등 앞 4자리가 연도
+                String y = regDt.substring(0, 4);
+                if (y.matches("\\d{4}")) return y;
+            }
+        }
+        return String.valueOf(java.time.Year.now().getValue());
+    }
+
+    private String getFirstNonBlank(Map<String, Object> map, String... keys) {
+        for (String key : keys) {
+            Object v = map.get(key);
+            if (v == null) continue;
+            String s = String.valueOf(v).trim();
+            if (!s.isBlank() && !"null".equalsIgnoreCase(s)) return s;
+        }
+        return null;
     }
 }

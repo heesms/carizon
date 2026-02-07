@@ -44,26 +44,30 @@ public class WeeklyBestAdminController {
 
     @PostMapping("/model/{modelCode}/generate")
     @Operation(summary = "특정 모델 Best 매물 포스팅 생성", 
-               description = "특정 모델의 Best 매물을 선정하고 블로그 포스팅 내용을 생성합니다.")
+               description = "특정 모델의 Best 매물을 선정하고 블로그 포스팅 내용을 생성합니다. 트림코드는 선택사항입니다.")
     public ApiResponse<Map<String, String>> generateModelPost(
             @PathVariable String modelCode,
+            @RequestParam(required = false) String trimCode,
             @RequestParam(defaultValue = "10") int limit) {
         try {
-            log.info("[관리자] 모델 {} Best 매물 포스팅 생성", modelCode);
+            log.info("[관리자] 모델 {} 트림 {} Best 매물 포스팅 생성", modelCode, trimCode);
             
-            List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, limit);
+            List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, trimCode, limit);
             
             if (bestCars.isEmpty()) {
-                return ApiResponse.error("매물이 없습니다.");
+                return ApiResponse.error("매물이 없습니다. 해당 모델의 platform_car가 car_master와 연결(car_id)되어 있어야 합니다. merge 파이프라인 실행 후 postProcess(linkToMaster)가 완료되었는지 확인해 보세요.");
             }
 
             String modelName = bestCars.get(0).getModelName();
             if (modelName == null || modelName.isEmpty()) {
                 modelName = "중고차";
             }
+            
+            String trimName = (trimCode != null && !trimCode.trim().isEmpty() && bestCars.get(0).getTrimName() != null) 
+                    ? bestCars.get(0).getTrimName() : null;
 
-            String title = blogPostService.generateBlogPostTitle(modelName);
-            String content = blogPostService.generateBlogPostContent(modelCode, modelName, bestCars);
+            String title = blogPostService.generateBlogPostTitleWithTrim(modelName, trimName);
+            String content = blogPostService.generateBlogPostContent(modelCode, modelName, trimCode, trimName, bestCars);
 
             return ApiResponse.success(Map.of(
                     "title", title,
@@ -78,29 +82,33 @@ public class WeeklyBestAdminController {
 
     @PostMapping("/model/{modelCode}/post-to-wordpress")
     @Operation(summary = "모델코드로 WordPress 포스팅 생성", 
-               description = "모델코드를 입력받아 Best 매물을 선정하고 WordPress에 바로 포스팅합니다.")
+               description = "모델코드를 입력받아 Best 매물을 선정하고 WordPress에 바로 포스팅합니다. 트림코드는 선택사항입니다.")
     public ApiResponse<Map<String, Object>> postToWordPress(
             @PathVariable String modelCode,
+            @RequestParam(required = false) String trimCode,
             @RequestParam(defaultValue = "10") int limit,
             @RequestParam(defaultValue = "draft") String status) {
         try {
-            log.info("[관리자] 모델 {} WordPress 포스팅 시작", modelCode);
+            log.info("[관리자] 모델 {} 트림 {} WordPress 포스팅 시작", modelCode, trimCode);
             
             // Best 매물 선정
-            List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, limit);
+            List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, trimCode, limit);
             
             if (bestCars.isEmpty()) {
-                return ApiResponse.error("매물이 없습니다.");
+                return ApiResponse.error("매물이 없습니다. merge 및 linkToMaster 실행 후 다시 시도해 보세요.");
             }
 
             String modelName = bestCars.get(0).getModelName();
             if (modelName == null || modelName.isEmpty()) {
                 modelName = "중고차";
             }
+            
+            String trimName = (trimCode != null && !trimCode.trim().isEmpty() && bestCars.get(0).getTrimName() != null) 
+                    ? bestCars.get(0).getTrimName() : null;
 
             // 블로그 포스팅 내용 생성
-            String title = blogPostService.generateBlogPostTitle(modelName);
-            String content = blogPostService.generateBlogPostContent(modelCode, modelName, bestCars);
+            String title = blogPostService.generateBlogPostTitle(modelName, trimName);
+            String content = blogPostService.generateBlogPostContent(modelCode, modelName, trimCode, trimName, bestCars);
 
             // WordPress에 포스팅
             Long postId = blogPostService.postToWordPress(title, content, status);
@@ -120,12 +128,16 @@ public class WeeklyBestAdminController {
 
     @GetMapping("/model/{modelCode}")
     @Operation(summary = "특정 모델 Best 매물 조회", 
-               description = "특정 모델의 Best 매물 순위를 조회합니다.")
+               description = "특정 모델의 Best 매물 순위를 조회합니다. 트림코드는 선택사항입니다.")
     public ApiResponse<List<WeeklyBestCarDto>> getModelBestCars(
             @PathVariable String modelCode,
+            @RequestParam(required = false) String trimCode,
             @RequestParam(defaultValue = "10") int limit) {
         try {
-            List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, limit);
+            List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, trimCode, limit);
+            if (bestCars.isEmpty()) {
+                return ApiResponse.error("매물이 없습니다. merge 및 linkToMaster 실행 후 다시 시도해 보세요.");
+            }
             return ApiResponse.success(bestCars);
         } catch (Exception e) {
             log.error("[관리자] Best 매물 조회 실패", e);

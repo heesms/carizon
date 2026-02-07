@@ -43,7 +43,7 @@ public class ChachachaCrawler {
         String runId = recorder.recordStart("CHACHACHA", started);  // ✅ 시작 기록
 
         List<Object> searchAfter = null;
-        int pageSize = 5000;             // 디버깅 중에는 작게
+        int pageSize = 1000;             // 천 개씩 처리
         int fetchedTotal = 0;
         int page = 0;
 

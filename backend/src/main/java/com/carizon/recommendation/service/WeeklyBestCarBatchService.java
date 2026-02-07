@@ -59,7 +59,7 @@ public class WeeklyBestCarBatchService {
         log.info("[주간 Best 배치] 모델 {} 처리 시작", modelCode);
 
         // Best 매물 선정
-        List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, limit);
+        List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, null, limit);
 
         if (bestCars.isEmpty()) {
             log.warn("[주간 Best 배치] 모델 {} 매물 없음", modelCode);
@@ -74,7 +74,7 @@ public class WeeklyBestCarBatchService {
 
         // 블로그 포스팅 내용 생성
         String title = blogPostService.generateBlogPostTitle(modelName);
-        String content = blogPostService.generateBlogPostContent(modelCode, modelName, bestCars);
+        String content = blogPostService.generateBlogPostContent(modelCode, modelName, null, null, bestCars);
 
         // TODO: 워드프레스에 포스팅
         // blogPostService.postToWordPress(title, content);

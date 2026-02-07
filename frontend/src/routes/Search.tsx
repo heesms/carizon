@@ -42,7 +42,9 @@ export default function Search() {
         try {
             setLoading(true)
             // 최초/이동 모두 20개씩 고정
-            const res: CarListResponse = await searchCars({ ...params, page: p, size: 20 })
+            const response = await searchCars({ ...params, page: p, size: 20 })
+            // 백엔드 응답 구조: { success: true, data: { content: [...], page, size, ... } }
+            const res: CarListResponse = (response as any).data || response
             setList((res && res.content) ? res.content : [])
             setTotalPages(res?.totalPages ?? 0)
         } catch (e) {
@@ -70,28 +72,55 @@ export default function Search() {
     }
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 animate-fade-in">
             <FiltersPanel value={params} onChange={setFilters} onSearch={() => fetchPage(0)} />
 
-            <section className="space-y-3">
-                <div className="flex items-center justify-between">
-                    <h2 className="font-semibold">검색 결과</h2>
-                    {loading && <span className="text-sm text-gray-500">로딩 중…</span>}
+            <section className="space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
+                                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                            </div>
+                            <h2 className="text-3xl font-bold">검색 결과</h2>
+                        </div>
+                        {!loading && list.length > 0 && (
+                            <p className="text-sm text-gray-600 ml-13">
+                                총 <span className="font-semibold text-gray-900">{list.length}</span>개의 매물을 찾았습니다
+                            </p>
+                        )}
+                    </div>
+                    {loading && (
+                        <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl text-sm text-gray-600">
+                            <div className="spinner w-4 h-4"></div>
+                            <span>로딩 중…</span>
+                        </div>
+                    )}
                 </div>
 
-                {/* 결과 리스트: null/undefined 방어 */}
-                <div className="grid gap-3">
-                    {list.filter(Boolean).map((it) => (
-                        <CarCard key={it.carId} item={it} compact />
+                {/* 결과 리스트 */}
+                <div className="grid gap-4">
+                    {list.filter(Boolean).map((it, idx) => (
+                        <div key={it.carId} className="animate-fade-in" style={{ animationDelay: `${idx * 0.05}s` }}>
+                            <CarCard item={it} compact />
+                        </div>
                     ))}
                 </div>
 
                 {!loading && list.length === 0 && (
-                    <div className="text-sm text-gray-500">조건에 맞는 결과가 없습니다. 필터를 조정해 보세요.</div>
+                    <div className="modern-card p-12 text-center">
+                        <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <p className="text-gray-600 text-lg mb-2">조건에 맞는 결과가 없습니다</p>
+                        <p className="text-sm text-gray-500">필터를 조정해 보세요</p>
+                    </div>
                 )}
 
                 {totalPages > 1 && (
-                    <div className="flex gap-1 flex-wrap">
+                    <div className="flex items-center justify-center gap-2 flex-wrap pt-4">
                         {Array.from({ length: totalPages }, (_, i) => i).map((p) => (
                             <button
                                 key={p}
@@ -99,7 +128,11 @@ export default function Search() {
                                     setSp(prev => { prev.set('page', String(p)); return prev })
                                     fetchPage(p)
                                 }}
-                                className={'px-3 py-1 rounded border ' + (p === page ? 'bg-black text-white' : 'bg-white')}
+                                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                                    p === page
+                                        ? 'bg-black text-white shadow-lg scale-105'
+                                        : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'
+                                }`}
                             >
                                 {p + 1}
                             </button>

@@ -39,10 +39,12 @@ public class BlogPostService {
      * 
      * @param modelCode 모델 코드
      * @param modelName 모델 이름
+     * @param trimCode 트림 코드 (선택사항)
+     * @param trimName 트림 이름 (선택사항)
      * @param bestCars Best 매물 리스트
      * @return 블로그 포스팅 HTML 내용
      */
-    public String generateBlogPostContent(String modelCode, String modelName, List<WeeklyBestCarDto> bestCars) {
+    public String generateBlogPostContent(String modelCode, String modelName, String trimCode, String trimName, List<WeeklyBestCarDto> bestCars) {
         if (bestCars == null || bestCars.isEmpty()) {
             return "";
         }
@@ -84,24 +86,38 @@ public class BlogPostService {
         // 주차 정보 계산
         String weekInfo = getWeekInfo(now);
         
-        // 제목: 중고차 플랫폼 비교｜{makerName} {modelName} 주간 BEST 매물 TOP10 ({year}년 {month}월 {week}주차)
-        String title = String.format("중고차 플랫폼 비교｜%s %s 주간 BEST 매물 TOP10 (%s)", 
-                makerName, safeModelName, weekInfo);
+        // 트림 정보 포함 여부에 따라 제목 구성
+        String trimDisplayName = "";
+        if (trimName != null && !trimName.trim().isEmpty()) {
+            trimDisplayName = " " + escapeHtml(trimName);
+        }
+        
+        // 차종명 (제조사명 + 모델명 + 트림명)
+        String carType = (makerName != null && !makerName.isEmpty() ? makerName + " " : "") + safeModelName + trimDisplayName;
+        
+        // 제목: {제조사명} {모델명} + (트림코드 입력시 트림명) + 중고차 매물 추천 | 실매물 주간 BEST TOP 10 ({year}년 {month}월 {week}주차)
+        String title = String.format("%s 중고차 매물 추천 | 실매물 주간 BEST TOP 10 (%s)", 
+                carType, weekInfo);
         content.append("<h2>").append(title).append("</h2>\n");
         
-        // 서브 제목: 여러 중고차 플랫폼에 등록된 {modelName} 매물을 한 번에 비교해...
-        content.append("<p>여러 중고차 플랫폼에 등록된 ").append(safeModelName)
-               .append(" 매물을 한 번에 비교해, 조회·가격·주행거리·등록일 등 다양한 카리즌만의 기준으로 가장 좋은 매물만 선별했습니다.</p>\n\n");
+        // 주차 정보에서 "주차" 제거하여 "2026년 1월 3주" 형식으로 변환
+        String weekInfoForH2 = weekInfo.replace("주차", "주");
+        
+        // h2 태그 1개 (두 내용을 한 줄로 합침)
+        content.append("<h2>🔍 ").append(carType).append(" 중고차 매물 추천 📊 중고차 플랫폼별 매물 비교</h2>\n");
+        
+        // 서브 제목: 여러 중고차 플랫폼에 등록된 <strong>모델명 중고차</strong> 매물을 한 번에 비교해...
+        content.append("<p>여러 중고차 플랫폼에 등록된 <strong>").append(safeModelName).append(" 중고차</strong> 매물을 한 번에 비교해, 가격·주행거리·연식·등록일 등 <strong>카리즌만의 객관적인 기준</strong>으로 가장 좋은 매물만 선별했습니다.</p>\n\n");
 
-        // Best 매물 리스트
-        content.append("<h3>추천 매물 TOP ").append(bestCars.size()).append("</h3>\n");
-        content.append("<ol>\n");
+        // Best 매물 리스트 (h3로 변경)
+        content.append("<h3>🏆 ").append(carType).append(" 주간 BEST 매물 TOP10 ").append(weekInfoForH2).append("</h3>\n");
+        content.append("<ul style=\"list-style: none; padding-left: 0;\">\n");
 
         for (WeeklyBestCarDto car : bestCars) {
             content.append(generateCarItemHtml(car));
         }
 
-        content.append("</ol>\n\n");
+        content.append("</ul>\n\n");
 
         // 마무리
         content.append("<h3>매물 선택 시 주의사항</h3>\n");
@@ -243,8 +259,8 @@ public class BlogPostService {
                 .append("<td style=\"padding:8px 5px; border:1px solid #ddd;\">")
                 .append(car.getCarizonScore().setScale(1, java.math.RoundingMode.HALF_UP)).append("점</td></tr>\n");
             if (car.getCarizonScoreReason() != null && !car.getCarizonScoreReason().trim().isEmpty() && !"\\N".equals(car.getCarizonScoreReason())) {
-                html.append("<tr><td style=\"padding:5px; border:1px solid #ddd;\"><strong>평가 사유</strong></td>")
-                    .append("<td style=\"padding:5px; border:1px solid #ddd;\">")
+                html.append("<tr><td style=\"padding:8px 5px; border:1px solid #ddd; min-width:90px;\"><strong>평가 사유</strong></td>")
+                    .append("<td style=\"padding:8px 5px; border:1px solid #ddd;\">")
                     .append(escapeHtml(car.getCarizonScoreReason())).append("</td></tr>\n");
             }
         }
@@ -394,26 +410,42 @@ public class BlogPostService {
     }
 
     /**
-     * 블로그 포스팅 제목 생성
+     * 블로그 포스팅 제목 생성 (makerName 포함)
      */
     public String generateBlogPostTitle(String modelName, String makerName) {
-        LocalDate now = LocalDate.now();
-        String weekInfo = getWeekInfo(now);
-        String safeModelName = escapeHtml(modelName);
-        String safeMakerName = escapeHtml(makerName != null ? makerName : "");
-        
-        if (safeMakerName.isEmpty()) {
-            return String.format("중고차 플랫폼 비교｜%s 주간 BEST 매물 TOP10 (%s)", safeModelName, weekInfo);
-        }
-        return String.format("중고차 플랫폼 비교｜%s %s 주간 BEST 매물 TOP10 (%s)", 
-                safeMakerName, safeModelName, weekInfo);
+        return generateBlogPostTitle(modelName, makerName, null);
     }
     
     /**
      * 블로그 포스팅 제목 생성 (makerName 없이)
      */
     public String generateBlogPostTitle(String modelName) {
-        return generateBlogPostTitle(modelName, null);
+        return generateBlogPostTitle(modelName, null, null);
+    }
+    
+    /**
+     * 블로그 포스팅 제목 생성 (트림명 포함)
+     * 
+     * @param modelName 모델 이름
+     * @param trimName 트림 이름 (선택사항, null이면 모델명만 사용)
+     * @return 블로그 포스팅 제목
+     */
+    public String generateBlogPostTitleWithTrim(String modelName, String trimName) {
+        return generateBlogPostTitle(modelName, null, trimName);
+    }
+    
+    /**
+     * 블로그 포스팅 제목 생성 (내부 메서드 - makerName, trimName 모두 선택사항)
+     */
+    private String generateBlogPostTitle(String modelName, String makerName, String trimName) {
+        LocalDate now = LocalDate.now();
+        String weekInfo = getWeekInfo(now);
+        String safeModelName = escapeHtml(modelName);
+        String safeTrimName = (trimName != null && !trimName.trim().isEmpty()) ? " " + escapeHtml(trimName) : "";
+        
+        // 제목: {모델명} + (트림코드 입력시 트림명) + 중고차 매물 추천 | 실매물 주간 BEST TOP 10 ({year}년 {month}월 {week}주차)
+        return String.format("%s%s 중고차 매물 추천 | 실매물 주간 BEST TOP 10 (%s)", 
+                safeModelName, safeTrimName, weekInfo);
     }
 
     /**

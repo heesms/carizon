@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
@@ -22,9 +21,9 @@ public class MasterMergeService {
     private final TransactionTemplate txTemplate;  // REQUIRES_NEW 권장 (설정에 따라)
 
     private static final int CHUNK_SIZE = 1000;
-    private static final String CL = "utf8mb4_general_ci"; // JOIN 시 collation 강제
+    private static final int MASTER_MERGE_BATCH_SIZE = 5000; // car_master 머지 배치 크기
 
-    /** 최초 1회: 우선순위 시드 보장 (없으면 삽입) */
+    /** 최초 1회: 우선순위 시드 보장 (없으면 삽입, 락 타임아웃 방지를 위해 INSERT IGNORE 사용) */
     public void ensurePrioritySeed() {
         String ddl = """
             CREATE TABLE IF NOT EXISTS cz_platform_priority (
@@ -36,86 +35,134 @@ public class MasterMergeService {
         """;
         jdbc.execute(ddl);
 
-        String upsert = """
-            INSERT INTO cz_platform_priority(platform_name, priority) VALUES
+        // INSERT IGNORE 사용하여 락 타임아웃 방지 (이미 있으면 무시)
+        String insert = """
+            INSERT IGNORE INTO cz_platform_priority(platform_name, priority) VALUES
               ('CHACHACHA', 1),
               ('ENCAR',     2),
               ('KCAR',      3),
               ('CHUTCHA',   4),
               ('CHARANCHA', 5),
               ('TCAR',      6)
-            ON DUPLICATE KEY UPDATE priority=VALUES(priority)
         """;
-        jdbc.update(upsert);
+        jdbc.update(insert);
     }
 
-    /** 오늘 수집(alive) 기준 car_master upsert (서브쿼리로 CZ_CODE_MAP 직접 조회) */
+    /** 오늘 수집(alive) 기준 car_master upsert (배치 처리로 최적화) */
     public int upsertAliveToCarMaster(LocalDate bizDate) {
         // 인덱스 활용을 위해 DATE() 함수 대신 범위 검색 사용
         java.sql.Date dateStart = java.sql.Date.valueOf(bizDate);
         java.sql.Date dateEnd = java.sql.Date.valueOf(bizDate.plusDays(1));
         
-        log.info("[master] upsertAliveToCarMaster: 처리 시작");
+        log.info("[master] upsertAliveToCarMaster: 처리 시작 (배치 처리 모드)");
         
-        // LEFT JOIN으로 변경하여 서브쿼리 제거 (성능 최적화)
-        int affected = tx.execute(status -> {
-            return jdbc.update("""
-                INSERT INTO car_master
-                (CAR_NO, MAKER_CODE, MODEL_GROUP_CODE, MODEL_CODE, TRIM_CODE, GRADE_CODE,
-                 adv_status, last_seen_date, UPDATED_AT)
-                SELECT t.CAR_NO,
-                       MAX(t.MAKER_CODE) AS MAKER_CODE,
-                       MAX(t.MODEL_GROUP_CODE) AS MODEL_GROUP_CODE,
-                       MAX(t.MODEL_CODE) AS MODEL_CODE,
-                       MAX(t.TRIM_CODE) AS TRIM_CODE,
-                       MAX(t.GRADE_CODE) AS GRADE_CODE,
-                       'ONSALE', ?, NOW()
-                FROM (
-                  SELECT p.CAR_NO,
-                         cm_m.maker_code AS MAKER_CODE,
-                         cm_mg.model_group_code AS MODEL_GROUP_CODE,
-                         cm_mo.model_code AS MODEL_CODE,
-                         cm_t.trim_code AS TRIM_CODE,
-                         cm_g.grade_code AS GRADE_CODE
-                  FROM platform_car p
-                  LEFT JOIN cz_code_map cm_m
-                    ON cm_m.platform_name = p.PLATFORM_NAME
-                    AND cm_m.p_maker_code = p.MAKER_CODE
-                    AND cm_m.status IN ('LOCKED','AUTO')
-                  LEFT JOIN cz_code_map cm_mg
-                    ON cm_mg.platform_name = p.PLATFORM_NAME
-                    AND cm_mg.p_model_group_code = p.MODEL_GROUP_CODE
-                    AND cm_mg.status IN ('LOCKED','AUTO')
-                  LEFT JOIN cz_code_map cm_mo
-                    ON cm_mo.platform_name = p.PLATFORM_NAME
-                    AND cm_mo.p_model_code = p.MODEL_CODE
-                    AND cm_mo.status IN ('LOCKED','AUTO')
-                  LEFT JOIN cz_code_map cm_t
-                    ON cm_t.platform_name = p.PLATFORM_NAME
-                    AND cm_t.p_trim_code = p.TRIM_CODE
-                    AND cm_t.status IN ('LOCKED','AUTO')
-                  LEFT JOIN cz_code_map cm_g
-                    ON cm_g.platform_name = p.PLATFORM_NAME
-                    AND cm_g.p_grade_code = p.GRADE_CODE
-                    AND cm_g.status IN ('LOCKED','AUTO')
-                  WHERE p.last_seen_date >= ? AND p.last_seen_date < ?
-                    AND p.CAR_NO IS NOT NULL
-                ) t
-                GROUP BY t.CAR_NO
-                ON DUPLICATE KEY UPDATE
-                  MAKER_CODE       = VALUES(MAKER_CODE),
-                  MODEL_GROUP_CODE = VALUES(MODEL_GROUP_CODE),
-                  MODEL_CODE       = VALUES(MODEL_CODE),
-                  TRIM_CODE        = VALUES(TRIM_CODE),
-                  GRADE_CODE       = VALUES(GRADE_CODE),
-                  adv_status       = 'ONSALE',
-                  last_seen_date   = VALUES(last_seen_date),
-                  UPDATED_AT       = NOW()
-            """, bizDate, dateStart, dateEnd);
-        });
+        // 1단계: 처리할 CAR_NO 목록 조회 (배치 처리용)
+        List<String> carNos = jdbc.query("""
+            SELECT DISTINCT p.CAR_NO
+            FROM platform_car p
+            WHERE p.last_seen_date >= ? AND p.last_seen_date < ?
+              AND p.CAR_NO IS NOT NULL
+            ORDER BY p.CAR_NO
+        """, (rs, i) -> rs.getString(1), dateStart, dateEnd);
         
-        log.info("[master] upsertAliveToCarMaster 완료: {}건 처리", affected);
-        return affected;
+        if (carNos.isEmpty()) {
+            log.info("[master] upsertAliveToCarMaster: 처리할 데이터 없음");
+            return 0;
+        }
+        
+        log.info("[master] upsertAliveToCarMaster: 총 {}개의 CAR_NO 처리 예정", carNos.size());
+        
+        // 2단계: 배치별로 처리
+        int totalAffected = 0;
+        int batchCount = 0;
+        
+        for (int from = 0; from < carNos.size(); from += MASTER_MERGE_BATCH_SIZE) {
+            int to = Math.min(from + MASTER_MERGE_BATCH_SIZE, carNos.size());
+            List<String> batch = carNos.subList(from, to);
+            batchCount++;
+            
+            long batchStart = System.currentTimeMillis();
+            Integer affected = txTemplate.execute(status -> {
+                // 배치용 CAR_NO 플레이스홀더 생성
+                String placeholders = batch.stream()
+                    .map(c -> "?")
+                    .collect(Collectors.joining(","));
+                
+                // 파라미터 배열 생성: bizDate, dateStart, dateEnd, batch...
+                List<Object> params = new ArrayList<>();
+                params.add(bizDate);
+                params.add(dateStart);
+                params.add(dateEnd);
+                params.addAll(batch);
+                
+                return jdbc.update(String.format("""
+                    INSERT INTO car_master
+                    (CAR_NO, MAKER_CODE, MODEL_GROUP_CODE, MODEL_CODE, TRIM_CODE, GRADE_CODE,
+                     adv_status, last_seen_date, UPDATED_AT)
+                    SELECT t.CAR_NO,
+                           MAX(t.MAKER_CODE) AS MAKER_CODE,
+                           MAX(t.MODEL_GROUP_CODE) AS MODEL_GROUP_CODE,
+                           MAX(t.MODEL_CODE) AS MODEL_CODE,
+                           MAX(t.TRIM_CODE) AS TRIM_CODE,
+                           MAX(t.GRADE_CODE) AS GRADE_CODE,
+                           'ONSALE', ?, NOW()
+                    FROM (
+                      SELECT p.CAR_NO,
+                             cm_m.maker_code AS MAKER_CODE,
+                             cm_mg.model_group_code AS MODEL_GROUP_CODE,
+                             cm_mo.model_code AS MODEL_CODE,
+                             cm_t.trim_code AS TRIM_CODE,
+                             cm_g.grade_code AS GRADE_CODE
+                      FROM platform_car p
+                      LEFT JOIN cz_code_map cm_m
+                        ON cm_m.platform_name = p.PLATFORM_NAME
+                        AND cm_m.p_maker_code = p.MAKER_CODE
+                        AND cm_m.status IN ('LOCKED','AUTO')
+                      LEFT JOIN cz_code_map cm_mg
+                        ON cm_mg.platform_name = p.PLATFORM_NAME
+                        AND cm_mg.p_model_group_code = p.MODEL_GROUP_CODE
+                        AND cm_mg.status IN ('LOCKED','AUTO')
+                      LEFT JOIN cz_code_map cm_mo
+                        ON cm_mo.platform_name = p.PLATFORM_NAME
+                        AND cm_mo.p_model_code = p.MODEL_CODE
+                        AND cm_mo.status IN ('LOCKED','AUTO')
+                      LEFT JOIN cz_code_map cm_t
+                        ON cm_t.platform_name = p.PLATFORM_NAME
+                        AND cm_t.p_trim_code = p.TRIM_CODE
+                        AND cm_t.status IN ('LOCKED','AUTO')
+                      LEFT JOIN cz_code_map cm_g
+                        ON cm_g.platform_name = p.PLATFORM_NAME
+                        AND cm_g.p_grade_code = p.GRADE_CODE
+                        AND cm_g.status IN ('LOCKED','AUTO')
+                      WHERE p.last_seen_date >= ? AND p.last_seen_date < ?
+                        AND p.CAR_NO IS NOT NULL
+                        AND p.CAR_NO IN (%s)
+                    ) t
+                    GROUP BY t.CAR_NO
+                    ON DUPLICATE KEY UPDATE
+                      MAKER_CODE       = VALUES(MAKER_CODE),
+                      MODEL_GROUP_CODE = VALUES(MODEL_GROUP_CODE),
+                      MODEL_CODE       = VALUES(MODEL_CODE),
+                      TRIM_CODE        = VALUES(TRIM_CODE),
+                      GRADE_CODE       = VALUES(GRADE_CODE),
+                      adv_status       = 'ONSALE',
+                      last_seen_date   = VALUES(last_seen_date),
+                      UPDATED_AT       = NOW()
+                """, placeholders), 
+                params.toArray());
+            });
+            
+            int batchAffected = (affected == null ? 0 : affected);
+            totalAffected += batchAffected;
+            long batchTime = System.currentTimeMillis() - batchStart;
+            
+            log.info("[master] upsertAliveToCarMaster 배치 {}/{} 완료: {}건 처리 ({}ms)", 
+                batchCount, (carNos.size() + MASTER_MERGE_BATCH_SIZE - 1) / MASTER_MERGE_BATCH_SIZE, 
+                batchAffected, batchTime);
+        }
+        
+        log.info("[master] upsertAliveToCarMaster 완료: 총 {}건 처리 ({}개 배치)", totalAffected, batchCount);
+        return totalAffected;
     }
 
     /** 우선순위 기반 매핑 적용 (청크 처리, 플랫폼 1건만 선택) */
@@ -160,6 +207,7 @@ public class MasterMergeService {
                        ROW_NUMBER() OVER (
                          PARTITION BY pc.CAR_NO
                          ORDER BY COALESCE(pp.priority, 9),
+                                  CASE WHEN TRIM(COALESCE(pc.FUEL, '')) IN ('가솔린', '휘발유') OR UPPER(TRIM(COALESCE(pc.FUEL, ''))) = 'GASOLINE' THEN 0 ELSE 1 END,
                                   pc.last_seen_date DESC,
                                   pc.PLATFORM_CAR_ID DESC
                        ) AS rn
@@ -245,6 +293,151 @@ public class MasterMergeService {
             if (n < batchSize) break;
         }
         return total;
+    }
+
+    /** TRUNCATE 후 car_master 재생성 (순수 INSERT만 사용, 배치 처리로 최적화) 
+     *  주의: platform_car는 이미 TRUNCATE되고 재생성된 상태여야 함
+     *  car_price_history도 함께 TRUNCATE해야 할 수 있음 (platform_car_id 참조) */
+    public int rebuildCarMasterFromScratch(LocalDate bizDate) {
+        log.warn("[master] rebuildCarMasterFromScratch: car_master를 TRUNCATE하고 재생성합니다! (배치 처리 모드)");
+        
+        // 우선순위 테이블 보장 (별도 트랜잭션으로 분리하여 락 타임아웃 방지)
+        try {
+            ensurePrioritySeed();
+        } catch (Exception e) {
+            log.warn("[master] ensurePrioritySeed 실패 (락 타임아웃 가능성), 계속 진행: {}", e.getMessage());
+        }
+        
+        // 1단계: car_master TRUNCATE
+        tx.execute(status -> {
+            log.info("[master] rebuildCarMasterFromScratch: car_master TRUNCATE 시작");
+            jdbc.execute("TRUNCATE TABLE car_master");
+            log.info("[master] rebuildCarMasterFromScratch: car_master TRUNCATE 완료");
+            return null;
+        });
+        
+        // 2단계: 처리할 CAR_NO 목록 조회 (배치 처리용)
+        // platform_car가 이미 재생성되었으므로 last_seen_date 조건 불필요
+        log.info("[master] rebuildCarMasterFromScratch: CAR_NO 목록 조회 시작");
+        List<String> carNos = jdbc.query("""
+            SELECT DISTINCT p.CAR_NO
+            FROM platform_car p
+            WHERE p.CAR_NO IS NOT NULL
+            ORDER BY p.CAR_NO
+        """, (rs, i) -> rs.getString(1));
+        
+        if (carNos.isEmpty()) {
+            log.info("[master] rebuildCarMasterFromScratch: 처리할 데이터 없음");
+            return 0;
+        }
+        
+        log.info("[master] rebuildCarMasterFromScratch: 총 {}개의 CAR_NO 처리 예정", carNos.size());
+        
+        // 3단계: 배치별로 처리
+        int totalAffected = 0;
+        int batchCount = 0;
+        
+        for (int from = 0; from < carNos.size(); from += MASTER_MERGE_BATCH_SIZE) {
+            int to = Math.min(from + MASTER_MERGE_BATCH_SIZE, carNos.size());
+            List<String> batch = carNos.subList(from, to);
+            batchCount++;
+            
+            long batchStart = System.currentTimeMillis();
+            Integer affected = txTemplate.execute(status -> {
+                // 배치용 CAR_NO 플레이스홀더 생성
+                String placeholders = batch.stream()
+                    .map(c -> "?")
+                    .collect(Collectors.joining(","));
+                
+                // 파라미터 배열 생성: bizDate, batch...
+                List<Object> params = new ArrayList<>();
+                params.add(bizDate);
+                params.addAll(batch);
+                
+                return jdbc.update(String.format("""
+                    INSERT INTO car_master
+                    (CAR_NO, MAKER_CODE, MODEL_GROUP_CODE, MODEL_CODE, TRIM_CODE, GRADE_CODE,
+                     YEAR, MILEAGE, COLOR, TRANSMISSiON, FUEL, REGION, DISPLACEMENT, BODY_TYPE,
+                     adv_status, last_seen_date, UPDATED_AT)
+                    SELECT 
+                      t.CAR_NO,
+                      (SELECT cm.maker_code FROM cz_code_map cm
+                       WHERE cm.platform_name = t.PLATFORM_NAME
+                         AND cm.p_maker_code = t.MAKER_CODE
+                         AND cm.status IN ('LOCKED','AUTO')
+                       LIMIT 1) AS MAKER_CODE,
+                      (SELECT cm.model_group_code FROM cz_code_map cm
+                       WHERE cm.platform_name = t.PLATFORM_NAME
+                         AND cm.p_maker_code = t.MAKER_CODE
+                         AND cm.p_model_group_code = t.MODEL_GROUP_CODE
+                         AND cm.status IN ('LOCKED','AUTO')
+                       LIMIT 1) AS MODEL_GROUP_CODE,
+                      (SELECT cm.model_code FROM cz_code_map cm
+                       WHERE cm.platform_name = t.PLATFORM_NAME
+                         AND cm.p_maker_code = t.MAKER_CODE
+                         AND cm.p_model_group_code = t.MODEL_GROUP_CODE
+                         AND cm.p_model_code = t.MODEL_CODE
+                         AND cm.status IN ('LOCKED','AUTO')
+                       LIMIT 1) AS MODEL_CODE,
+                      (SELECT cm.trim_code FROM cz_code_map cm
+                       WHERE cm.platform_name = t.PLATFORM_NAME
+                         AND cm.p_maker_code = t.MAKER_CODE
+                         AND cm.p_model_group_code = t.MODEL_GROUP_CODE
+                         AND cm.p_model_code = t.MODEL_CODE
+                         AND cm.p_trim_code = t.TRIM_CODE
+                         AND cm.status IN ('LOCKED','AUTO')
+                       LIMIT 1) AS TRIM_CODE,
+                      (SELECT cm.grade_code FROM cz_code_map cm
+                       WHERE cm.platform_name = t.PLATFORM_NAME
+                         AND cm.p_maker_code = t.MAKER_CODE
+                         AND cm.p_model_group_code = t.MODEL_GROUP_CODE
+                         AND cm.p_model_code = t.MODEL_CODE
+                         AND cm.p_trim_code = t.TRIM_CODE
+                         AND cm.p_grade_code = t.GRADE_CODE
+                         AND cm.status IN ('LOCKED','AUTO')
+                       LIMIT 1) AS GRADE_CODE,
+                      t.YYMM AS YEAR,
+                      t.KM AS MILEAGE,
+                      t.COLOR,
+                      t.TRANSMISSiON,
+                      t.FUEL,
+                      t.REGION,
+                      t.DISPLACEMENT,
+                      t.BODY_TYPE,
+                      'ONSALE', ?, NOW()
+                    FROM (
+                      SELECT t_inner.*
+                      FROM (
+                        SELECT pc.*,
+                               COALESCE(pp.priority, 9) AS pr,
+                               ROW_NUMBER() OVER (
+                                 PARTITION BY pc.CAR_NO
+                                 ORDER BY COALESCE(pp.priority, 9),
+                                          CASE WHEN TRIM(COALESCE(pc.FUEL, '')) IN ('가솔린', '휘발유') OR UPPER(TRIM(COALESCE(pc.FUEL, ''))) = 'GASOLINE' THEN 0 ELSE 1 END,
+                                          pc.last_seen_date DESC,
+                                          pc.PLATFORM_CAR_ID DESC
+                               ) AS rn
+                        FROM platform_car pc
+                        LEFT JOIN cz_platform_priority pp
+                               ON pp.platform_name = pc.PLATFORM_NAME
+                        WHERE pc.CAR_NO IN (%s)
+                      ) t_inner
+                      WHERE t_inner.rn = 1
+                    ) t
+                """, placeholders), params.toArray());
+            });
+            
+            int batchAffected = affected != null ? affected : 0;
+            totalAffected += batchAffected;
+            long batchTime = System.currentTimeMillis() - batchStart;
+            
+            log.info("[master] rebuildCarMasterFromScratch 배치 {}/{} 완료: {}건 처리 ({}ms)", 
+                batchCount, (carNos.size() + MASTER_MERGE_BATCH_SIZE - 1) / MASTER_MERGE_BATCH_SIZE, 
+                batchAffected, batchTime);
+        }
+        
+        log.info("[master] rebuildCarMasterFromScratch: 전체 완료 - {}건 처리 ({}개 배치)", totalAffected, batchCount);
+        return totalAffected;
     }
 
     /** 가격 이력 append (그대로 유지) */

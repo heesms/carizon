@@ -1,13 +1,11 @@
 package com.carizon.recommendation.service;
 
-import com.carizon.rag.service.LlmService;
 import com.carizon.recommendation.dto.WeeklyBestCarDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -27,11 +25,10 @@ import java.util.stream.Collectors;
  * - 따라서 이 서비스는 플랫폼에 관계없이 모델 기준으로 통합 평가가 가능합니다.
  * 
  * 추천 로직 (카리즌 스코어):
- * 1. 가격 점수 (30%): 모델별 평균 가격 대비 저렴할수록 높음
- * 2. 주행거리 점수 (25%): 낮을수록 높음 (연식 고려)
- * 3. 최신성 점수 (15%): 최근 업데이트일수록 높음
- * 4. 가격 변동 추세 (20%): 하락 추세일수록 높음
- * 5. 모델 인기도 (10%): 적정 수준의 매물 수일 때 높음
+ * 1. 가격 점수 (35%): 시세 대비 저렴할수록 높음
+ * 2. 주행거리 점수 (35%): 연식 대비 낮을수록 높음 (저주행·적정가 선호 반영)
+ * 3. 연식 점수 (15%): 최신일수록 높음
+ * 4. 최신성 점수 (15%): 최근 업데이트일수록 높음
  * 
  * 카리즌 스코어 = 가중 평균 (0~100점)
  */
@@ -41,15 +38,11 @@ import java.util.stream.Collectors;
 public class WeeklyBestCarRankingService {
 
     private final JdbcTemplate jdbc;
-    private final LlmService llmService; // Ollama를 사용한 평가 사유 생성
-    
-    // LLM 사용 여부 (기본값: false, true로 설정 시 Ollama 사용)
-    private static final boolean USE_LLM_FOR_REASON = true;
 
-    // 스코어 가중치 (총합 1.0) - 새로운 구조
-    private static final double WEIGHT_PRICE = 0.40;      // 가격 40%
-    private static final double WEIGHT_MILEAGE = 0.25;    // 주행거리 25%
-    private static final double WEIGHT_AGE = 0.20;        // 연식 20%
+    // 스코어 가중치 (총합 1.0) - 가격보다 주행거리 비중 확대 (저주행·적정가 선호 반영)
+    private static final double WEIGHT_PRICE = 0.35;      // 가격 35%
+    private static final double WEIGHT_MILEAGE = 0.35;    // 주행거리 35%
+    private static final double WEIGHT_AGE = 0.15;        // 연식 15%
     private static final double WEIGHT_FRESHNESS = 0.15;  // 최신성 15%
     
     // 필터링 임계값
@@ -62,25 +55,40 @@ public class WeeklyBestCarRankingService {
     // 기타 임계값
     private static final int MIN_MILEAGE = 0;
     private static final int IDEAL_MILEAGE_PER_YEAR = 12000; // 연간 1.2만km 기준 (국내 평균)
+    /** 추천 최소 가격: 300만원 이하 제외 (가격은 만원 단위) */
+    private static final int MIN_RECOMMENDATION_PRICE_MAN = 300;
+
+    /** 포스팅 랭킹 연료 가산점 (가솔린 > 디젤 > LPG/기타 0) */
+    private static final double FUEL_BONUS_GASOLINE = 20.0;
+    private static final double FUEL_BONUS_DIESEL = 14.0;
+    /** 원점수 최대값 (base 100 + 가솔린 20) → 100점 만점으로 비율 환산 시 사용 */
+    private static final double MAX_RAW_SCORE = 120.0;
 
     /**
      * 모델 기준 주간 Best 매물 순위 선정
      * 
-     * @param modelCode 모델 코드 (null이면 전체 모델)
-     * @param limit 상위 N개 (기본 10개)
+     * @param modelCode 모델 코드. 단일 "1234" 또는 복수 "1234,1111" (쉼표 구분, 공백 제거). null/빈값이면 전체 모델
+     * @param trimCode 트림 코드 (선택사항, null이면 모델코드만으로 추천)
+     * @param limit 상위 N개 (기본 10개). 복수 모델 시 합쳐서 상위 N개 선정
      * @return 주간 Best 매물 리스트
      */
-    public List<WeeklyBestCarDto> getWeeklyBestCars(String modelCode, int limit) {
+    /**
+     * 모델 코드: 단일 "1234" 또는 복수 "1234,1111" (쉼표 구분, 공백 제거).
+     * 복수인 경우 각 모델 후보를 합쳐서 상위 limit개 선정.
+     */
+    public List<WeeklyBestCarDto> getWeeklyBestCars(String modelCode, String trimCode, int limit) {
         long startTime = System.currentTimeMillis();
-        log.info("[주간 Best] 모델={}, limit={} 시작", modelCode, limit);
+        List<String> modelCodes = parseModelCodes(modelCode);
+        log.info("[주간 Best] 모델={}, 트림={}, limit={} 시작 (파싱: {}개 모델)", modelCode, trimCode, limit, modelCodes.size());
 
-        // 1. 기본 매물 조회 (car_image_url 있는 것만, ONSALE만)
+        // 1. 기본 매물 조회 (복수 모델이면 각각 조회 후 합침, car_image_url 있는 것만, ONSALE만)
         long step1Start = System.currentTimeMillis();
-        List<WeeklyBestCarDto> candidates = fetchCandidates(modelCode);
+        List<WeeklyBestCarDto> candidates = fetchCandidatesForModels(modelCodes, trimCode);
         long step1Time = System.currentTimeMillis() - step1Start;
         log.info("[주간 Best] [1단계] 후보 매물 조회 완료: {}건 (소요: {}ms)", candidates.size(), step1Time);
 
         if (candidates.isEmpty()) {
+            log.warn("[주간 Best] 후보 0건 - model_code={}. car_master와 platform_car가 car_id로 연결된 매물이 없거나, merge/postProcess(linkToMaster) 실행 후 다시 시도해 보세요.", modelCode);
             return Collections.emptyList();
         }
 
@@ -109,9 +117,13 @@ public class WeeklyBestCarRankingService {
         log.info("[주간 Best] [4단계] 스코어 계산 완료: {}건 (소요: {}ms, 평균: {}ms/건)", 
                 scoredCars.size(), step4Time, step4Time / Math.max(1, scoredCars.size()));
 
-        // 5. 카리즌 스코어 기준 정렬 및 순위 부여
+        // 5. 카리즌 스코어 기준 정렬 및 순위 부여 (동점 시 가솔린·디젤 > LPG 우선)
         long step5Start = System.currentTimeMillis();
-        scoredCars.sort((a, b) -> b.getCarizonScore().compareTo(a.getCarizonScore()));
+        scoredCars.sort((a, b) -> {
+            int scoreCmp = b.getCarizonScore().compareTo(a.getCarizonScore());
+            if (scoreCmp != 0) return scoreCmp;
+            return Integer.compare(fuelPriorityForRanking(a.getFuel()), fuelPriorityForRanking(b.getFuel()));
+        });
         
         for (int i = 0; i < scoredCars.size(); i++) {
             scoredCars.get(i).setRank(i + 1);
@@ -119,56 +131,13 @@ public class WeeklyBestCarRankingService {
         long step5Time = System.currentTimeMillis() - step5Start;
         log.info("[주간 Best] [5단계] 정렬 및 순위 부여 완료 (소요: {}ms)", step5Time);
 
-        // 6. 상위 N개만 LLM으로 평가 사유 재생성 (성능 최적화)
-        long step6Start = System.currentTimeMillis();
-        if (USE_LLM_FOR_REASON) {
-            int llmLimit = Math.min(limit * 2, scoredCars.size()); // 상위 2배만 LLM 처리
-            log.info("[주간 Best] [6단계] LLM 평가 사유 생성 시작: 상위 {}건", llmLimit);
-            int successCount = 0;
-            int failCount = 0;
-            
-            for (int i = 0; i < llmLimit; i++) {
-                WeeklyBestCarDto car = scoredCars.get(i);
-                long llmCallStart = System.currentTimeMillis();
-                try {
-                    // 스코어는 이미 계산되어 있으므로, 평가 사유만 LLM으로 재생성
-                    ScoreResult priceResult = calculatePriceScoreWithReason(car.getPrice(), 
-                            modelStats.get(car.getModelCode()), car.getMileage(), car.getYear());
-                    ScoreResult mileageResult = calculateMileageScoreWithReason(car.getMileage(), car.getYear());
-                    ScoreResult ageResult = calculateAgeScoreWithReason(car.getYear());
-                    ScoreResult freshnessResult = calculateFreshnessScoreWithReason(car.getDaysSinceUpdate());
-                    double penalty = calculatePenalty(car, modelStats.get(car.getModelCode()));
-                    
-                    String llmReason = generateCarizonScoreReasonWithLLM(car, car.getCarizonScore(), 
-                            priceResult, mileageResult, ageResult, freshnessResult, penalty);
-                    car.setCarizonScoreReason(llmReason);
-                    long llmCallTime = System.currentTimeMillis() - llmCallStart;
-                    successCount++;
-                    if (i < 5) { // 처음 5개만 상세 로그
-                        log.debug("[주간 Best] [6단계] LLM 호출 완료 (순위 {}): {}ms", car.getRank(), llmCallTime);
-                    }
-                } catch (Exception e) {
-                    long llmCallTime = System.currentTimeMillis() - llmCallStart;
-                    failCount++;
-                    log.warn("[주간 Best] [6단계] LLM 평가 사유 생성 실패 (순위 {}, {}ms): carId={}", 
-                            car.getRank(), llmCallTime, car.getCarId(), e);
-                    // 기존 규칙 기반 사유 유지
-                }
-            }
-            long step6Time = System.currentTimeMillis() - step6Start;
-            log.info("[주간 Best] [6단계] LLM 평가 사유 생성 완료: 성공 {}건, 실패 {}건 (총 소요: {}ms, 평균: {}ms/건)", 
-                    successCount, failCount, step6Time, step6Time / Math.max(1, llmLimit));
-        } else {
-            log.info("[주간 Best] [6단계] LLM 비활성화 - 규칙 기반 평가 사유 사용");
-        }
-
-        // 7. 상위 N개 반환
+        // 6. 상위 N개 반환
         long step7Start = System.currentTimeMillis();
         List<WeeklyBestCarDto> result = scoredCars.stream()
                 .limit(limit)
                 .collect(Collectors.toList());
         long step7Time = System.currentTimeMillis() - step7Start;
-        
+
         long totalTime = System.currentTimeMillis() - startTime;
         log.info("[주간 Best] [7단계] 결과 반환 완료 (소요: {}ms)", step7Time);
         log.info("[주간 Best] 전체 완료: {}건 선정 (총 소요: {}ms)", result.size(), totalTime);
@@ -182,25 +151,54 @@ public class WeeklyBestCarRankingService {
         return result;
     }
 
+    /** "1234" → [1234], "1234,1111" → [1234, 1111], null/빈값 → [] (전체) */
+    private List<String> parseModelCodes(String modelCode) {
+        if (modelCode == null || modelCode.isBlank()) return List.of();
+        return Arrays.stream(modelCode.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .distinct()
+                .toList();
+    }
+
+    /** 복수 모델 지원: 각 모델 후보 조회 후 합침 (동일 platform_car_id 중복 제거) */
+    private List<WeeklyBestCarDto> fetchCandidatesForModels(List<String> modelCodes, String trimCode) {
+        if (modelCodes.isEmpty()) return fetchCandidates(null, trimCode);
+        if (modelCodes.size() == 1) return fetchCandidates(modelCodes.get(0), trimCode);
+        Set<Long> seen = new HashSet<>();
+        List<WeeklyBestCarDto> merged = new ArrayList<>();
+        for (String code : modelCodes) {
+            for (WeeklyBestCarDto c : fetchCandidates(code, trimCode)) {
+                if (seen.add(c.getPlatformCarId())) merged.add(c);
+            }
+        }
+        return merged;
+    }
+
     /**
-     * 후보 매물 조회
+     * 후보 매물 조회 (단일 모델 또는 modelCode=null 시 전체)
+     * @param modelCode 모델 코드 (null이면 모델 필터 없음)
+     * @param trimCode 트림 코드 (선택사항, null이면 모델코드만으로 필터링)
      */
-    private List<WeeklyBestCarDto> fetchCandidates(String modelCode) {
+    /** 후보 조회 시 상위 건수 제한 (정렬 후 상위 N개만 랭킹에 사용, 성능·메모리 절약) */
+    private static final int FETCH_CANDIDATES_LIMIT = 500;
+
+    private List<WeeklyBestCarDto> fetchCandidates(String modelCode, String trimCode) {
         StringBuilder sql = new StringBuilder("""
             SELECT 
                 cm.car_id,
                 pc.platform_car_id,
                 pc.platform_name,
                 cm.maker_code,
-                (SELECT maker_name FROM cz_maker WHERE maker_code = cm.maker_code) AS maker_name,
+                m.maker_name,
                 cm.model_group_code,
-                (SELECT model_group_name FROM cz_model_group WHERE maker_code = cm.maker_code AND model_group_code = cm.model_group_code) AS model_group_name,
+                mg.model_group_name,
                 cm.model_code,
-                (SELECT model_name FROM cz_model WHERE maker_code = cm.maker_code AND model_group_code = cm.model_group_code AND model_code = cm.model_code) AS model_name,
+                mo.model_name,
                 cm.trim_code,
-                (SELECT trim_name FROM cz_trim WHERE maker_code = cm.maker_code AND model_group_code = cm.model_group_code AND model_code = cm.model_code AND trim_code = cm.trim_code) AS trim_name,
+                t.trim_name,
                 cm.grade_code,
-                (SELECT grade_name FROM cz_grade WHERE maker_code = cm.maker_code AND model_group_code = cm.model_group_code AND model_code = cm.model_code AND trim_code = cm.trim_code AND grade_code = cm.grade_code) AS grade_name,
+                g.grade_name,
                 cm.year,
                 COALESCE(pc.km, cm.mileage) AS mileage,
                 pc.price,
@@ -215,6 +213,11 @@ public class WeeklyBestCarRankingService {
                 pc.car_image_url
             FROM car_master cm
             INNER JOIN platform_car pc ON pc.car_id = cm.car_id
+            LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
+            LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
+            LEFT JOIN cz_model mo ON mo.maker_code = cm.maker_code AND mo.model_group_code = cm.model_group_code AND mo.model_code = cm.model_code
+            LEFT JOIN cz_trim t ON t.maker_code = cm.maker_code AND t.model_group_code = cm.model_group_code AND t.model_code = cm.model_code AND t.trim_code = cm.trim_code
+            LEFT JOIN cz_grade g ON g.maker_code = cm.maker_code AND g.model_group_code = cm.model_group_code AND g.model_code = cm.model_code AND g.trim_code = cm.trim_code AND g.grade_code = cm.grade_code
             WHERE cm.adv_status = 'ONSALE'
               AND (
                 pc.status IN ('ONSALE', 'SALE', 'ADVERTISE')
@@ -222,6 +225,7 @@ public class WeeklyBestCarRankingService {
               )
               AND pc.price IS NOT NULL
               AND pc.price > 0
+              AND pc.price > 300
               AND pc.car_image_url IS NOT NULL
               AND pc.car_image_url != ''
               AND pc.last_seen_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
@@ -233,8 +237,15 @@ public class WeeklyBestCarRankingService {
             sql.append(" AND cm.model_code = ?");
             params.add(modelCode);
         }
+        
+        // 트림코드가 있으면 4레벨까지 필터링
+        if (trimCode != null && !trimCode.trim().isEmpty()) {
+            sql.append(" AND cm.trim_code = ?");
+            params.add(trimCode);
+        }
 
-        sql.append(" ORDER BY pc.last_seen_date DESC, pc.updated_at DESC");
+        sql.append(" ORDER BY pc.last_seen_date DESC, pc.updated_at DESC LIMIT ?");
+        params.add(FETCH_CANDIDATES_LIMIT);
 
         return jdbc.query(sql.toString(), params.toArray(), (rs, rowNum) -> {
             LocalDate lastSeenDate = rs.getDate("last_seen_date") != null 
@@ -277,6 +288,46 @@ public class WeeklyBestCarRankingService {
     }
 
     /**
+     * 포스팅 랭킹 시 연료 우선순위 (작을수록 상위) - 동점 시 타이브레이커용.
+     * 0: 가솔린·디젤, 1: LPG, 2: 그 외
+     */
+    private int fuelPriorityForRanking(String fuel) {
+        if (fuel == null || fuel.isBlank()) return 2;
+        String f = fuel.trim().toUpperCase();
+        if (isGasolineOrDiesel(f)) return 0;
+        if (f.contains("LPG") || f.contains("엘피지")) return 1;
+        return 2;
+    }
+
+    /** 가솔린 여부 */
+    private boolean isGasoline(String fuel) {
+        if (fuel == null || fuel.isBlank()) return false;
+        String f = fuel.trim().toUpperCase();
+        return f.contains("가솔린") || f.contains("휘발유") || "GASOLINE".equals(f);
+    }
+
+    /** 디젤 여부 */
+    private boolean isDiesel(String fuel) {
+        if (fuel == null || fuel.isBlank()) return false;
+        String f = fuel.trim().toUpperCase();
+        return f.contains("디젤") || "DIESEL".equals(f);
+    }
+
+    /** 가솔린·디젤 여부 (동점 시 우선순위용) */
+    private boolean isGasolineOrDiesel(String fuel) {
+        return isGasoline(fuel) || isDiesel(fuel);
+    }
+
+    /**
+     * 포스팅 랭킹 연료 가산점 (가솔린 > 디젤 > LPG/기타 0).
+     */
+    private double fuelBonusForRanking(String fuel) {
+        if (isGasoline(fuel)) return FUEL_BONUS_GASOLINE;
+        if (isDiesel(fuel)) return FUEL_BONUS_DIESEL;
+        return 0.0;
+    }
+
+    /**
      * 필터링 적용 (탈락 조건 체크)
      */
     private List<WeeklyBestCarDto> applyFilters(List<WeeklyBestCarDto> candidates) {
@@ -303,6 +354,20 @@ public class WeeklyBestCarRankingService {
                         return false;
                     }
                     
+                    // 2-1. 차량 정보 필수 필드 체크 (포스팅에 필요)
+                    if (car.getMakerName() == null || car.getMakerName().trim().isEmpty()) {
+                        log.debug("[필터] 제조사명 없음 제외: carId={}", car.getCarId());
+                        return false;
+                    }
+                    if (car.getModelGroupName() == null || car.getModelGroupName().trim().isEmpty()) {
+                        log.debug("[필터] 모델그룹명 없음 제외: carId={}", car.getCarId());
+                        return false;
+                    }
+                    if (car.getModelName() == null || car.getModelName().trim().isEmpty()) {
+                        log.debug("[필터] 모델명 없음 제외: carId={}", car.getCarId());
+                        return false;
+                    }
+                    
                     // 3. 주행거리/연식 불일치 체크 (과도하게 많은 주행거리)
                     int currentYear = LocalDate.now().getYear();
                     int carAge = Math.max(1, currentYear - car.getYear());
@@ -311,6 +376,12 @@ public class WeeklyBestCarRankingService {
                     
                     if (kmRatio > MAX_KM_RATIO_FILTER) {
                         log.debug("[필터] 주행거리 과다 제외: carId={}, kmRatio={}", car.getCarId(), kmRatio);
+                        return false;
+                    }
+                    
+                    // 4. 이상한 가격 패턴 체크 (999만원, 1111만원, 1234만원 등)
+                    if (isSuspiciousPrice(car.getPrice())) {
+                        log.debug("[필터] 이상한 가격 패턴 제외: carId={}, price={}만원", car.getCarId(), car.getPrice());
                         return false;
                     }
                     
@@ -386,37 +457,26 @@ public class WeeklyBestCarRankingService {
         // 5. 패널티 계산
         double penalty = calculatePenalty(car, stats);
 
-        // 카리즌 스코어 계산 (새로운 구조: 40% 가격, 25% 주행거리, 20% 연식, 15% 최신성 - 패널티)
+        // 카리즌 스코어 계산 (35% 가격, 35% 주행거리, 15% 연식, 15% 최신성 - 패널티 + 연료 가산점)
         BigDecimal baseScore = priceResult.score.multiply(BigDecimal.valueOf(WEIGHT_PRICE))
                 .add(mileageResult.score.multiply(BigDecimal.valueOf(WEIGHT_MILEAGE)))
                 .add(ageResult.score.multiply(BigDecimal.valueOf(WEIGHT_AGE)))
                 .add(freshnessResult.score.multiply(BigDecimal.valueOf(WEIGHT_FRESHNESS)))
                 .multiply(BigDecimal.valueOf(100)); // 0~1을 0~100으로 변환
         
-        BigDecimal carizonScore = baseScore.subtract(BigDecimal.valueOf(penalty))
-                .setScale(2, RoundingMode.HALF_UP);
-        
-        // 최소 0점 보장
-        if (carizonScore.compareTo(BigDecimal.ZERO) < 0) {
-            carizonScore = BigDecimal.ZERO;
-        }
+        double fuelBonus = fuelBonusForRanking(car.getFuel()); // 가솔린·디젤 가산점, LPG 0
+        BigDecimal rawScore = baseScore.subtract(BigDecimal.valueOf(penalty))
+                .add(BigDecimal.valueOf(fuelBonus));
+        // 100점 만점으로 비율 환산 (원점수 / MAX_RAW_SCORE * 100)
+        BigDecimal carizonScore = rawScore.multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(MAX_RAW_SCORE), 2, RoundingMode.HALF_UP);
 
-        // 카리즌 스코어 종합 사유 생성 (LLM 사용 옵션 - 성능 최적화를 위해 선택적)
-        String carizonReason;
-        if (useLlm && USE_LLM_FOR_REASON) {
-            try {
-                carizonReason = generateCarizonScoreReasonWithLLM(car, carizonScore, priceResult, 
-                        mileageResult, ageResult, freshnessResult, penalty);
-            } catch (Exception e) {
-                log.warn("[주간 Best] LLM 평가 사유 생성 실패, 규칙 기반으로 대체: carId={}", 
-                        car.getCarId(), e);
-                carizonReason = generateCarizonScoreReason(carizonScore, priceResult, mileageResult, 
-                        ageResult, freshnessResult, penalty);
-            }
-        } else {
-            carizonReason = generateCarizonScoreReason(carizonScore, priceResult, mileageResult, 
-                    ageResult, freshnessResult, penalty);
-        }
+        if (carizonScore.compareTo(BigDecimal.ZERO) < 0) carizonScore = BigDecimal.ZERO;
+        if (carizonScore.compareTo(BigDecimal.valueOf(100)) > 0) carizonScore = BigDecimal.valueOf(100);
+
+        // 카리즌 스코어 종합 사유 생성 (규칙 기반 - LLM은 별도로 AI 평가로 사용)
+        String carizonReason = generateCarizonScoreReason(carizonScore, priceResult, mileageResult, 
+                ageResult, freshnessResult, penalty, car.getRank());
 
         car.setPriceScore(priceResult.score.multiply(BigDecimal.valueOf(100))); // 0~100으로 변환
         car.setPriceScoreReason(priceResult.reason);
@@ -532,29 +592,31 @@ public class WeeklyBestCarRankingService {
         // 연식 대비 주행거리 비율
         double kmRatio = (double) mileage / expectedKm;
         
-        // 점진적 점수 계산: kmRatio에 따라 점진적으로 감소
-        // kmRatio가 1.0일 때 최고점, 높아질수록 점진적으로 감소
+        // 점수: 저주행은 최고점 부여, 고주행은 가파르게 감점 (선택 시 저주행·적정가 선호 반영)
         double score;
         if (kmRatio <= 0) {
             score = 0.0;
-        } else if (kmRatio <= 0.8) {
-            // 매우 적은 주행거리: 약간 감점 (0.8~1.0)
-            score = 0.8 + (kmRatio / 0.8) * 0.2;
-        } else if (kmRatio <= 1.0) {
-            // 적정 주행거리: 최고점 (1.0)
+        } else if (kmRatio <= 0.5) {
+            // 매우 적은 주행거리: 최고점 (1.0) — 10,000km급이 50,000km급보다 확실히 유리하도록
             score = 1.0;
+        } else if (kmRatio <= 0.8) {
+            // 적은 주행거리: 0.95~1.0
+            score = 0.95 + (kmRatio - 0.5) / 0.3 * 0.05;
+        } else if (kmRatio <= 1.0) {
+            // 적정 주행거리: 0.95~1.0
+            score = 0.95 + (1.0 - kmRatio) / 0.2 * 0.05;
         } else if (kmRatio <= 1.2) {
-            // 약간 많은 주행거리: 약간 감점 (1.0~0.9)
-            score = 1.0 - (kmRatio - 1.0) * 0.5;
+            // 약간 많은 주행거리: 0.85~0.95
+            score = 0.95 - (kmRatio - 1.0) * 0.5;
         } else if (kmRatio <= 1.5) {
-            // 다소 많은 주행거리: 중간 감점 (0.9~0.7)
-            score = 0.9 - (kmRatio - 1.2) * (0.2 / 0.3);
+            // 다소 많은 주행거리: 0.70~0.85 (가파르게 감점)
+            score = 0.85 - (kmRatio - 1.2) * 0.5;
         } else if (kmRatio <= 2.0) {
-            // 많은 주행거리: 강한 감점 (0.7~0.4)
-            score = 0.7 - (kmRatio - 1.5) * (0.3 / 0.5);
+            // 많은 주행거리: 0.45~0.70
+            score = 0.70 - (kmRatio - 1.5) * 0.5;
         } else {
-            // 매우 많은 주행거리: 최대 감점 (0.4~0.0)
-            score = Math.max(0.0, 0.4 - (kmRatio - 2.0) * 0.2);
+            // 매우 많은 주행거리: 0.0~0.45
+            score = Math.max(0.0, 0.45 - (kmRatio - 2.0) * 0.25);
         }
         score = Math.max(0.0, Math.min(1.0, score)); // 0~1 범위 보장
 
@@ -661,7 +723,7 @@ public class WeeklyBestCarRankingService {
                 reason
         );
     }
-    
+
     /**
      * 패널티 계산
      */
@@ -707,108 +769,6 @@ public class WeeklyBestCarRankingService {
     }
 
     /**
-     * Ollama를 사용한 평가 사유 생성 (자연스럽고 다양한 평가)
-     */
-    private String generateCarizonScoreReasonWithLLM(WeeklyBestCarDto car,
-                                                     BigDecimal carizonScore,
-                                                     ScoreResult priceResult,
-                                                     ScoreResult mileageResult,
-                                                     ScoreResult ageResult,
-                                                     ScoreResult freshnessResult,
-                                                     double penalty) throws IOException {
-        // 매물 정보 요약
-        String carInfo = String.format(
-            "%s %s %s (%d년식), 주행거리: %,dkm, 가격: %,d만원",
-            car.getMakerName() != null ? car.getMakerName() : "",
-            car.getModelName() != null ? car.getModelName() : "",
-            car.getTrimName() != null ? car.getTrimName() : "",
-            car.getYear() != null ? car.getYear() : 0,
-            car.getMileage() != null ? car.getMileage() : 0,
-            car.getPrice() != null ? car.getPrice() : 0
-        );
-        
-        // 각 항목별 평가 요약
-        StringBuilder evaluationSummary = new StringBuilder();
-        if (car.getRank() != null) {
-            evaluationSummary.append("순위: ").append(car.getRank()).append("위\n");
-        }
-        evaluationSummary.append("가격 평가: ").append(priceResult.reason).append("\n");
-        evaluationSummary.append("주행거리 평가: ").append(mileageResult.reason).append("\n");
-        evaluationSummary.append("연식 평가: ").append(ageResult.reason).append("\n");
-        evaluationSummary.append("최신성 평가: ").append(freshnessResult.reason).append("\n");
-        if (penalty > 0) {
-            evaluationSummary.append("참고사항: 일부 항목에서 ").append(String.format("%.0f", penalty)).append("점 감점\n");
-        }
-        
-        // 프롬프트 생성
-        String prompt = String.format("""
-            다음은 중고차 매물에 대한 평가 정보입니다. 
-            이 정보를 바탕으로 구매자에게 친절하고 자연스러운 한국어로만 평가 사유를 작성해주세요.
-            
-            매물 정보: %s
-            종합 점수: %.1f점 (100점 만점)
-            
-            상세 평가:
-            %s
-            
-            작성 요구사항:
-            1. 반드시 한국어로만 작성 (영어 단어 사용 금지)
-            2. 3줄 정도의 길이로 작성 (약 150-250자)
-            3. 매물의 주요 강점을 자연스럽게 강조
-            4. 약점이 있다면 신중하게 언급
-            5. 구매를 고려할 수 있도록 긍정적이면서도 객관적인 톤 유지
-            6. "종합 평가:", "주요 강점:" 같은 딱딱한 표현 대신 자연스러운 문장 사용
-            7. 문장이 중간에 잘리지 않도록 완전한 문장으로 마무리
-            
-            평가 사유 (한국어로만, 3줄 정도):
-            """, carInfo, carizonScore.doubleValue(), evaluationSummary.toString());
-        
-        String llmResponse = llmService.generateResponse(prompt);
-        
-        // LLM 응답 정리
-        String cleaned = llmResponse.trim();
-        
-        // 줄바꿈 정리 (연속된 줄바꿈을 하나로)
-        cleaned = cleaned.replaceAll("\n{3,}", "\n\n");
-        
-        // 문장이 중간에 잘리지 않도록 처리
-        // 마지막 문장이 불완전하면 (마침표, 느낌표, 물음표로 끝나지 않으면) 이전 문장까지만 사용
-        if (!cleaned.isEmpty()) {
-            // 마지막 문장이 완전한지 확인
-            String lastChar = cleaned.substring(cleaned.length() - 1);
-            if (!lastChar.matches("[。.！!？?]")) {
-                // 마지막 문장이 불완전하면 마지막 마침표 위치까지 자르기
-                int lastPeriod = Math.max(
-                    Math.max(cleaned.lastIndexOf("."), cleaned.lastIndexOf("。")),
-                    Math.max(cleaned.lastIndexOf("!"), cleaned.lastIndexOf("！"))
-                );
-                if (lastPeriod > cleaned.length() * 0.5) { // 마지막 문장이 전체의 50% 이상이면
-                    cleaned = cleaned.substring(0, lastPeriod + 1);
-                }
-            }
-        }
-        
-        // 너무 길면 (300자 초과) 마지막 완전한 문장까지만 사용
-        if (cleaned.length() > 300) {
-            int lastPeriod = Math.max(
-                Math.max(cleaned.lastIndexOf("."), cleaned.lastIndexOf("。")),
-                Math.max(cleaned.lastIndexOf("!"), cleaned.lastIndexOf("！"))
-            );
-            if (lastPeriod > 100) { // 최소 100자 이상은 유지
-                cleaned = cleaned.substring(0, lastPeriod + 1);
-            } else {
-                // 완전한 문장을 찾을 수 없으면 250자까지만 자르고 마침표 추가
-                cleaned = cleaned.substring(0, 250).trim();
-                if (!cleaned.endsWith(".") && !cleaned.endsWith("。")) {
-                    cleaned += ".";
-                }
-            }
-        }
-        
-        return cleaned;
-    }
-    
-    /**
      * 카리즌 스코어 종합 사유 생성 (규칙 기반 - 다양하고 구체적인 평가)
      */
     private String generateCarizonScoreReason(BigDecimal carizonScore, 
@@ -816,194 +776,117 @@ public class WeeklyBestCarRankingService {
                                              ScoreResult mileageResult,
                                              ScoreResult ageResult,
                                              ScoreResult freshnessResult,
-                                             double penalty) {
-        double score = carizonScore.doubleValue();
-        List<ScoreResult> results = List.of(priceResult, mileageResult, ageResult, freshnessResult);
+                                             double penalty,
+                                             Integer rank) {
+        // 강점 항목 수집 (0.7 이상)
+        List<String> strengths = new ArrayList<>();
+        if (priceResult.score.doubleValue() >= 0.7 && !priceResult.reason.isEmpty()) {
+            strengths.add(priceResult.reason);
+        }
+        if (mileageResult.score.doubleValue() >= 0.7 && !mileageResult.reason.isEmpty()) {
+            strengths.add(mileageResult.reason);
+        }
+        if (ageResult.score.doubleValue() >= 0.7 && !ageResult.reason.isEmpty()) {
+            strengths.add(ageResult.reason);
+        }
         
-        // 점수별로 정렬하여 강점/약점 파악
-        List<ScoreResult> sorted = results.stream()
-                .sorted((a, b) -> b.score.compareTo(a.score))
-                .collect(java.util.stream.Collectors.toList());
-        
-        // 가장 높은 점수와 가장 낮은 점수 찾기
-        ScoreResult best = sorted.get(0);
-        ScoreResult worst = sorted.get(sorted.size() - 1);
-        
-        // 다양한 평가 템플릿 선택 (점수 구간별)
-        String evaluation;
-        if (score >= 85.0) {
-            evaluation = getHighScoreEvaluation(best, worst, priceResult, mileageResult, ageResult, freshnessResult);
-        } else if (score >= 75.0) {
-            evaluation = getGoodScoreEvaluation(best, worst, priceResult, mileageResult, ageResult, freshnessResult);
-        } else if (score >= 65.0) {
-            evaluation = getAverageScoreEvaluation(best, worst, priceResult, mileageResult, ageResult, freshnessResult);
-        } else if (score >= 50.0) {
-            evaluation = getBelowAverageEvaluation(best, worst, priceResult, mileageResult, ageResult, freshnessResult);
+        // 시작 문구 다양화 (1등에게만 "최적의 선택지" 문구 사용)
+        String opening;
+        if (rank != null && rank == 1) {
+            // 1등 전용 문구 (최적의 선택지 포함)
+            String[] firstPlaceTemplates = {
+                "여러 중고차 플랫폼을 종합적으로 분석한 결과, 이 매물이 최적의 선택지입니다.",
+                "여러 플랫폼을 비교한 결과, 이 매물이 가장 합리적인 선택지로 평가됩니다.",
+                "중고차 시장에서 찾기 어려운 우수한 조건을 갖춘 매물입니다.",
+                "가격 대비 매우 우수한 매물로, 구매를 고려해볼 만한 가치가 있습니다.",
+                "시세 대비 유리한 조건과 적정한 주행거리를 갖춘 매력적인 매물입니다.",
+                "동급 모델 대비 경쟁력이 뛰어난 차량으로 평가됩니다.",
+                "시장 평균 대비 우수한 조건을 갖춘 매력적인 매물입니다.",
+                "가성비와 상품성을 모두 갖춘 추천 매물입니다."
+            };
+            opening = firstPlaceTemplates[(int)(Math.random() * firstPlaceTemplates.length)];
         } else {
-            evaluation = getLowScoreEvaluation(best, worst, priceResult, mileageResult, ageResult, freshnessResult);
+            // 2등 이하 문구 (최적의 선택지 제외)
+            String[] otherTemplates = {
+                "여러 플랫폼을 비교한 결과, 이 매물이 가장 합리적인 선택지로 평가됩니다.",
+                "중고차 시장에서 찾기 어려운 우수한 조건을 갖춘 매물입니다.",
+                "가격 대비 매우 우수한 매물로, 구매를 고려해볼 만한 가치가 있습니다.",
+                "시세 대비 유리한 조건과 적정한 주행거리를 갖춘 매력적인 매물입니다.",
+                "동급 모델 대비 경쟁력이 뛰어난 차량으로 평가됩니다.",
+                "시장 평균 대비 우수한 조건을 갖춘 매력적인 매물입니다.",
+                "가성비와 상품성을 모두 갖춘 추천 매물입니다."
+            };
+            opening = otherTemplates[(int)(Math.random() * otherTemplates.length)];
+        }
+        
+        // 강점 나열
+        if (!strengths.isEmpty()) {
+            opening += " 특히 ";
+            if (strengths.size() == 1) {
+                opening += strengths.get(0);
+            } else if (strengths.size() == 2) {
+                opening += strengths.get(0) + ", " + strengths.get(1);
+            } else {
+                opening += strengths.get(0) + ", " + strengths.get(1) + " 등";
+            }
+            opening += "이 이 매물의 주요 강점입니다.";
         }
         
         // 패널티 정보 추가
         if (penalty > 0) {
-            evaluation += String.format(" (참고: 일부 항목에서 %.0f점 감점)", penalty);
+            opening += String.format(" (참고: 일부 항목에서 %.0f점 감점)", penalty);
         }
         
-        return evaluation;
+        return opening;
     }
     
     /**
-     * 고득점 매물 평가 (85점 이상)
+     * 이상한 가격 패턴 체크 (999만원, 1111만원, 111만원, 1234만원, 2222만원, 3333만원, 4444만원 등)
      */
-    private String getHighScoreEvaluation(ScoreResult best, ScoreResult worst,
-                                         ScoreResult price, ScoreResult mileage, 
-                                         ScoreResult age, ScoreResult freshness) {
-        String[] templates = {
-            "이 매물은 시장에서 찾기 어려운 우수한 조건을 갖추고 있습니다. ",
-            "가격 대비 매우 우수한 매물로, 구매를 고려해볼 만한 가치가 있습니다. ",
-            "여러 플랫폼을 비교한 결과, 이 매물이 가장 합리적인 선택지로 평가됩니다. ",
-            "시세 대비 유리한 조건과 적정한 주행거리를 갖춘 매력적인 매물입니다. "
-        };
-        
-        String base = templates[(int)(Math.random() * templates.length)];
-        return base + buildDetailedReason(best, worst, price, mileage, age, freshness, true);
-    }
-    
-    /**
-     * 양호한 점수 매물 평가 (75-84점)
-     */
-    private String getGoodScoreEvaluation(ScoreResult best, ScoreResult worst,
-                                         ScoreResult price, ScoreResult mileage, 
-                                         ScoreResult age, ScoreResult freshness) {
-        String[] templates = {
-            "전반적으로 우수한 조건의 매물입니다. ",
-            "시장 평균 대비 경쟁력 있는 매물로 평가됩니다. ",
-            "가격과 주행거리 등 주요 항목에서 균형 잡힌 매물입니다. ",
-            "구매를 검토해볼 만한 수준의 매물입니다. "
-        };
-        
-        String base = templates[(int)(Math.random() * templates.length)];
-        return base + buildDetailedReason(best, worst, price, mileage, age, freshness, true);
-    }
-    
-    /**
-     * 보통 점수 매물 평가 (65-74점)
-     */
-    private String getAverageScoreEvaluation(ScoreResult best, ScoreResult worst,
-                                            ScoreResult price, ScoreResult mileage, 
-                                            ScoreResult age, ScoreResult freshness) {
-        String[] templates = {
-            "시장 평균 수준의 매물입니다. ",
-            "일부 항목에서 강점을 보이지만, 전반적으로 보통 수준입니다. ",
-            "가격과 조건이 시장 평균과 유사한 매물입니다. ",
-            "추가 검토가 필요한 매물입니다. "
-        };
-        
-        String base = templates[(int)(Math.random() * templates.length)];
-        return base + buildDetailedReason(best, worst, price, mileage, age, freshness, false);
-    }
-    
-    /**
-     * 평균 이하 점수 매물 평가 (50-64점)
-     */
-    private String getBelowAverageEvaluation(ScoreResult best, ScoreResult worst,
-                                            ScoreResult price, ScoreResult mileage, 
-                                            ScoreResult age, ScoreResult freshness) {
-        String[] templates = {
-            "시장 평균 대비 일부 항목에서 아쉬운 점이 있습니다. ",
-            "가격이나 주행거리 등에서 개선 여지가 있는 매물입니다. ",
-            "전반적인 조건이 시장 평균에 미치지 못하는 매물입니다. ",
-            "신중한 검토가 필요한 매물입니다. "
-        };
-        
-        String base = templates[(int)(Math.random() * templates.length)];
-        return base + buildDetailedReason(best, worst, price, mileage, age, freshness, false);
-    }
-    
-    /**
-     * 저득점 매물 평가 (50점 미만)
-     */
-    private String getLowScoreEvaluation(ScoreResult best, ScoreResult worst,
-                                        ScoreResult price, ScoreResult mileage, 
-                                        ScoreResult age, ScoreResult freshness) {
-        String[] templates = {
-            "시장 평균 대비 여러 항목에서 불리한 조건을 보입니다. ",
-            "가격, 주행거리, 연식 등 주요 항목에서 개선이 필요한 매물입니다. ",
-            "구매 전 충분한 검토와 비교가 권장되는 매물입니다. ",
-            "시장에서 경쟁력이 다소 낮은 매물로 평가됩니다. "
-        };
-        
-        String base = templates[(int)(Math.random() * templates.length)];
-        return base + buildDetailedReason(best, worst, price, mileage, age, freshness, false);
-    }
-    
-    /**
-     * 구체적인 평가 사유 생성
-     */
-    private String buildDetailedReason(ScoreResult best, ScoreResult worst,
-                                      ScoreResult price, ScoreResult mileage, 
-                                      ScoreResult age, ScoreResult freshness,
-                                      boolean highlightStrengths) {
-        StringBuilder reason = new StringBuilder();
-        
-        // 강점 항목 (0.7 이상) - 최신성은 워딩 제거로 제외
-        List<String> strengths = new ArrayList<>();
-        if (price.score.doubleValue() >= 0.7 && !price.reason.isEmpty()) {
-            strengths.add(price.reason);
+    private boolean isSuspiciousPrice(Integer price) {
+        if (price == null) {
+            return false;
         }
-        if (mileage.score.doubleValue() >= 0.7 && !mileage.reason.isEmpty()) {
-            strengths.add(mileage.reason);
-        }
-        if (age.score.doubleValue() >= 0.7 && !age.reason.isEmpty()) {
-            strengths.add(age.reason);
-        }
-        // freshness는 워딩 제거로 평가 사유에서 제외
         
-        // 약점 항목 (0.5 미만) - 최신성은 워딩 제거로 제외
-        List<String> weaknesses = new ArrayList<>();
-        if (price.score.doubleValue() < 0.5 && !price.reason.isEmpty()) {
-            weaknesses.add(price.reason);
-        }
-        if (mileage.score.doubleValue() < 0.5 && !mileage.reason.isEmpty()) {
-            weaknesses.add(mileage.reason);
-        }
-        if (age.score.doubleValue() < 0.5 && !age.reason.isEmpty()) {
-            weaknesses.add(age.reason);
-        }
-        // freshness는 워딩 제거로 평가 사유에서 제외
+        String priceStr = String.valueOf(price);
         
-        if (highlightStrengths && !strengths.isEmpty()) {
-            if (strengths.size() == 1) {
-                reason.append("특히 ").append(strengths.get(0)).append("는 이 매물의 주요 강점입니다.");
-            } else if (strengths.size() == 2) {
-                reason.append("특히 ").append(strengths.get(0)).append("와 ").append(strengths.get(1)).append("가 이 매물의 주요 강점입니다.");
-            } else {
-                reason.append("특히 ").append(strengths.get(0)).append(", ").append(strengths.get(1))
-                      .append(" 등이 이 매물의 주요 강점입니다.");
+        // 1. 같은 숫자가 반복되는 패턴 (111, 222, 333, 444, 1111, 2222, 3333, 4444 등)
+        if (priceStr.length() >= 3) {
+            char firstChar = priceStr.charAt(0);
+            boolean allSame = true;
+            for (int i = 1; i < priceStr.length(); i++) {
+                if (priceStr.charAt(i) != firstChar) {
+                    allSame = false;
+                    break;
+                }
             }
-        } else if (!strengths.isEmpty()) {
-            reason.append("강점으로는 ").append(strengths.get(0));
-            if (strengths.size() > 1) {
-                reason.append(" 등이 있습니다");
-            } else {
-                reason.append("가 있습니다");
+            if (allSame) {
+                return true; // 111, 222, 333, 444, 1111, 2222, 3333, 4444 등
             }
         }
         
-        if (!weaknesses.isEmpty() && !highlightStrengths) {
-            if (reason.length() > 0) {
-                reason.append(" 다만, ");
+        // 2. 특정 패턴 (999만원)
+        if (price == 999) {
+            return true;
+        }
+        
+        // 3. 연속된 숫자 패턴 (1234, 2345, 3456 등) - 4자리 이상
+        if (priceStr.length() >= 4) {
+            boolean isSequential = true;
+            for (int i = 0; i < priceStr.length() - 1; i++) {
+                int current = Character.getNumericValue(priceStr.charAt(i));
+                int next = Character.getNumericValue(priceStr.charAt(i + 1));
+                if (next != current + 1) {
+                    isSequential = false;
+                    break;
+                }
             }
-            reason.append(weaknesses.get(0));
-            if (weaknesses.size() > 1) {
-                reason.append(" 등에서 개선 여지가 있습니다");
-            } else {
-                reason.append("에서 개선 여지가 있습니다");
+            if (isSequential) {
+                return true; // 1234, 2345 등
             }
         }
         
-        // 최신성 정보는 워딩 제거로 인해 평가 사유에서 제외
-        
-        return reason.toString();
+        return false;
     }
 
     /**

@@ -176,7 +176,9 @@ public class ChutchaCrawler {
             }
 
             String mergedPayload = mapper.writeValueAsString(merged);
-            String carImageUrl = buildChutchaImageUrl(car);
+            // merged(payload) 기준으로 이미지 URL 생성: detail.img_list[0].img_path 우선, 없으면 list_img_path
+            Map<String, Object> mergedMap = mapper.convertValue(merged, new TypeReference<Map<String, Object>>() {});
+            String carImageUrl = buildChutchaImageUrl(mergedMap);
             batch.add(new Object[]{ mergedPayload, hash, carImageUrl, Timestamp.from(Instant.now()) });
         }
 
@@ -319,29 +321,39 @@ public class ChutchaCrawler {
         return s.length() <= max ? s : s.substring(0, max);
     }
 
+    private static final String CHUTCHA_IMG_BASE = "https://img.chutcha.kr";
+
     /**
      * CHUTCHA car_image_url 생성
-     * 규칙: list_img_path 사용
-     * URL 형식: https://img.chutcha.kr/files/car_resist/202601/16/268525803b3ec5677284d1347801188c.jpg
+     * 1) payload.detail.img_list[0].img_path 우선 사용 (상세 첫 번째 이미지)
+     * 2) 없으면 list_img_path 사용 (목록 썸네일)
+     * URL 형식: https://img.chutcha.kr/files/car_resist/202512/04/xxx.jpg (앞 / 제거 후 베이스 붙임)
      */
-    private String buildChutchaImageUrl(Map<String, Object> car) {
+    private String buildChutchaImageUrl(Map<String, Object> payload) {
         try {
-            Object listImgPathObj = car.get("list_img_path");
-            if (listImgPathObj == null) return null;
-            
-            String listImgPath = String.valueOf(listImgPathObj);
-            if (listImgPath.isBlank()) return null;
-            
-            // 경로가 /로 시작하면 제거
-            if (listImgPath.startsWith("/")) {
-                listImgPath = listImgPath.substring(1);
-            }
-            
-            return "https://img.chutcha.kr/" + listImgPath;
+            String path = getFirstImgPathFromDetail(payload);
+            if (path == null) path = optStr(payload, "list_img_path");
+            if (path == null || path.isBlank()) return null;
+
+            if (path.startsWith("/")) path = path.substring(1);
+            return CHUTCHA_IMG_BASE + "/" + path;
         } catch (Exception e) {
             log.warn("[CHUTCHA] car_image_url 생성 실패: {}", e.getMessage());
             return null;
         }
+    }
+
+    /** payload.detail.img_list[0].img_path 추출 */
+    @SuppressWarnings("unchecked")
+    private String getFirstImgPathFromDetail(Map<String, Object> payload) {
+        Object detailObj = payload != null ? payload.get("detail") : null;
+        if (!(detailObj instanceof Map)) return null;
+        Map<String, Object> detail = (Map<String, Object>) detailObj;
+        Object imgListObj = detail.get("img_list");
+        if (!(imgListObj instanceof List) || ((List<?>) imgListObj).isEmpty()) return null;
+        Object first = ((List<?>) imgListObj).get(0);
+        if (!(first instanceof Map)) return null;
+        return optStr((Map<String, ?>) first, "img_path");
     }
 
     // --------------------- record types ---------------------
