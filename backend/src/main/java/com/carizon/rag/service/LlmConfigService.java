@@ -39,7 +39,7 @@ public class LlmConfigService {
             // DB에 없으면 기본값 반환
             return getDefaultPrompt(promptType);
         } catch (Exception e) {
-            log.warn("[LLM 설정] 프롬프트 조회 실패: {}, 기본값 사용", promptType, e);
+            log.warn("[LLM config] prompt fetch failed: {}, using default", promptType, e);
             return getDefaultPrompt(promptType);
         }
     }
@@ -62,7 +62,7 @@ public class LlmConfigService {
             // DB에 없으면 기본값 반환
             return getDefaultWeight(configKey);
         } catch (Exception e) {
-            log.warn("[LLM 설정] 가중치 조회 실패: {}, 기본값 사용", configKey, e);
+            log.warn("[LLM config] weight fetch failed: {}, using default", configKey, e);
             return getDefaultWeight(configKey);
         }
     }
@@ -89,7 +89,7 @@ public class LlmConfigService {
             
             return weights;
         } catch (Exception e) {
-            log.warn("[LLM 설정] 가중치 전체 조회 실패, 기본값 사용", e);
+            log.warn("[LLM config] weight fetch all failed, using default", e);
             return getDefaultWeights();
         }
     }
@@ -172,9 +172,17 @@ public class LlmConfigService {
         defaults.put("price-range-format", "가격 범위: ${minPrice}만원 이상 ${maxPrice}만원 이하");
         defaults.put("car-list-title", "검색된 차량 목록:");
         defaults.put("car-format", "${index}. ${maker} ${model} ${trim} (${year}년식) 주행거리: ${mileage}km 가격: ${price}만원");
-        defaults.put("instruction", "위 차량 목록을 바탕으로 사용자에게 친절하고 자연스러운 한국어로 추천 설명을 작성해주세요.\n각 차량의 특징과 사용자 요구사항과의 매칭 포인트를 설명해주세요.\n너무 길지 않게 3-5문장 정도로 간결하게 작성해주세요.");
+        defaults.put("instruction",
+            "아래 형식으로 한국어로 작성해주세요. 반드시 위 차량 목록만 언급하세요.\n"
+            + "1) 질문 이해: 사용자 요구사항을 어떻게 이해했는지 1~2문장으로 적어주세요.\n"
+            + "2) 선택 이유: 왜 이 차량들을 추천했는지(전체적인 선정 기준) 1~2문장으로 적어주세요.\n"
+            + "3) 5대 차량 선정 이유: 위 목록의 1번~5번 차량에 대해, 각 차량을 왜 추천했는지 한 대씩 1문장씩 적어주세요. (예: 1번 볼보 XC60 - ... 2번 ...)\n"
+            + "친절하고 자연스럽게, 너무 길지 않게 작성해주세요.");
         defaults.put("default-recommendation", "검색된 차량 중에서 요구사항에 맞는 차량을 추천드립니다.");
-        defaults.put("high-similarity-message", "요구사항과 높은 유사도(${score}%)를 보입니다. ");
+        defaults.put("interpret-search-query",
+            "사용자가 중고차 추천을 요청했습니다. 아래 요청을 '중고차 검색에 쓸 한 줄 키워드'로만 바꿔주세요.\n"
+                + "예: 7명 가족 큰차 필요해 → 7인승 미니밴 SUV 대형 가족용. 메이커·모델·연료·연식을 사용자가 안 말했으면 추론해서 보충하되, 검색어만 한 줄로 출력하세요. 다른 설명 없이 검색어 한 줄만 한국어로.\n\n사용자 요청:\n${query}");
+        defaults.put("high-similarity-message", "Carizon 점수 ${score}점으로 요구사항과 잘 맞습니다. ");
         defaults.put("within-budget-message", "예산 범위 내의 가격입니다. ");
         defaults.put("low-mileage-message", "주행거리가 적어 상태가 양호할 가능성이 높습니다. ");
         defaults.put("default-message", "검색 조건과 일치합니다.");

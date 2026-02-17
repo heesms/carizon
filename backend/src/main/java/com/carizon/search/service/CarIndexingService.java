@@ -1,6 +1,7 @@
 package com.carizon.search.service;
 
 import com.carizon.domain.mapper.CarMapper;
+import com.carizon.search.service.ElasticsearchCarSearchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -10,7 +11,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 /**
- * 차량 데이터를 Meilisearch에 인덱싱하는 서비스
+ * 차량 데이터를 Elasticsearch에 인덱싱하는 서비스
  */
 @Slf4j
 @Service
@@ -19,55 +20,60 @@ import java.util.*;
 public class CarIndexingService {
 
     private final CarMapper mapper;
-    private final MeilisearchService meilisearchService;
+    private final ElasticsearchCarSearchService elasticsearchCarSearchService;
 
-    public MeilisearchService getMeilisearchService() {
-        return meilisearchService;
+    public ElasticsearchCarSearchService getCarSearchService() {
+        return elasticsearchCarSearchService;
     }
 
     /**
-     * 전체 차량 데이터를 Meilisearch에 재인덱싱 (기존 인덱스 삭제 후 전체 재생성)
-     * 페이징 처리로 메모리 효율적으로 처리
+     * 전체 차량 데이터를 Elasticsearch에 재인덱싱 (기존 인덱스 삭제 후 전체 재생성)
      */
     public void reindexAllCars() {
-        log.info("[CarIndexingService] 전체 차량 재인덱싱 시작");
-        
+        log.info("[CarIndexingService] full reindex start");
+        long totalStart = System.currentTimeMillis();
+
         try {
-            // 기존 인덱스 삭제
-            meilisearchService.reindexAll(Collections.emptyList());
-            
-            int batchSize = 1000;
-            int offset = 0;
+            elasticsearchCarSearchService.deleteAllDocuments();
+
+            int batchSize = 2000;
+            Long lastCarId = null;
             int totalIndexed = 0;
-            
+
             while (true) {
                 Map<String, Object> params = new HashMap<>();
                 params.put("limit", batchSize);
-                params.put("offset", offset);
-                
-                // 인덱싱 전용 쿼리 사용
-                List<Map<String, Object>> cars = mapper.selectCarsForIndexing(params);
+                params.put("lastCarId", lastCarId);
+
+                long dbStart = System.currentTimeMillis();
+                List<Map<String, Object>> cars = mapper.selectCarsForIndexingAfterId(params);
+                long dbMs = System.currentTimeMillis() - dbStart;
+
                 if (cars == null || cars.isEmpty()) {
                     break;
                 }
-                
-                // 데이터 정규화 및 인덱싱
+
                 List<Map<String, Object>> indexData = normalizeIndexData(cars);
-                meilisearchService.indexCars(indexData);
-                
+
+                long esStart = System.currentTimeMillis();
+                elasticsearchCarSearchService.indexCars(indexData);
+                long esMs = System.currentTimeMillis() - esStart;
+
                 totalIndexed += indexData.size();
-                log.info("[CarIndexingService] 재인덱싱 진행: {}건 완료", totalIndexed);
-                
+                log.info("[CarIndexingService] reindex progress: {} done (DB {}ms, Elasticsearch {}ms)", totalIndexed, dbMs, esMs);
+
                 if (cars.size() < batchSize) {
                     break;
                 }
-                
-                offset += batchSize;
+                Object lastId = cars.get(cars.size() - 1).get("carId");
+                lastCarId = (lastId instanceof Number) ? ((Number) lastId).longValue() : null;
+                if (lastCarId == null) break;
             }
-            
-            log.info("[CarIndexingService] 전체 차량 재인덱싱 완료: 총 {}건", totalIndexed);
+
+            long totalMs = System.currentTimeMillis() - totalStart;
+            log.info("[CarIndexingService] full reindex done: {} total ({}ms)", totalIndexed, totalMs);
         } catch (Exception e) {
-            log.error("[CarIndexingService] 전체 차량 재인덱싱 실패", e);
+            log.error("[CarIndexingService] full reindex failed", e);
             throw new RuntimeException("차량 재인덱싱 실패", e);
         }
     }
@@ -77,7 +83,7 @@ public class CarIndexingService {
      * @param since 이 시간 이후에 업데이트된 차량만 인덱싱
      */
     public int incrementalIndex(LocalDateTime since) {
-        log.info("[CarIndexingService] 증분 인덱싱 시작: since={}", since);
+        log.info("[CarIndexingService] incremental index start: since={}", since);
         
         try {
             int batchSize = 1000;
@@ -98,10 +104,10 @@ public class CarIndexingService {
                 
                 // 데이터 정규화 및 인덱싱
                 List<Map<String, Object>> indexData = normalizeIndexData(cars);
-                meilisearchService.indexCars(indexData);
+                elasticsearchCarSearchService.indexCars(indexData);
                 
                 totalIndexed += indexData.size();
-                log.info("[CarIndexingService] 증분 인덱싱 진행: {}건 완료", totalIndexed);
+                log.info("[CarIndexingService] incremental index progress: {} done", totalIndexed);
                 
                 if (cars.size() < batchSize) {
                     break;
@@ -110,10 +116,10 @@ public class CarIndexingService {
                 offset += batchSize;
             }
             
-            log.info("[CarIndexingService] 증분 인덱싱 완료: 총 {}건", totalIndexed);
+            log.info("[CarIndexingService] incremental index done: {} total", totalIndexed);
             return totalIndexed;
         } catch (Exception e) {
-            log.error("[CarIndexingService] 증분 인덱싱 실패", e);
+            log.error("[CarIndexingService] incremental index failed", e);
             throw new RuntimeException("증분 인덱싱 실패", e);
         }
     }
@@ -124,7 +130,7 @@ public class CarIndexingService {
      * @return 실제 인덱싱된 개수
      */
     public int batchIndex(int limit) {
-        log.info("[CarIndexingService] 배치 인덱싱 시작: limit={}", limit);
+        log.info("[CarIndexingService] batch index start: limit={}", limit);
         
         try {
             int batchSize = Math.min(1000, limit);
@@ -147,13 +153,13 @@ public class CarIndexingService {
                 
                 // 데이터 정규화 및 인덱싱
                 List<Map<String, Object>> indexData = normalizeIndexData(cars);
-                meilisearchService.indexCars(indexData);
+                elasticsearchCarSearchService.indexCars(indexData);
                 
                 int indexed = indexData.size();
                 totalIndexed += indexed;
                 remaining -= indexed;
                 
-                log.info("[CarIndexingService] 배치 인덱싱 진행: {}건 완료 (남은 작업: {}건)", 
+                log.info("[CarIndexingService] batch index progress: {} done (remaining: {})", 
                     totalIndexed, Math.max(0, remaining));
                 
                 if (cars.size() < currentBatchSize) {
@@ -163,10 +169,10 @@ public class CarIndexingService {
                 offset += indexed;
             }
             
-            log.info("[CarIndexingService] 배치 인덱싱 완료: 총 {}건", totalIndexed);
+            log.info("[CarIndexingService] batch index done: {} total", totalIndexed);
             return totalIndexed;
         } catch (Exception e) {
-            log.error("[CarIndexingService] 배치 인덱싱 실패", e);
+            log.error("[CarIndexingService] batch index failed", e);
             throw new RuntimeException("배치 인덱싱 실패", e);
         }
     }
@@ -185,12 +191,12 @@ public class CarIndexingService {
             if (cars != null && !cars.isEmpty()) {
                 List<Map<String, Object>> indexData = normalizeIndexData(cars);
                 if (!indexData.isEmpty()) {
-                    meilisearchService.indexCar(indexData.get(0));
-                    log.debug("[CarIndexingService] 차량 인덱싱 완료: carId={}", carId);
+                    elasticsearchCarSearchService.indexCar(indexData.get(0));
+                    log.debug("[CarIndexingService] car index done: carId={}", carId);
                 }
             }
         } catch (Exception e) {
-            log.error("[CarIndexingService] 차량 인덱싱 실패: carId={}", carId, e);
+            log.error("[CarIndexingService] car index failed: carId={}", carId, e);
         }
     }
 
@@ -220,7 +226,7 @@ public class CarIndexingService {
                 
                 indexData.add(doc);
             } catch (Exception e) {
-                log.warn("[CarIndexingService] 데이터 정규화 실패: {}", e.getMessage());
+                log.warn("[CarIndexingService] data normalize failed: {}", e.getMessage());
             }
         }
         

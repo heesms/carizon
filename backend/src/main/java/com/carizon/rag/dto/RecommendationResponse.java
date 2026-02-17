@@ -33,7 +33,10 @@ public class RecommendationResponse {
         private String fuel;
         private String transmission;
         private String color;
-        private String url;
+        private String region; // 지역
+        private String url;    // 기본 링크 (하위 호환)
+        private String pcUrl;  // PC용 링크
+        private String mUrl;   // 모바일용 링크
         private String imageUrl; // 차량 이미지 URL
         private Double relevanceScore; // 유사도 점수
         private String reason; // 추천 이유

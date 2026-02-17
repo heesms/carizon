@@ -54,7 +54,7 @@ public class CrawlAdminController {
                 "bizDate", date.toString()
             ));
         } catch (Exception e) {
-            log.error("[크롤링] 머지 실행 실패", e);
+            log.error("[crawl] merge run failed", e);
             return ApiResponse.error("머지 실패: " + e.getMessage());
         }
     }
@@ -77,7 +77,7 @@ public class CrawlAdminController {
             }
             return ApiResponse.success(platform + " 머지 완료: " + merged + "건");
         } catch (Exception e) {
-            log.error("[크롤링] 플랫폼 머지 실패: {}", platform, e);
+            log.error("[crawl] platform merge failed: {}", platform, e);
             return ApiResponse.error("머지 실패: " + e.getMessage());
         }
     }

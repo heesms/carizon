@@ -77,6 +77,13 @@ public class CarTextConverterService {
         if (lower.contains("픽업") || lower.contains("pickup") || lower.contains("트럭")) {
             return "픽업트럭";
         }
+        // 경차/소형 (소형차 추천 시 필터용)
+        if (lower.contains("경차") || lower.contains("경차량") || lower.contains("케이카")) {
+            return "경차";
+        }
+        if (lower.contains("소형") || lower.contains("소형차") || lower.contains("경소형")) {
+            return "소형";
+        }
         
         // 매핑되지 않으면 원본 반환
         return bodyType;
@@ -293,7 +300,10 @@ public class CarTextConverterService {
             text.append("차종: ").append(car.bodyType()).append("\n");
         }
         
-        // 9. 기타 정보
+        // 9. 기타 정보 (제조국은 유사도 검색용으로 텍스트에 포함)
+        if (modelBasicInfo.get("maker_country") != null && !String.valueOf(modelBasicInfo.get("maker_country")).isEmpty()) {
+            text.append("제조국: ").append(modelBasicInfo.get("maker_country")).append("\n");
+        }
         if (car.color() != null) {
             text.append("색상: ").append(car.color()).append("\n");
         }
@@ -344,7 +354,7 @@ public class CarTextConverterService {
         String sql = """
             SELECT 
                 (SELECT fuel FROM (
-                    SELECT pc.fuel, COUNT(*) as cnt
+                    SELECT pc2.fuel, COUNT(*) as cnt
                     FROM car_master cm2
                     INNER JOIN platform_car pc2 ON pc2.car_id = cm2.car_id
                     WHERE cm2.model_code = ?
@@ -355,7 +365,7 @@ public class CarTextConverterService {
                     LIMIT 1
                 ) t1) AS typical_fuel,
                 (SELECT transmission FROM (
-                    SELECT pc.transmission, COUNT(*) as cnt
+                    SELECT pc2.transmission, COUNT(*) as cnt
                     FROM car_master cm2
                     INNER JOIN platform_car pc2 ON pc2.car_id = cm2.car_id
                     WHERE cm2.model_code = ?
@@ -366,7 +376,7 @@ public class CarTextConverterService {
                     LIMIT 1
                 ) t2) AS typical_transmission,
                 (SELECT body_type FROM (
-                    SELECT COALESCE(pc.body_type, cm2.body_type) as body_type, COUNT(*) as cnt
+                    SELECT COALESCE(pc2.body_type, cm2.body_type) as body_type, COUNT(*) as cnt
                     FROM car_master cm2
                     INNER JOIN platform_car pc2 ON pc2.car_id = cm2.car_id
                     WHERE cm2.model_code = ?
@@ -407,7 +417,7 @@ public class CarTextConverterService {
             SELECT cm.car_id AS carId,
                    cm.maker_code,
                    cm.model_code,
-                   pc.maker_name,
+                   COALESCE(m.maker_name, pc.maker_name) AS maker_name,
                    pc.model_group_name,
                    pc.model_name,
                    pc.trim_name,
@@ -419,9 +429,16 @@ public class CarTextConverterService {
                    COALESCE(pc.region, cm.region) AS region,
                    pc.platform_car_id AS platformCarId, 
                    pc.platform_name, 
-                   pc.price, pc.status, pc.pc_url, pc.m_url
+                   pc.price, pc.status, pc.pc_url, pc.m_url,
+                   m.country_name,
+                   (SELECT pc2.car_image_url FROM platform_car pc2
+                    LEFT JOIN cz_platform_priority pp ON pp.platform_name = pc2.platform_name
+                    WHERE pc2.car_id = cm.car_id
+                      AND pc2.car_image_url IS NOT NULL AND TRIM(IFNULL(pc2.car_image_url,'')) != ''
+                    ORDER BY COALESCE(pp.priority, 999) ASC LIMIT 1) AS representativeImageUrl
             FROM car_master cm
             INNER JOIN platform_car pc ON pc.car_id = cm.car_id
+            LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
             WHERE cm.car_id = ?
             LIMIT 1
             """;
@@ -437,6 +454,10 @@ public class CarTextConverterService {
         
         // 모델 기본 정보 조회
         Map<String, Object> modelBasicInfo = getModelBasicInfo(modelCode);
+        // 제조국(메이커별 나라) — 유사도 검색용 텍스트에 포함
+        if (carMap.get("country_name") != null && !String.valueOf(carMap.get("country_name")).isEmpty()) {
+            modelBasicInfo.put("maker_country", carMap.get("country_name"));
+        }
         
         CarDetailRow car = new CarDetailRow(
             ((Number) carMap.get("carId")).longValue(),
@@ -458,7 +479,8 @@ public class CarTextConverterService {
             (String) carMap.get("status"),
             (String) carMap.get("pc_url"),
             (String) carMap.get("m_url"),
-            null
+            (String) carMap.get("lastSeenDate"),
+            (String) carMap.get("representativeImageUrl")
         );
         
         String text = convertCarToText(car, modelBasicInfo);
@@ -473,6 +495,9 @@ public class CarTextConverterService {
             }
             if (car.makerName() != null && !car.makerName().isEmpty()) {
                 metadataMap.put("maker", car.makerName());
+            }
+            if (carMap.get("country_name") != null && !String.valueOf(carMap.get("country_name")).isEmpty()) {
+                metadataMap.put("country", String.valueOf(carMap.get("country_name")));
             }
             if (car.modelGroupName() != null && !car.modelGroupName().isEmpty()) {
                 metadataMap.put("modelGroup", car.modelGroupName());
@@ -552,6 +577,9 @@ public class CarTextConverterService {
             }
             if (car.mUrl() != null && !car.mUrl().isEmpty()) {
                 metadataMap.put("mUrl", car.mUrl());
+            }
+            if (car.representativeImageUrl() != null && !car.representativeImageUrl().isEmpty()) {
+                metadataMap.put("imageUrl", car.representativeImageUrl());
             }
             
             // 모델 기본 정보를 메타데이터에 추가

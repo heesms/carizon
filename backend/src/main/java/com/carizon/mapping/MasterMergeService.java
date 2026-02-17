@@ -54,7 +54,7 @@ public class MasterMergeService {
         java.sql.Date dateStart = java.sql.Date.valueOf(bizDate);
         java.sql.Date dateEnd = java.sql.Date.valueOf(bizDate.plusDays(1));
         
-        log.info("[master] upsertAliveToCarMaster: 처리 시작 (배치 처리 모드)");
+        log.info("[master] upsertAliveToCarMaster: start (batch mode)");
         
         // 1단계: 처리할 CAR_NO 목록 조회 (배치 처리용)
         List<String> carNos = jdbc.query("""
@@ -66,11 +66,11 @@ public class MasterMergeService {
         """, (rs, i) -> rs.getString(1), dateStart, dateEnd);
         
         if (carNos.isEmpty()) {
-            log.info("[master] upsertAliveToCarMaster: 처리할 데이터 없음");
+            log.info("[master] upsertAliveToCarMaster: no data to process");
             return 0;
         }
         
-        log.info("[master] upsertAliveToCarMaster: 총 {}개의 CAR_NO 처리 예정", carNos.size());
+        log.info("[master] upsertAliveToCarMaster: {} CAR_NO to process", carNos.size());
         
         // 2단계: 배치별로 처리
         int totalAffected = 0;
@@ -98,21 +98,23 @@ public class MasterMergeService {
                 return jdbc.update(String.format("""
                     INSERT INTO car_master
                     (CAR_NO, MAKER_CODE, MODEL_GROUP_CODE, MODEL_CODE, TRIM_CODE, GRADE_CODE,
-                     adv_status, last_seen_date, UPDATED_AT)
+                     price_new, adv_status, last_seen_date, UPDATED_AT)
                     SELECT t.CAR_NO,
                            MAX(t.MAKER_CODE) AS MAKER_CODE,
                            MAX(t.MODEL_GROUP_CODE) AS MODEL_GROUP_CODE,
                            MAX(t.MODEL_CODE) AS MODEL_CODE,
                            MAX(t.TRIM_CODE) AS TRIM_CODE,
                            MAX(t.GRADE_CODE) AS GRADE_CODE,
+                           MAX(CASE WHEN t.price_new IS NOT NULL AND t.price_new > 0 THEN t.price_new END) AS price_new,
                            'ONSALE', ?, NOW()
                     FROM (
                       SELECT p.CAR_NO,
+                             p.price_new AS price_new,
                              cm_m.maker_code AS MAKER_CODE,
                              cm_mg.model_group_code AS MODEL_GROUP_CODE,
                              cm_mo.model_code AS MODEL_CODE,
                              cm_t.trim_code AS TRIM_CODE,
-                             cm_g.grade_code AS GRADE_CODE
+                             NULLIF(cm_g.grade_code, 'null') AS GRADE_CODE
                       FROM platform_car p
                       LEFT JOIN cz_code_map cm_m
                         ON cm_m.platform_name = p.PLATFORM_NAME
@@ -145,6 +147,7 @@ public class MasterMergeService {
                       MODEL_CODE       = VALUES(MODEL_CODE),
                       TRIM_CODE        = VALUES(TRIM_CODE),
                       GRADE_CODE       = VALUES(GRADE_CODE),
+                      price_new        = COALESCE(NULLIF(VALUES(price_new), 0), car_master.price_new),
                       adv_status       = 'ONSALE',
                       last_seen_date   = VALUES(last_seen_date),
                       UPDATED_AT       = NOW()
@@ -156,12 +159,12 @@ public class MasterMergeService {
             totalAffected += batchAffected;
             long batchTime = System.currentTimeMillis() - batchStart;
             
-            log.info("[master] upsertAliveToCarMaster 배치 {}/{} 완료: {}건 처리 ({}ms)", 
+            log.info("[master] upsertAliveToCarMaster batch {}/{} done: {} rows ({}ms)", 
                 batchCount, (carNos.size() + MASTER_MERGE_BATCH_SIZE - 1) / MASTER_MERGE_BATCH_SIZE, 
                 batchAffected, batchTime);
         }
         
-        log.info("[master] upsertAliveToCarMaster 완료: 총 {}건 처리 ({}개 배치)", totalAffected, batchCount);
+        log.info("[master] upsertAliveToCarMaster done: {} rows ({} batches)", totalAffected, batchCount);
         return totalAffected;
     }
 
@@ -241,11 +244,11 @@ public class MasterMergeService {
                                          AND m.p_trim_code = pc.TRIM_CODE
                                          AND m.status IN ('LOCKED','AUTO')
                                        LIMIT 1),
-                cm.GRADE_CODE       = (SELECT m.grade_code FROM cz_code_map m
+                cm.GRADE_CODE       = NULLIF((SELECT m.grade_code FROM cz_code_map m
                                        WHERE m.platform_name = pc.PLATFORM_NAME
                                          AND m.p_grade_code = pc.GRADE_CODE
                                          AND m.status IN ('LOCKED','AUTO')
-                                       LIMIT 1),
+                                       LIMIT 1), 'null'),
                 cm.UPDATED_AT       = NOW(),
                 cm.YEAR =   pc.YYMM,
                 cm.MILEAGE =  pc.KM,
@@ -254,7 +257,8 @@ public class MasterMergeService {
                 cm.FUEL = pc.FUEL,
                 cm.REGION = pc.REGION,
                 cm.DISPLACEMENT = pc.DISPLACEMENT,
-                cm.BODY_TYPE = pc.BODY_TYPE
+                cm.BODY_TYPE = pc.BODY_TYPE,
+                cm.price_new = CASE WHEN pc.price_new IS NOT NULL AND pc.price_new > 0 THEN pc.price_new ELSE cm.price_new END
             WHERE cm.adv_status = 'ONSALE'
               AND cm.CAR_ID IN (__IDS__)
             """.replace("__IDS__", ids);
@@ -299,26 +303,26 @@ public class MasterMergeService {
      *  주의: platform_car는 이미 TRUNCATE되고 재생성된 상태여야 함
      *  car_price_history도 함께 TRUNCATE해야 할 수 있음 (platform_car_id 참조) */
     public int rebuildCarMasterFromScratch(LocalDate bizDate) {
-        log.warn("[master] rebuildCarMasterFromScratch: car_master를 TRUNCATE하고 재생성합니다! (배치 처리 모드)");
+        log.warn("[master] rebuildCarMasterFromScratch: TRUNCATE car_master and rebuild! (batch mode)");
         
         // 우선순위 테이블 보장 (별도 트랜잭션으로 분리하여 락 타임아웃 방지)
         try {
             ensurePrioritySeed();
         } catch (Exception e) {
-            log.warn("[master] ensurePrioritySeed 실패 (락 타임아웃 가능성), 계속 진행: {}", e.getMessage());
+            log.warn("[master] ensurePrioritySeed failed (lock timeout?), continuing: {}", e.getMessage());
         }
         
         // 1단계: car_master TRUNCATE
         tx.execute(status -> {
-            log.info("[master] rebuildCarMasterFromScratch: car_master TRUNCATE 시작");
+            log.info("[master] rebuildCarMasterFromScratch: car_master TRUNCATE start");
             jdbc.execute("TRUNCATE TABLE car_master");
-            log.info("[master] rebuildCarMasterFromScratch: car_master TRUNCATE 완료");
+            log.info("[master] rebuildCarMasterFromScratch: car_master TRUNCATE done");
             return null;
         });
         
         // 2단계: 처리할 CAR_NO 목록 조회 (배치 처리용)
         // platform_car가 이미 재생성되었으므로 last_seen_date 조건 불필요
-        log.info("[master] rebuildCarMasterFromScratch: CAR_NO 목록 조회 시작");
+        log.info("[master] rebuildCarMasterFromScratch: CAR_NO list fetch start");
         List<String> carNos = jdbc.query("""
             SELECT DISTINCT p.CAR_NO
             FROM platform_car p
@@ -327,11 +331,11 @@ public class MasterMergeService {
         """, (rs, i) -> rs.getString(1));
         
         if (carNos.isEmpty()) {
-            log.info("[master] rebuildCarMasterFromScratch: 처리할 데이터 없음");
+            log.info("[master] rebuildCarMasterFromScratch: no data to process");
             return 0;
         }
         
-        log.info("[master] rebuildCarMasterFromScratch: 총 {}개의 CAR_NO 처리 예정", carNos.size());
+        log.info("[master] rebuildCarMasterFromScratch: {} CAR_NO to process", carNos.size());
         
         // 3단계: 배치별로 처리
         int totalAffected = 0;
@@ -357,7 +361,7 @@ public class MasterMergeService {
                 return jdbc.update(String.format("""
                     INSERT INTO car_master
                     (CAR_NO, MAKER_CODE, MODEL_GROUP_CODE, MODEL_CODE, TRIM_CODE, GRADE_CODE,
-                     YEAR, MILEAGE, COLOR, TRANSMISSiON, FUEL, REGION, DISPLACEMENT, BODY_TYPE,
+                     YEAR, MILEAGE, COLOR, TRANSMISSiON, FUEL, REGION, DISPLACEMENT, BODY_TYPE, price_new,
                      adv_status, last_seen_date, UPDATED_AT)
                     SELECT 
                       t.CAR_NO,
@@ -387,7 +391,7 @@ public class MasterMergeService {
                          AND cm.p_trim_code = t.TRIM_CODE
                          AND cm.status IN ('LOCKED','AUTO')
                        LIMIT 1) AS TRIM_CODE,
-                      (SELECT cm.grade_code FROM cz_code_map cm
+                      NULLIF((SELECT cm.grade_code FROM cz_code_map cm
                        WHERE cm.platform_name = t.PLATFORM_NAME
                          AND cm.p_maker_code = t.MAKER_CODE
                          AND cm.p_model_group_code = t.MODEL_GROUP_CODE
@@ -395,7 +399,7 @@ public class MasterMergeService {
                          AND cm.p_trim_code = t.TRIM_CODE
                          AND cm.p_grade_code = t.GRADE_CODE
                          AND cm.status IN ('LOCKED','AUTO')
-                       LIMIT 1) AS GRADE_CODE,
+                       LIMIT 1), 'null') AS GRADE_CODE,
                       t.YYMM AS YEAR,
                       t.KM AS MILEAGE,
                       t.COLOR,
@@ -404,6 +408,8 @@ public class MasterMergeService {
                       t.REGION,
                       t.DISPLACEMENT,
                       t.BODY_TYPE,
+                      (SELECT MAX(pc2.price_new) FROM platform_car pc2
+                       WHERE pc2.CAR_NO = t.CAR_NO AND pc2.price_new IS NOT NULL AND pc2.price_new > 0) AS price_new,
                       'ONSALE', ?, NOW()
                     FROM (
                       SELECT t_inner.*
@@ -431,12 +437,12 @@ public class MasterMergeService {
             totalAffected += batchAffected;
             long batchTime = System.currentTimeMillis() - batchStart;
             
-            log.info("[master] rebuildCarMasterFromScratch 배치 {}/{} 완료: {}건 처리 ({}ms)", 
+            log.info("[master] rebuildCarMasterFromScratch batch {}/{} done: {} rows ({}ms)", 
                 batchCount, (carNos.size() + MASTER_MERGE_BATCH_SIZE - 1) / MASTER_MERGE_BATCH_SIZE, 
                 batchAffected, batchTime);
         }
         
-        log.info("[master] rebuildCarMasterFromScratch: 전체 완료 - {}건 처리 ({}개 배치)", totalAffected, batchCount);
+        log.info("[master] rebuildCarMasterFromScratch: done - {} rows ({} batches)", totalAffected, batchCount);
         return totalAffected;
     }
 

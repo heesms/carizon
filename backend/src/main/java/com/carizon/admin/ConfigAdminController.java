@@ -48,14 +48,14 @@ public class ConfigAdminController {
                 config.put("fallbackToDb", Boolean.parseBoolean(fallbackToDb));
             } catch (Exception e) {
                 // 테이블이 없거나 데이터가 없으면 기본값 반환
-                log.warn("[설정] system_config 테이블 조회 실패, 기본값 사용: {}", e.getMessage());
+                log.warn("[config] system_config fetch failed, using default: {}", e.getMessage());
                 config.put("useMeilisearch", true);
                 config.put("fallbackToDb", true);
             }
             
             return ApiResponse.success(config);
         } catch (Exception e) {
-            log.error("[설정] 검색 모드 조회 실패", e);
+            log.error("[config] search mode fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -98,10 +98,10 @@ public class ConfigAdminController {
                 "Meilisearch 실패 시 DB 폴백 여부"
             );
             
-            log.info("[설정] 검색 모드 변경: useMeilisearch={}, fallbackToDb={}", useMeilisearch, fallbackToDb);
+            log.info("[config] search mode changed: useMeilisearch={}, fallbackToDb={}", useMeilisearch, fallbackToDb);
             return ApiResponse.success("설정 저장 완료");
         } catch (Exception e) {
-            log.error("[설정] 검색 모드 설정 실패", e);
+            log.error("[config] search mode set failed", e);
             return ApiResponse.error("설정 실패: " + e.getMessage());
         }
     }
@@ -142,7 +142,7 @@ public class ConfigAdminController {
             
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.error("[설정] 코드 조회 실패", e);
+            log.error("[config] code fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -163,7 +163,7 @@ public class ConfigAdminController {
             result.put("note", "새로운 엔드포인트 /admin/config/llm/prompts 사용을 권장합니다.");
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.error("[설정] LLM 프롬프트 조회 실패", e);
+            log.error("[config] LLM prompt fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }

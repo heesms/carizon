@@ -54,20 +54,20 @@ public class BatchWorkflowService {
                 
                 // 의존성 확인 (간단한 구현)
                 if (dependsOn != null && !dependsOn.isEmpty()) {
-                    log.info("[워크플로우] 작업 {} 의존성 대기: {}", jobId, dependsOn);
+                    log.info("[workflow] job {} waiting deps: {}", jobId, dependsOn);
                 }
                 
-                log.info("[워크플로우] 작업 실행: {}", jobId);
+                log.info("[workflow] job run: {}", jobId);
                 batchJobService.executeJob(jobId, config);
             }
             
             updateWorkflowExecutionStatus(executionId, "SUCCESS");
-            log.info("[워크플로우] 완료: {} (executionId: {})", workflowId, executionId);
+            log.info("[workflow] done: {} (executionId: {})", workflowId, executionId);
             
             return executionId;
         } catch (Exception e) {
             updateWorkflowExecutionFailure(executionId, e.getMessage());
-            log.error("[워크플로우] 실패: {} (executionId: {})", workflowId, executionId, e);
+            log.error("[workflow] failed: {} (executionId: {})", workflowId, executionId, e);
             throw new RuntimeException("워크플로우 실행 실패: " + workflowId, e);
         }
     }

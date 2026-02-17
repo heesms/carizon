@@ -24,19 +24,38 @@ public class ChromaVectorStoreService {
     private final RagProperties ragProperties;
     private final HttpClientService httpClientService;
     private final ObjectMapper objectMapper;
-    
+
+    /** 모델 전용 컬렉션 ID 캐시 (전체 임베딩 시 매 건마다 HTTP 조회 방지) */
+    private volatile String modelCollectionIdCache;
+
     /**
      * 컬렉션 UUID를 가져오거나 생성 (v2 API는 UUID 필요)
      */
     private String getOrCreateCollectionId() throws IOException {
-        String collectionName = ragProperties.getChroma().getCollectionName();
+        return getOrCreateCollectionIdByName(ragProperties.getChroma().getCollectionName());
+    }
+
+    /**
+     * 모델 전용 컬렉션 UUID를 가져오거나 생성 (model_descriptions). 한 번 조회 후 캐시.
+     */
+    public String getOrCreateModelCollectionId() throws IOException {
+        String cached = modelCollectionIdCache;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (this) {
+            if (modelCollectionIdCache == null) {
+                modelCollectionIdCache = getOrCreateCollectionIdByName(ragProperties.getChroma().getModelCollectionName());
+            }
+            return modelCollectionIdCache;
+        }
+    }
+
+    private String getOrCreateCollectionIdByName(String collectionName) throws IOException {
         String tenant = ragProperties.getChroma().getTenant();
         String database = ragProperties.getChroma().getDatabase();
         String baseUrl = ragProperties.getChroma().getBaseUrl();
-        
-        // 컬렉션을 이름으로 조회 (v2 API는 이름으로도 조회 가능)
         String getUrl = baseUrl + "/api/v2/tenants/" + tenant + "/databases/" + database + "/collections/" + collectionName;
-        
         try (Response response = httpClientService.get(getUrl)) {
             if (response.isSuccessful()) {
                 JsonNode collection = objectMapper.readTree(response.body().string());
@@ -49,9 +68,44 @@ public class ChromaVectorStoreService {
         } catch (Exception e) {
             log.debug("Collection not found by name, will create: {}", collectionName);
         }
-        
-        // 컬렉션이 없으면 생성
         return createCollection(collectionName);
+    }
+
+    /**
+     * Chroma 컬렉션 전체 삭제 (전체 재임베딩 전용).
+     * 삭제 후 다음 add 시 getOrCreateCollectionId()가 새 컬렉션을 생성한다.
+     */
+    public boolean deleteCollection() throws IOException {
+        String collectionName = ragProperties.getChroma().getCollectionName();
+        String tenant = ragProperties.getChroma().getTenant();
+        String database = ragProperties.getChroma().getDatabase();
+        String baseUrl = ragProperties.getChroma().getBaseUrl();
+        String getUrl = baseUrl + "/api/v2/tenants/" + tenant + "/databases/" + database + "/collections/" + collectionName;
+        String collectionId;
+        try (Response getRes = httpClientService.get(getUrl)) {
+            if (!getRes.isSuccessful() || getRes.code() == 404) {
+                log.info("[ChromaDB] collection not found (already empty): {}", collectionName);
+                return true;
+            }
+            JsonNode collection = objectMapper.readTree(getRes.body().string());
+            if (!collection.has("id")) {
+                throw new IOException("Collection response has no id");
+            }
+            collectionId = collection.get("id").asText();
+        }
+        String deleteUrl = baseUrl + "/api/v2/tenants/" + tenant + "/databases/" + database + "/collections/" + collectionId;
+        try (Response response = httpClientService.delete(deleteUrl)) {
+            if (response.isSuccessful()) {
+                log.info("[ChromaDB] collection deleted: {}", collectionName);
+                return true;
+            }
+            if (response.code() == 404) {
+                log.info("[ChromaDB] collection not found (already empty): {}", collectionName);
+                return true;
+            }
+            String errorBody = response.body() != null ? response.body().string() : "";
+            throw new IOException("Failed to delete collection: " + response.code() + " " + errorBody);
+        }
     }
     
     /**
@@ -136,11 +190,63 @@ public class ChromaVectorStoreService {
             }
         }
     }
+
+    /**
+     * 모델 전용 컬렉션에 모델코드별 임베딩 1건 저장 (id = model_{modelCode}, 동일 id 재호출 시 덮어쓰기)
+     */
+    public void addModelEmbedding(String modelCode, String document, float[] embedding,
+                                  Map<String, String> metadata) throws IOException {
+        String collectionId = getOrCreateModelCollectionId();
+        String tenant = ragProperties.getChroma().getTenant();
+        String database = ragProperties.getChroma().getDatabase();
+        String baseUrl = ragProperties.getChroma().getBaseUrl();
+        String url = baseUrl + "/api/v2/tenants/" + tenant + "/databases/" + database + "/collections/" + collectionId + "/add";
+        Map<String, Object> body = new HashMap<>();
+        body.put("ids", Collections.singletonList("model_" + modelCode));
+        body.put("embeddings", Collections.singletonList(Arrays.asList(convertToDoubleArray(embedding))));
+        body.put("documents", Collections.singletonList(document != null ? document : ""));
+        Map<String, String> meta = new HashMap<>(metadata != null ? metadata : Map.of());
+        meta.put("modelCode", modelCode);
+        body.put("metadatas", Collections.singletonList(meta));
+        try (Response response = httpClientService.postJson(url, body)) {
+            if (!response.isSuccessful()) {
+                String errorBody = response.body() != null ? response.body().string() : "";
+                throw new IOException("Failed to add model embedding: " + response.code() + " " + errorBody);
+            }
+        }
+    }
+
+    /**
+     * 모델 전용 컬렉션에서 유사도 검색 (AI 추천 시 활용)
+     */
+    public List<SearchResult> searchSimilarInModelCollection(float[] queryEmbedding, int nResults,
+                                                            Map<String, Object> where) throws IOException {
+        String collectionId = getOrCreateModelCollectionId();
+        String tenant = ragProperties.getChroma().getTenant();
+        String database = ragProperties.getChroma().getDatabase();
+        String baseUrl = ragProperties.getChroma().getBaseUrl();
+        String url = baseUrl + "/api/v2/tenants/" + tenant + "/databases/" + database + "/collections/" + collectionId + "/query";
+        Map<String, Object> body = new HashMap<>();
+        body.put("query_embeddings", Collections.singletonList(Arrays.asList(convertToDoubleArray(queryEmbedding))));
+        body.put("n_results", nResults);
+        body.put("include", Arrays.asList("metadatas", "documents", "distances"));
+        if (where != null && !where.isEmpty()) body.put("where", where);
+        try (Response response = httpClientService.postJson(url, body)) {
+            if (!response.isSuccessful()) {
+                throw new IOException("Failed to search model collection: " + response.code() + " " + response.message());
+            }
+            JsonNode jsonNode = objectMapper.readTree(response.body().string());
+            return parseSearchResults(jsonNode);
+        }
+    }
     
     /**
-     * 벡터 유사도 검색 (v2 API)
+     * 벡터 유사도 검색 (v2 API).
+     * @param where 메타데이터 필터 (예: maker=볼보), null이면 미적용
+     * @param whereDocument 문서 본문 필터 (예: {"$contains": "XC60"}), null이면 미적용
      */
-    public List<SearchResult> searchSimilar(float[] queryEmbedding, int nResults) throws IOException {
+    public List<SearchResult> searchSimilar(float[] queryEmbedding, int nResults,
+                                            Map<String, Object> where, Map<String, Object> whereDocument) throws IOException {
         String collectionId = getOrCreateCollectionId();
         
         String tenant = ragProperties.getChroma().getTenant();
@@ -151,6 +257,15 @@ public class ChromaVectorStoreService {
         Map<String, Object> body = new HashMap<>();
         body.put("query_embeddings", Collections.singletonList(Arrays.asList(convertToDoubleArray(queryEmbedding))));
         body.put("n_results", nResults);
+        body.put("include", Arrays.asList("metadatas", "documents", "distances"));
+        if (where != null && !where.isEmpty()) {
+            body.put("where", where);
+            log.info("[ChromaDB] query with where: {}", where);
+        }
+        if (whereDocument != null && !whereDocument.isEmpty()) {
+            body.put("where_document", whereDocument);
+            log.info("[ChromaDB] query with where_document: {}", whereDocument);
+        }
         
         try (Response response = httpClientService.postJson(url, body)) {
             if (!response.isSuccessful()) {
@@ -160,6 +275,11 @@ public class ChromaVectorStoreService {
             JsonNode jsonNode = objectMapper.readTree(response.body().string());
             return parseSearchResults(jsonNode);
         }
+    }
+    
+    /** 벡터 유사도 검색 (where만 사용, where_document 없음) */
+    public List<SearchResult> searchSimilar(float[] queryEmbedding, int nResults, Map<String, Object> where) throws IOException {
+        return searchSimilar(queryEmbedding, nResults, where, null);
     }
     
     /**
@@ -274,6 +394,93 @@ public class ChromaVectorStoreService {
         }
     }
 
+    /**
+     * Chroma에 저장된 RAG 임베딩 목록 조회 (실제 들어가 있는 차량 확인용).
+     * @param limit 최대 건수 (기본 100, 최대 2000)
+     * @param maker 메이커 필터 (예: "현대") - null 가능
+     * @param model 모델 필터 (예: "XC60") - null 가능
+     * @param modelGroup 모델그룹 필터 - null 가능
+     * @return id, carId, maker, model, status, platformName 등 메타데이터 + document 요약
+     */
+    public List<Map<String, Object>> listEmbeddings(int limit, String maker, String model, String modelGroup) throws IOException {
+        String collectionId = getOrCreateCollectionId();
+        String tenant = ragProperties.getChroma().getTenant();
+        String database = ragProperties.getChroma().getDatabase();
+        String baseUrl = ragProperties.getChroma().getBaseUrl();
+        String url = baseUrl + "/api/v2/tenants/" + tenant + "/databases/" + database + "/collections/" + collectionId + "/get";
+
+        int cappedLimit = Math.min(Math.max(limit, 1), 2000);
+        Map<String, Object> body = new HashMap<>();
+        body.put("limit", cappedLimit);
+        body.put("include", Arrays.asList("metadatas", "documents"));
+        Map<String, Object> where = buildWhereForList(maker, model, modelGroup);
+        if (where != null && !where.isEmpty()) {
+            body.put("where", where);
+        }
+
+        try (Response response = httpClientService.postJson(url, body)) {
+            if (!response.isSuccessful()) {
+                throw new IOException("Chroma get failed: " + response.code() + " " + response.message());
+            }
+            JsonNode jsonNode = objectMapper.readTree(response.body().string());
+            List<Map<String, Object>> results = new ArrayList<>();
+            if (jsonNode.has("ids") && jsonNode.has("metadatas") && jsonNode.has("documents")) {
+                JsonNode ids = jsonNode.get("ids");
+                JsonNode metadatas = jsonNode.get("metadatas");
+                JsonNode documents = jsonNode.get("documents");
+                for (int i = 0; i < ids.size(); i++) {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("id", ids.get(i).asText());
+                    if (metadatas.has(i)) {
+                        JsonNode meta = metadatas.get(i);
+                        if (meta.isObject()) {
+                            Map<String, Object> flat = new LinkedHashMap<>();
+                            meta.fields().forEachRemaining(e -> {
+                                String k = e.getKey();
+                                JsonNode v = e.getValue();
+                                flat.put(k, v.isTextual() ? v.asText() : v.isNumber() ? v.asInt() : v.toString());
+                            });
+                            item.put("carId", flat.get("carId"));
+                            item.put("maker", flat.get("maker"));
+                            item.put("model", flat.get("model"));
+                            item.put("modelGroup", flat.get("modelGroup"));
+                            item.put("trim", flat.get("trim"));
+                            item.put("status", flat.get("status"));
+                            item.put("platformName", flat.get("platformName"));
+                            item.put("price", flat.get("price"));
+                            item.put("year", flat.get("year"));
+                            item.put("metadata", flat);
+                        }
+                    }
+                    if (documents.has(i)) {
+                        String doc = documents.get(i).asText();
+                        item.put("documentPreview", doc.length() > 200 ? doc.substring(0, 200) + "..." : doc);
+                    }
+                    results.add(item);
+                }
+            }
+            log.info("[ChromaDB] listEmbeddings: limit={}, maker={}, model={}, modelGroup={}, returned={}", cappedLimit, maker, model, modelGroup, results.size());
+            return results;
+        }
+    }
+
+    /** listEmbeddings용 where 조건 (maker / model / modelGroup 조합) */
+    private Map<String, Object> buildWhereForList(String maker, String model, String modelGroup) {
+        List<Map<String, Object>> conditions = new ArrayList<>();
+        if (maker != null && !maker.isBlank()) {
+            conditions.add(Map.of("maker", Map.of("$eq", maker.trim())));
+        }
+        if (model != null && !model.isBlank()) {
+            conditions.add(Map.of("model", Map.of("$eq", model.trim())));
+        }
+        if (modelGroup != null && !modelGroup.isBlank()) {
+            conditions.add(Map.of("modelGroup", Map.of("$eq", modelGroup.trim())));
+        }
+        if (conditions.isEmpty()) return null;
+        if (conditions.size() == 1) return conditions.get(0);
+        return Map.of("$and", conditions);
+    }
+
     private List<SearchResult> parseSearchResults(JsonNode jsonNode) {
         List<SearchResult> results = new ArrayList<>();
         
@@ -283,7 +490,7 @@ public class ChromaVectorStoreService {
             JsonNode documents = jsonNode.get("documents").get(0);
             JsonNode metadatas = jsonNode.get("metadatas").get(0);
             
-            log.info("[ChromaDB] 검색 결과: {}개", ids.size());
+            log.info("[ChromaDB] search results: {}", ids.size());
             
             for (int i = 0; i < ids.size(); i++) {
                 String id = ids.get(i).asText();
@@ -291,25 +498,26 @@ public class ChromaVectorStoreService {
                 String document = documents.get(i).asText();
                 JsonNode metadata = metadatas.get(i);
                 
-                // 거리를 유사도 점수로 변환
-                // ChromaDB는 기본적으로 L2 distance를 사용하므로, 거리가 작을수록 유사함
-                // 유사도 = 1 / (1 + distance) 또는 cosine similarity 사용 시 1 - distance
-                // 하지만 distance가 1보다 크면 음수가 되므로, 안전한 변환 필요
+                // Chroma가 준 거리(distance) → 유사도(0~1) 변환
+                // 기본 L2 사용 시, 정규화된 벡터면 L2² = 2(1 - cos_sim) → 유사도 = 1 - distance²/2 (0~1, 동일하면 100%)
+                // cosine 공간이면 거리 0~2 → 유사도 = 1 - distance/2
+                // 단위 맞춤: "XC60" vs XC60 문서면 유사도 50% 이상 나오도록
                 double similarity;
                 if (distance < 0) {
-                    // 음수 거리는 비정상, 0으로 처리
                     similarity = 0.0;
-                    log.warn("[경고] 음수 거리 감지: id={}, distance={}", id, distance);
-                } else if (distance > 1.0) {
-                    // L2 distance인 경우, 1/(1+distance)로 변환
-                    similarity = 1.0 / (1.0 + distance);
+                    log.warn("[ChromaDB] negative distance: id={}, distance={}", id, distance);
+                } else if (distance <= 1.5) {
+                    // 정규화 L2 구간: 유사도 = 1 - d²/2 (d=0→100%, d=1→50%, d=√2→0%)
+                    similarity = Math.max(0.0, 1.0 - (distance * distance) / 2.0);
+                } else if (distance <= 2.0) {
+                    // cosine 거리 구간
+                    similarity = Math.max(0.0, 1.0 - distance / 2.0);
                 } else {
-                    // Cosine distance인 경우 (0~2 범위), 1 - distance로 변환
-                    similarity = 1.0 - distance;
+                    similarity = 1.0 / (1.0 + distance);
                 }
                 
                 log.debug("  [{}] id={}, distance={}, similarity={} ({}%)", 
-                    i + 1, id, distance, similarity, String.format("%.2f", similarity * 100));
+                    i + 1, id, distance, similarity, String.format("%.1f", similarity * 100));
                 
                 SearchResult result = new SearchResult();
                 result.setId(id);
@@ -356,6 +564,9 @@ public class ChromaVectorStoreService {
                 if (metadata.has("bodyType")) {
                     result.setBodyType(metadata.get("bodyType").asText());
                 }
+                if (metadata.has("bodyTypeCategory")) {
+                    result.setBodyTypeCategory(metadata.get("bodyTypeCategory").asText());
+                }
                 if (metadata.has("region")) {
                     result.setRegion(metadata.get("region").asText());
                 }
@@ -399,10 +610,10 @@ public class ChromaVectorStoreService {
         String baseUrl = ragProperties.getChroma().getBaseUrl();
         String url = baseUrl + "/api/v2/tenants/" + tenant + "/databases/" + database + "/collections/" + collectionId + "/add";
 
-        log.info("[ChromaDB] 배치 저장 시작: {}개", items.size());
+        log.info("[ChromaDB] batch save start: {}", items.size());
         if (!items.isEmpty()) {
             CarEmbeddingDto first = items.get(0);
-            log.info("   - 첫 번째 항목 [carId={}] Metadata: {}", first.getCarId(), first.getMetadata());
+            log.info("   - first item [carId={}] Metadata: {}", first.getCarId(), first.getMetadata());
         }
 
         List<String> ids = new ArrayList<>(items.size());
@@ -455,7 +666,7 @@ public class ChromaVectorStoreService {
                 String errorBody = response.body() != null ? response.body().string() : "";
                 throw new IOException("Failed to add embeddings batch: " + response.code() + " " + errorBody);
             }
-            log.info("[ChromaDB] 배치 저장 완료: {}개", items.size());
+            log.info("[ChromaDB] batch save done: {}", items.size());
         }
     }
     
@@ -489,6 +700,7 @@ public class ChromaVectorStoreService {
         private String transmission;
         private String color;
         private String bodyType;
+        private String bodyTypeCategory;
         private String region;
         private String platformName;
         private Integer price;
@@ -531,6 +743,8 @@ public class ChromaVectorStoreService {
         public void setColor(String color) { this.color = color; }
         public String getBodyType() { return bodyType; }
         public void setBodyType(String bodyType) { this.bodyType = bodyType; }
+        public String getBodyTypeCategory() { return bodyTypeCategory; }
+        public void setBodyTypeCategory(String bodyTypeCategory) { this.bodyTypeCategory = bodyTypeCategory; }
         public String getRegion() { return region; }
         public void setRegion(String region) { this.region = region; }
         public String getPlatformName() { return platformName; }

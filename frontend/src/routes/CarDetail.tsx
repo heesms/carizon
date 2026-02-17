@@ -1,18 +1,45 @@
 import React, { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { getCarDetail, getPriceHistory, type CarDetail as CarDetailType, type PricePoint } from '@/services/api'
-import PriceChart from '@/components/PriceChart'
+import { getCarDetail, type CarDetail as CarDetailType } from '@/services/api'
+
+const MOBILE_MEDIA = '(max-width: 767px)'
+function useIsMobile() {
+    const [isMobile, setIsMobile] = useState(false)
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        const mq = window.matchMedia(MOBILE_MEDIA)
+        const update = () => setIsMobile(mq.matches)
+        update()
+        mq.addEventListener('change', update)
+        return () => mq.removeEventListener('change', update)
+    }, [])
+    return isMobile
+}
 
 function bigImageUrl(modelCode?: string, fallback?: string){
     if (modelCode) return `/image/car/model/${modelCode}.webp`
     return fallback || '/image/car/noimage/noimage.png'
 }
 
+/** 플랫폼 영문명 → 한글 표기 */
+function platformDisplayName(platform: string): string {
+    if (!platform) return platform
+    const lower = platform.toLowerCase()
+    const map: Record<string, string> = {
+        chachacha: '차차차',
+        encar: '엔카',
+        chutcha: '첫차',
+        kcar: 'K캐어',
+        tcar: '티카',
+        charancha: '차란차',
+    }
+    return map[lower] || platform
+}
+
 export default function CarDetail(){
     const { id } = useParams()
+    const isMobile = useIsMobile()
     const [detail, setDetail] = useState<CarDetailType | null>(null)
-    const [platformCarId, setPlatformCarId] = useState<number | undefined>(undefined)
-    const [history, setHistory] = useState<PricePoint[]>([])
     const [bigSrc, setBigSrc] = useState<string>('/image/car/noimage/noimage.png')
     const [loading, setLoading] = useState(true)
 
@@ -69,7 +96,7 @@ export default function CarDetail(){
             
             setDetail(d)
             const mc = (d as any).specs?.modelCode as string | undefined
-            const fallback = (d as any).representativeImageUrl as string | undefined
+            const fallback = (rawData.representativeImageUrl as string) || undefined
             setBigSrc(bigImageUrl(mc, fallback))
         }).catch((err) => {
             console.error('Failed to load car detail:', err)
@@ -77,20 +104,6 @@ export default function CarDetail(){
         })
         .finally(() => setLoading(false))
     },[id])
-
-    useEffect(()=>{
-        if (!id) return
-        getPriceHistory(id, platformCarId)
-            .then(res => {
-                // 백엔드 응답 구조: { success: true, data: { points: [...] } } 또는 { points: [...] }
-                const data = (res as any).data || res
-                setHistory(data?.points || [])
-            })
-            .catch((err) => {
-                console.error('Failed to load price history:', err)
-                setHistory([])
-            })
-    }, [id, platformCarId])
 
     const platforms = detail?.platforms || []
     const minPrice = platforms.length > 0 ? Math.min(...platforms.filter(p => p.price).map(p => p.price!)) : null
@@ -161,114 +174,68 @@ export default function CarDetail(){
                                 <p className="text-sm text-gray-600 mb-1">가격 범위</p>
                                 <p className="text-2xl font-bold text-blue-600">
                                     {minPrice === maxPrice 
-                                        ? `${minPrice?.toLocaleString()}원`
-                                        : `${minPrice?.toLocaleString()} ~ ${maxPrice?.toLocaleString()}원`
+                                        ? `${minPrice?.toLocaleString()}만원`
+                                        : `${minPrice?.toLocaleString()} ~ ${maxPrice?.toLocaleString()}만원`
                                     }
                                 </p>
                             </div>
                         )}
+
+                        {/* 플랫폼별 가격 비교 그래프 (가격 범위 바로 아래) */}
+                        {platforms.filter(p => p.price != null).length > 0 && (() => {
+                            const maxVal = maxPrice || 1
+                            return (
+                                <div className="mt-6">
+                                    <p className="text-sm font-semibold text-gray-700 mb-3">플랫폼별 매물 가격 비교</p>
+                                    <div className="space-y-3">
+                                        {platforms
+                                            .filter(p => p.price != null)
+                                            .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))
+                                            .map((p) => {
+                                                const platformUrl = p.pcUrl || p.mUrl || null
+                                                const label = platformDisplayName(p.platform)
+                                                return (
+                                                    <div key={p.platformCarId} className="flex items-center gap-3 flex-wrap">
+                                                        <div className="w-28 shrink-0 flex items-center gap-1.5">
+                                                            {platformUrl ? (
+                                                                <a
+                                                                    href={platformUrl}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1"
+                                                                    title="해당 플랫폼에서 보기"
+                                                                >
+                                                                    {label}
+                                                                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                                    </svg>
+                                                                </a>
+                                                            ) : (
+                                                                <span className="text-sm font-medium text-gray-700">{label}</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex-1 h-8 bg-gray-100 rounded-lg overflow-hidden min-w-0">
+                                                            <div
+                                                                className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-lg transition-all duration-500 min-w-[2rem] flex items-center justify-end pr-2"
+                                                                style={{ width: `${Math.max(8, ((p.price ?? 0) / maxVal) * 100)}%` }}
+                                                            >
+                                                                <span className="text-xs font-bold text-white drop-shadow">
+                                                                    {(p.price ?? 0).toLocaleString()}만원
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })}
+                                    </div>
+                                </div>
+                            )
+                        })()}
                     </div>
                 </div>
             </section>
 
-            {/* 플랫폼별 링크 + 가격 비교 */}
-            <section className="modern-card p-6 lg:p-8">
-                <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                    플랫폼별 매물 / 가격 비교
-                </h2>
-                <div className="overflow-x-auto">
-                    <table className="min-w-full">
-                        <thead>
-                            <tr className="border-b-2 border-gray-200">
-                                <th className="text-left p-3 text-sm font-semibold text-gray-700">선택</th>
-                                <th className="text-left p-3 text-sm font-semibold text-gray-700">플랫폼</th>
-                                <th className="text-left p-3 text-sm font-semibold text-gray-700">가격</th>
-                                <th className="text-left p-3 text-sm font-semibold text-gray-700">상태</th>
-                                <th className="text-left p-3 text-sm font-semibold text-gray-700">원문 링크</th>
-                                <th className="text-left p-3 text-sm font-semibold text-gray-700">최근 관측</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {platforms.map((p, idx) => (
-                                <tr 
-                                    key={p.platformCarId} 
-                                    className={`border-b border-gray-100 hover:bg-gray-50 transition ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
-                                >
-                                    <td className="p-3">
-                                        <input
-                                            type="radio"
-                                            name="pcid"
-                                            onChange={()=>setPlatformCarId(p.platformCarId)}
-                                            checked={platformCarId===p.platformCarId}
-                                            className="w-4 h-4 text-black focus:ring-2 focus:ring-black"
-                                        />
-                                    </td>
-                                    <td className="p-3">
-                                        <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm font-medium">
-                                            {p.platform}
-                                        </span>
-                                    </td>
-                                    <td className="p-3 font-bold text-lg text-blue-600">
-                                        {p.price?.toLocaleString()}원
-                                    </td>
-                                    <td className="p-3">
-                                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                            p.status === '판매중' ? 'bg-green-100 text-green-700' :
-                                            p.status === '판매완료' ? 'bg-red-100 text-red-700' :
-                                            'bg-gray-100 text-gray-700'
-                                        }`}>
-                                            {p.status}
-                                        </span>
-                                    </td>
-                                    <td className="p-3">
-                                        {p.pcUrl ? (
-                                            <a 
-                                                href={p.pcUrl} 
-                                                target="_blank" 
-                                                rel="noopener noreferrer"
-                                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium transition"
-                                            >
-                                                바로가기
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                </svg>
-                                            </a>
-                                        ) : (
-                                            <span className="text-gray-400">-</span>
-                                        )}
-                                    </td>
-                                    <td className="p-3 text-sm text-gray-600">{p.lastSeenDate || '-'}</td>
-                                </tr>
-                            ))}
-                            {platforms.length===0 && (
-                                <tr>
-                                    <td className="p-6 text-center text-gray-500" colSpan={6}>
-                                        플랫폼 데이터가 없습니다.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            {/* 가격 히스토리 */}
-            {history.length > 0 && (
-                <section className="modern-card p-6 lg:p-8">
-                    <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                        </svg>
-                        가격 히스토리
-                    </h2>
-                    <PriceChart points={history} />
-                </section>
-            )}
-
-            {/* 매물 정보 (스펙) */}
+            {/* 매물 정보 (스펙) - 플랫폼에서 보기보다 위로 */}
             {detail && (
                 <section className="modern-card p-6 lg:p-8">
                     <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
@@ -290,6 +257,49 @@ export default function CarDetail(){
                     </div>
                 </section>
             )}
+
+            {/* 매물 정보를 플랫폼에서 보기 (버튼 강조) */}
+            <section className="modern-card p-6 lg:p-8">
+                <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                    매물 정보를 플랫폼에서 보기
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {platforms.map((p) => (
+                        <div
+                            key={p.platformCarId}
+                            className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl border-2 border-gray-100 hover:border-blue-200 hover:bg-blue-50/50 transition-all"
+                        >
+                            <div className="flex-1 min-w-0">
+                                <span className="font-semibold text-gray-800">{platformDisplayName(p.platform)}</span>
+                                {p.price != null && (
+                                    <p className="text-lg font-bold text-blue-600 mt-0.5">{p.price.toLocaleString()}만원</p>
+                                )}
+                            </div>
+                            {(p.pcUrl || p.mUrl) ? (
+                                <a
+                                    href={isMobile ? (p.mUrl || p.pcUrl || '#') : (p.pcUrl || p.mUrl || '#')}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl shadow-md hover:from-blue-700 hover:to-indigo-700 hover:shadow-lg transition-all shrink-0"
+                                >
+                                    {platformDisplayName(p.platform)}에서 보기
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                </a>
+                            ) : (
+                                <span className="text-gray-400 text-sm shrink-0">링크 없음</span>
+                            )}
+                        </div>
+                    ))}
+                    {platforms.length === 0 && (
+                        <p className="col-span-full text-center text-gray-500 py-6">플랫폼 데이터가 없습니다.</p>
+                    )}
+                </div>
+            </section>
         </div>
     )
 }

@@ -37,7 +37,7 @@ public class LlmConfigAdminController {
                 """);
             return ApiResponse.success(prompts);
         } catch (Exception e) {
-            log.error("[LLM 설정] 프롬프트 조회 실패", e);
+            log.error("[LLM config] prompt fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -58,7 +58,7 @@ public class LlmConfigAdminController {
             
             return ApiResponse.success(results.get(0));
         } catch (Exception e) {
-            log.error("[LLM 설정] 프롬프트 조회 실패", e);
+            log.error("[LLM config] prompt fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -89,7 +89,7 @@ public class LlmConfigAdminController {
             
             return ApiResponse.success("프롬프트 저장 완료");
         } catch (Exception e) {
-            log.error("[LLM 설정] 프롬프트 수정 실패", e);
+            log.error("[LLM config] prompt update failed", e);
             return ApiResponse.error("수정 실패: " + e.getMessage());
         }
     }
@@ -111,7 +111,7 @@ public class LlmConfigAdminController {
             
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.error("[LLM 설정] 매칭 설정 조회 실패", e);
+            log.error("[LLM config] matching config fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -140,10 +140,10 @@ public class LlmConfigAdminController {
                     """, key, value, description);
             }
             
-            log.info("[LLM 설정] 매칭 설정 변경: {} = {}", key, value);
+            log.info("[LLM config] matching config changed: {} = {}", key, value);
             return ApiResponse.success("설정 저장 완료");
         } catch (Exception e) {
-            log.error("[LLM 설정] 매칭 설정 수정 실패", e);
+            log.error("[LLM config] matching config update failed", e);
             return ApiResponse.error("수정 실패: " + e.getMessage());
         }
     }
@@ -173,10 +173,10 @@ public class LlmConfigAdminController {
                 updated++;
             }
             
-            log.info("[LLM 설정] 매칭 설정 일괄 변경: {}개", updated);
+            log.info("[LLM config] matching config batch update: {} items", updated);
             return ApiResponse.success("일괄 저장 완료: " + updated + "개");
         } catch (Exception e) {
-            log.error("[LLM 설정] 매칭 설정 일괄 수정 실패", e);
+            log.error("[LLM config] matching config batch update failed", e);
             return ApiResponse.error("수정 실패: " + e.getMessage());
         }
     }
@@ -219,7 +219,7 @@ public class LlmConfigAdminController {
             
             return ApiResponse.success(presets);
         } catch (Exception e) {
-            log.error("[LLM 설정] 프리셋 조회 실패", e);
+            log.error("[LLM config] preset fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -240,7 +240,7 @@ public class LlmConfigAdminController {
             
             return updateMatchingConfigBatch(preset);
         } catch (Exception e) {
-            log.error("[LLM 설정] 프리셋 적용 실패", e);
+            log.error("[LLM config] preset apply failed", e);
             return ApiResponse.error("적용 실패: " + e.getMessage());
         }
     }

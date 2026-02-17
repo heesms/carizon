@@ -11,10 +11,10 @@ import Recommendation from '@/routes/Recommendation'
 const router = createBrowserRouter([
   { path: '/', element: <App />,
     children: [
-      { index: true, element: <Home /> },       // 홈 유지
-      { path: '/search', element: <Search /> }, // 검색
-      { path: '/recommendation', element: <Recommendation /> }, // AI 추천
-      { path: '/cars/:id', element: <CarDetail /> }, // 상세
+      { index: true, element: <Home /> },             // 메인 = 간단 AI 추천 + 검색/광고
+      { path: '/search', element: <Search /> },
+      { path: '/recommendation', element: <Recommendation /> }, // 전체 조건 AI 추천
+      { path: '/cars/:id', element: <CarDetail /> },
     ]},
 ])
 

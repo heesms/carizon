@@ -35,7 +35,7 @@ public class CarizonCodeAdminController {
             """);
             return ApiResponse.success(makers);
         } catch (Exception e) {
-            log.error("[카리즌 코드] 제조사 조회 실패", e);
+            log.error("[carizon code] maker fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -53,7 +53,7 @@ public class CarizonCodeAdminController {
             """, makerCode);
             return ApiResponse.success(groups);
         } catch (Exception e) {
-            log.error("[카리즌 코드] 모델 그룹 조회 실패", e);
+            log.error("[carizon code] model group fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -72,7 +72,7 @@ public class CarizonCodeAdminController {
             """, makerCode, modelGroupCode);
             return ApiResponse.success(models);
         } catch (Exception e) {
-            log.error("[카리즌 코드] 모델 조회 실패", e);
+            log.error("[carizon code] model fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -92,7 +92,7 @@ public class CarizonCodeAdminController {
             """, makerCode, modelGroupCode, modelCode);
             return ApiResponse.success(trims);
         } catch (Exception e) {
-            log.error("[카리즌 코드] 트림 조회 실패", e);
+            log.error("[carizon code] trim fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -113,7 +113,7 @@ public class CarizonCodeAdminController {
             """, makerCode, modelGroupCode, modelCode, trimCode);
             return ApiResponse.success(grades);
         } catch (Exception e) {
-            log.error("[카리즌 코드] 등급 조회 실패", e);
+            log.error("[carizon code] grade fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -176,7 +176,7 @@ public class CarizonCodeAdminController {
             List<Map<String, Object>> mappings = jdbc.queryForList(sql.toString(), params.toArray());
             return ApiResponse.success(mappings);
         } catch (Exception e) {
-            log.error("[카리즌 코드] 매핑 정보 조회 실패", e);
+            log.error("[carizon code] mapping fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }

@@ -77,7 +77,7 @@ public class CodeMappingAdminController {
                     "size", size
             ));
         } catch (Exception e) {
-            log.error("[코드 매핑] REVIEW 조회 실패", e);
+            log.error("[code mapping] REVIEW fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -125,7 +125,7 @@ public class CodeMappingAdminController {
                     "scoreStats", scoreStats
             ));
         } catch (Exception e) {
-            log.error("[코드 매핑] 통계 조회 실패", e);
+            log.error("[code mapping] stats fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -176,14 +176,14 @@ public class CodeMappingAdminController {
                 platformName.toUpperCase(), pMakerCode, pModelGroupCode, pModelCode, pTrimCode, pGradeCode);
 
             if (updated > 0) {
-                log.info("[코드 매핑] 수동 수정 완료: platform={}, status={}", 
+                log.info("[code mapping] manual update done: platform={}, status={}", 
                         platformName, status);
                 return ApiResponse.success("코드 매핑이 수정되었습니다.");
             } else {
                 return ApiResponse.error("매핑을 찾을 수 없습니다.");
             }
         } catch (Exception e) {
-            log.error("[코드 매핑] 수정 실패", e);
+            log.error("[code mapping] update failed", e);
             return ApiResponse.error("수정 실패: " + e.getMessage());
         }
     }
@@ -207,7 +207,7 @@ public class CodeMappingAdminController {
                     "mappedCount", mapped
             ));
         } catch (Exception e) {
-            log.error("[코드 매핑] 자동 매핑 실패", e);
+            log.error("[code mapping] auto mapping failed", e);
             return ApiResponse.error("자동 매핑 실패: " + e.getMessage());
         }
     }

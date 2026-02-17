@@ -51,15 +51,15 @@ public class ChachachaCrawler {
         try {
             // ★ 시작 시 한 번만 전체 초기화
         try {
-            log.warn("[CRAWL] TRUNCATE raw_chachacha 시작");
+            log.warn("[CRAWL] TRUNCATE raw_chachacha start");
             jdbc.execute("TRUNCATE TABLE raw_chachacha");
-            log.warn("[CRAWL] TRUNCATE raw_chachacha 완료");
+            log.warn("[CRAWL] TRUNCATE raw_chachacha done");
         } catch (Exception e) {
-            log.error("[CRAWL] TRUNCATE 실패: {}", e.toString(), e);
+            log.error("[CRAWL] TRUNCATE failed: {}", e.toString(), e);
             return; // 초기화 안 되면 적재하지 않음 (원하면 계속 진행하도록 바꿔도 됨)
         }
 
-        log.info("[CRAWL] KB차차차 시작 pageSize={}", pageSize);
+        log.info("[CRAWL] KB Chachacha start pageSize={}", pageSize);
 
         while (true) {
             page++;
@@ -102,7 +102,7 @@ public class ChachachaCrawler {
                     log.info("[CRAWL] page={} status={} items={}", page, code, batchCount);
 
                     if (batchCount == 0) {
-                        log.info("[CRAWL] 빈 결과 → 종료 (page={})", page);
+                        log.info("[CRAWL] empty result → stop (page={})", page);
                         break;
                     }
 
@@ -121,21 +121,21 @@ public class ChachachaCrawler {
 
                     Object nextSa = result.get("searchAfter");
                     if (!(nextSa instanceof List<?> nextList) || nextList.isEmpty()) {
-                        log.info("[CRAWL] 다음 searchAfter 없음 → 종료 (page={})", page);
+                        log.info("[CRAWL] no next searchAfter → stop (page={})", page);
                         break;
                     }
                     searchAfter = (List<Object>) nextList;
                     log.debug("[CRAWL] next searchAfter={}", searchAfter);
 
                     if (batchCount < pageSize) {
-                        log.info("[CRAWL] 마지막 페이지로 추정(list < pageSize) → 종료 (page={}, items={})", page, batchCount);
+                        log.info("[CRAWL] last page (list < pageSize) → stop (page={}, items={})", page, batchCount);
                         break;
                     }
 
                     Thread.sleep(600); // 서버 부하 완화
                 }
             } catch (Exception e) {
-                log.error("[CRAWL] 예외 발생 page={} → 종료: {}", page, e.toString(), e);
+                log.error("[CRAWL] exception page={} → stop: {}", page, e.toString(), e);
                 break;
             }
         }
@@ -144,7 +144,7 @@ public class ChachachaCrawler {
             recorder.recordFail(runId, fetchedTotal, Instant.now(), e.toString()); // ✅ 실패 기록
         }
 
-        log.info("[CRAWL] 완료 totalItems={} elapsed={}s", fetchedTotal, Duration.between(started, Instant.now()).toSeconds());
+        log.info("[CRAWL] done totalItems={} elapsed={}s", fetchedTotal, Duration.between(started, Instant.now()).toSeconds());
     }
 
     /**
@@ -185,7 +185,7 @@ public class ChachachaCrawler {
             return String.format("https://img.kbchachacha.com/IMG/carimg/l/%s/img%s/%s?width=720",
                     imgFolder, imgPath, fileName);
         } catch (Exception e) {
-            log.warn("[CHACHACHA] car_image_url 생성 실패: {}", e.getMessage());
+            log.warn("[CHACHACHA] car_image_url build failed: {}", e.getMessage());
             return null;
         }
     }

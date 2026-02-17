@@ -40,7 +40,7 @@ public class ModelImageService {
         Files.createDirectories(targetDir);
 
         List<CarPick> picks = mapper.selectRepresentativeCars(limit);
-        log.info("대표 건수: {}", picks.size());
+        log.info("representative count: {}", picks.size());
 
         HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
@@ -48,7 +48,7 @@ public class ModelImageService {
         for (CarPick pick : picks) {
             List<String> names = firstTwoFilenames(pick.getPayload());
             if (names.isEmpty()) {
-                log.warn("[SKIP] fileNameArray 비어있음: model={}, carSeq={}", pick.getModelCode(), pick.getCarSeq());
+                log.warn("[SKIP] fileNameArray empty: model={}, carSeq={}", pick.getModelCode(), pick.getCarSeq());
                 fail++;
                 continue;
             }
@@ -72,7 +72,7 @@ public class ModelImageService {
                 fail += b2 ? 0 : 1;
             }
         }
-        log.info("완료: 성공 {} 실패 {}", ok, fail);
+        log.info("done: ok {} fail {}", ok, fail);
     }
 
     private List<String> firstTwoFilenames(String payloadJson) {
@@ -94,7 +94,7 @@ public class ModelImageService {
             }
             return out;
         } catch (IOException e) {
-            log.warn("payload JSON 파싱 실패: {}", e.getMessage());
+            log.warn("payload JSON parse failed: {}", e.getMessage());
             return List.of();
         }
     }

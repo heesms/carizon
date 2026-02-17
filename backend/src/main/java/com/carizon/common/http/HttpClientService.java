@@ -38,6 +38,17 @@ public class HttpClientService {
                 .build();
         return httpClient.newCall(request).execute();
     }
+
+    /**
+     * DELETE 요청
+     */
+    public Response delete(String url) throws IOException {
+        Request request = new Request.Builder()
+                .url(url)
+                .delete()
+                .build();
+        return httpClient.newCall(request).execute();
+    }
     
     /**
      * POST 요청 (JSON)

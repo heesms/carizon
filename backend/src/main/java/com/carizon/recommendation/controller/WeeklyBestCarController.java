@@ -33,7 +33,7 @@ public class WeeklyBestCarController {
             @PathVariable String modelCode,
             @RequestParam(defaultValue = "10") int limit) {
         
-        log.info("[주간 Best] 모델별 조회: modelCode={}, limit={}", modelCode, limit);
+        log.info("[weekly Best] by model: modelCode={}, limit={}", modelCode, limit);
         
         List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, null, limit);
         
@@ -46,7 +46,7 @@ public class WeeklyBestCarController {
     public ApiResponse<List<WeeklyBestCarDto>> getWeeklyBestAll(
             @RequestParam(defaultValue = "20") int limit) {
         
-        log.info("[주간 Best] 전체 조회: limit={}", limit);
+        log.info("[weekly Best] all: limit={}", limit);
         
         List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(null, null, limit);
         
@@ -60,7 +60,7 @@ public class WeeklyBestCarController {
             @PathVariable String modelCode,
             @RequestParam(defaultValue = "10") int limit) {
         
-        log.info("[블로그 포스팅] 내용 생성: modelCode={}, limit={}", modelCode, limit);
+        log.info("[blog post] content gen: modelCode={}, limit={}", modelCode, limit);
         
         List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, null, limit);
         

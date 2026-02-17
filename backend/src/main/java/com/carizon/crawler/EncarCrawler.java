@@ -12,9 +12,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.net.Proxy;
+import java.sql.PreparedStatement;
+import java.sql.Types;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
@@ -34,6 +39,12 @@ public class EncarCrawler {
             .build();
 
     private static final int PAGE_SIZE = 200;
+    /** 상세 API 청크 크기 (vehicleIds 한 번에 요청 개수) */
+    private static final int DETAIL_CHUNK = 30;
+    /** 상세 요청 병렬 수 (과도하면 429 위험) */
+    private static final int DETAIL_PARALLEL = 8;
+
+    private final ExecutorService detailPool = Executors.newFixedThreadPool(DETAIL_PARALLEL);
 
     /** 브라우저 UA 후보들(라운드로빈). */
     private static final List<String> USER_AGENTS = List.of(
@@ -81,7 +92,7 @@ public class EncarCrawler {
 
         try {
             jdbc.update("TRUNCATE TABLE raw_encar");
-            log.info("[ENCAR] TRUNCATE raw_encar 완료");
+            log.info("[ENCAR] TRUNCATE raw_encar done");
 
             while (true) {
                 StringBuilder url = new StringBuilder(
@@ -95,12 +106,12 @@ public class EncarCrawler {
                     url.append("&cursor=").append(cursor);
                 }
 
-                log.debug("[ENCAR] 목록 요청: {}", url);
+                log.debug("[ENCAR] list request: {}", url);
 
                 try {
                     Object any = getJsonAny(url.toString());
                     if (!(any instanceof Map)) {
-                        log.warn("[ENCAR] 목록 응답이 Map 아님 → 종료");
+                        log.warn("[ENCAR] list response is not Map, exit");
                         break;
                     }
                     Map<String, Object> obj = (Map<String, Object>) any;
@@ -119,23 +130,23 @@ public class EncarCrawler {
                     }
 
                     if (list.isEmpty()) {
-                        log.info("[ENCAR] SearchResults 비어있음 → 종료");
+                        log.info("[ENCAR] SearchResults empty, exit");
                         break;
                     }
 
-                    log.info("[ENCAR] 목록 batch={} 누적={} nextCursor={}",
-                            list.size(), totalFetched + list.size(), nextCursor.isBlank() ? "없음" : nextCursor);
+                    log.info("[ENCAR] list batch={} total={} nextCursor={}",
+                            list.size(), totalFetched + list.size(), nextCursor.isBlank() ? "-" : nextCursor);
 
                     int inserted = handleDetails(list);
                     totalFetched += inserted;
 
                     // 종료 조건
                     if (list.size() < PAGE_SIZE || (nextCursor.isBlank() && !cursor.isBlank())) {
-                        log.warn("[ENCAR] 마지막 페이지 추정 → 종료");
+                        log.warn("[ENCAR] last page (list < PAGE_SIZE), exit");
                         break;
                     }
                     if (!nextCursor.isBlank() && nextCursor.equals(cursor)) {
-                        log.warn("[ENCAR] nextCursor 동일 → 종료");
+                        log.warn("[ENCAR] nextCursor unchanged, exit");
                         break;
                     }
 
@@ -145,9 +156,9 @@ public class EncarCrawler {
                     Thread.sleep(500);
                     tryCount = 0;
                 } catch (Exception e) {
-                    log.warn("[ENCAR] 목록 오류: {}", e.toString());
+                    log.warn("[ENCAR] list error: {}", e.toString());
                     if (++tryCount > 5) {
-                        log.warn("[ENCAR] 재시도 한도 초과 → 종료");
+                        log.warn("[ENCAR] retry limit exceeded, exit");
                         break;
                     }
                     Thread.sleep(1000L * tryCount);
@@ -157,51 +168,85 @@ public class EncarCrawler {
             recorder.recordEnd(runId, totalFetched, Instant.now());
         } catch (Exception e) {
             recorder.recordFail(runId, totalFetched, Instant.now(), e.toString());
-            log.error("[ENCAR] runOnce 실패", e);
+            log.error("[ENCAR] runOnce failed", e);
         }
     }
 
+    /** 상세 API를 청크 단위로 병렬 호출 후 한 번에 INSERT */
     private int handleDetails(List<Map<String, Object>> list) throws Exception {
-        int inserted = 0;
-        for (int i = 0; i < list.size(); i += 20) {
-            List<Map<String, Object>> slice = list.subList(i, Math.min(i + 20, list.size()));
-            List<String> ids = new ArrayList<>();
-            for (Map<String, Object> item : slice) {
-                Object id = item.get("Id");
-                if (id != null) ids.add(String.valueOf(id));
-            }
-            if (ids.isEmpty()) continue;
-
-            String detailUrl = "https://api.encar.com/v1/readside/vehicles/view?vehicleIds=" + String.join(",", ids);
-            try {
-                Object any = getJsonAny(detailUrl);
-                List<Map<String, Object>> vehicles;
-                if (any instanceof List) {
-                    vehicles = (List<Map<String, Object>>) any;
-                } else {
-                    Map<String, Object> obj = (Map<String, Object>) any;
-                    Object v = obj.getOrDefault("Vehicles", obj.get("vehicles"));
-                    vehicles = (v instanceof List) ? (List<Map<String, Object>>) v : List.of();
-                }
-
-                if (!vehicles.isEmpty()) {
-                    String sql = "INSERT INTO raw_encar(payload, car_image_url) VALUES (CAST(? AS JSON), ?) " +
-                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload), car_image_url=VALUES(car_image_url), fetched_at=CURRENT_TIMESTAMP";
-                    List<Object[]> params = new ArrayList<>(vehicles.size());
-                    for (Map<String, Object> v : vehicles) {
-                        String payloadJson = mapper.writeValueAsString(v);
-                        String carImageUrl = buildEncarImageUrl(v);
-                        params.add(new Object[]{payloadJson, carImageUrl});
-                    }
-                    int[] res = jdbc.batchUpdate(sql, params);
-                    inserted += res.length;
-                }
-            } catch (Exception ex) {
-                log.warn("[ENCAR] 상세 오류 ids={} err={}", ids, ex.toString());
-            }
-            Thread.sleep(250);
+        List<List<String>> idChunks = new ArrayList<>();
+        for (int i = 0; i < list.size(); i += DETAIL_CHUNK) {
+            List<Map<String, Object>> slice = list.subList(i, Math.min(i + DETAIL_CHUNK, list.size()));
+            List<String> ids = slice.stream()
+                    .map(item -> item.get("Id"))
+                    .filter(Objects::nonNull)
+                    .map(String::valueOf)
+                    .toList();
+            if (!ids.isEmpty()) idChunks.add(ids);
         }
+        if (idChunks.isEmpty()) return 0;
+
+        List<CompletableFuture<List<Map<String, Object>>>> futures = idChunks.stream()
+                .map(ids -> CompletableFuture.supplyAsync(() -> fetchDetailChunk(ids), detailPool))
+                .toList();
+
+        List<Map<String, Object>> allVehicles = new ArrayList<>();
+        for (CompletableFuture<List<Map<String, Object>>> f : futures) {
+            try {
+                List<Map<String, Object>> vehicles = f.get();
+                if (vehicles != null) allVehicles.addAll(vehicles);
+            } catch (Exception e) {
+                log.warn("[ENCAR] detail chunk collect error: {}", e.toString());
+            }
+        }
+
+        if (allVehicles.isEmpty()) return 0;
+
+        String sql = "INSERT INTO raw_encar(payload, car_image_url, price_new) VALUES (CAST(? AS JSON), ?, ?) AS new_row " +
+                "ON DUPLICATE KEY UPDATE payload=new_row.payload, car_image_url=new_row.car_image_url, price_new=new_row.price_new, fetched_at=CURRENT_TIMESTAMP";
+        int inserted = 0;
+        int skipped = 0;
+        for (Map<String, Object> v : allVehicles) {
+            try {
+                String payloadJson = mapper.writeValueAsString(v);
+                String carImageUrl = buildEncarImageUrl(v);
+                Integer priceNew = extractOriginPrice(v);
+                jdbc.update(sql, (PreparedStatement ps) -> {
+                    ps.setString(1, payloadJson);
+                    ps.setString(2, carImageUrl != null ? carImageUrl : "");
+                    if (priceNew != null) {
+                        ps.setInt(3, priceNew);
+                    } else {
+                        ps.setNull(3, Types.INTEGER);
+                    }
+                });
+                inserted++;
+            } catch (Exception e) {
+                skipped++;
+                log.debug("[ENCAR] detail row skip: {}", e.toString());
+            }
+        }
+        log.info("[ENCAR] detail chunk done: inserted={} rows, skipped={}", inserted, skipped);
         return inserted;
+    }
+
+    /** 한 청크(최대 DETAIL_CHUNK개 ID)에 대한 상세 API 호출. 실패 시 빈 리스트. */
+    private List<Map<String, Object>> fetchDetailChunk(List<String> ids) {
+        String detailUrl = "https://api.encar.com/v1/readside/vehicles/view?vehicleIds=" + String.join(",", ids);
+        try {
+            Object any = getJsonAny(detailUrl);
+            if (any instanceof List) {
+                return (List<Map<String, Object>>) any;
+            }
+            if (any instanceof Map) {
+                Map<String, Object> obj = (Map<String, Object>) any;
+                Object v = obj.getOrDefault("Vehicles", obj.get("vehicles"));
+                return (v instanceof List) ? (List<Map<String, Object>>) v : List.of();
+            }
+        } catch (Exception ex) {
+            log.warn("[ENCAR] detail error ids={} err={}", ids, ex.toString());
+        }
+        return List.of();
     }
 
     /**
@@ -236,7 +281,7 @@ public class EncarCrawler {
                 String peek = new String(body, 0, Math.min(body.length, 300), StandardCharsets.UTF_8);
 
                 if (code == 403 || code == 429) {
-                    log.warn("[ENCAR] {} 차단/리밋 attempt={} ua={} peek={}", code, attempt, ua, peek);
+                    log.warn("[ENCAR] {} block/limit attempt={} ua={} peek={}", code, attempt, ua, peek);
                     last = new IllegalStateException("HTTP " + code);
                     Thread.sleep(BACKOFF_MS * attempt); // 지수 백오프
                     continue; // UA 바꿔 재시도
@@ -247,11 +292,30 @@ public class EncarCrawler {
 
             } catch (Exception e) {
                 last = e;
-                log.warn("[ENCAR] fetch 오류 attempt={} ua={} err={}", attempt, ua, e.toString());
+                log.warn("[ENCAR] fetch error attempt={} ua={} err={}", attempt, ua, e.toString());
                 Thread.sleep(BACKOFF_MS * attempt);
             }
         }
         throw (last != null ? last : new IllegalStateException("fetch failed"));
+    }
+
+    /** payload의 category.originPrice 추출 (신차가격, 만원 단위) */
+    private Integer extractOriginPrice(Map<String, Object> vehicle) {
+        try {
+            Object cat = vehicle.get("category");
+            if (!(cat instanceof Map)) return null;
+            Object val = ((Map<?, ?>) cat).get("originPrice");
+            if (val == null) return null;
+            if (val instanceof Number) return ((Number) val).intValue();
+            if (val instanceof String) {
+                String s = ((String) val).trim();
+                if (s.isEmpty() || "null".equalsIgnoreCase(s)) return null;
+                return Integer.parseInt(s);
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
@@ -285,7 +349,7 @@ public class EncarCrawler {
             }
             return null;
         } catch (Exception e) {
-            log.warn("[ENCAR] car_image_url 생성 실패: {}", e.getMessage());
+            log.warn("[ENCAR] car_image_url build fail: {}", e.getMessage());
             return null;
         }
     }

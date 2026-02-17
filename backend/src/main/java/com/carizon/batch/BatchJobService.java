@@ -2,6 +2,7 @@ package com.carizon.batch;
 
 import com.carizon.mapping.CodeMappingService;
 import com.carizon.mapping.MasterMergeService;
+import com.carizon.mapping.ModelNewPriceService;
 import com.carizon.merge.MergeService;
 import com.carizon.rag.service.CarEmbeddingBatchService;
 import com.carizon.search.service.CarIndexingService;
@@ -30,6 +31,7 @@ public class BatchJobService {
     private final MergeService mergeService;
     private final CodeMappingService codeMappingService;
     private final MasterMergeService masterMergeService;
+    private final ModelNewPriceService modelNewPriceService;
     private final CarIndexingService indexingService;
     private final CarEmbeddingBatchService embeddingBatchService;
 
@@ -58,6 +60,7 @@ public class BatchJobService {
                 case "MERGE" -> result = executeMergeJob(jobId, config);
                 case "CODE_MAPPING" -> result = executeCodeMappingJob(jobId, config);
                 case "MASTER_MERGE" -> result = executeMasterMergeJob(jobId, config);
+                case "MODEL_NEW_PRICE" -> result = executeModelNewPriceJob(jobId, config);
                 case "INDEXING" -> result = executeIndexingJob(jobId, config);
                 case "EMBEDDING" -> result = executeEmbeddingJob(jobId, config);
                 default -> throw new IllegalArgumentException("Unknown job type: " + jobType);
@@ -65,13 +68,13 @@ public class BatchJobService {
             
             // 성공 처리
             updateJobExecutionSuccess(executionId, result);
-            log.info("[배치] 작업 완료: {} (executionId: {})", jobId, executionId);
+            log.info("[batch] job done: {} (executionId: {})", jobId, executionId);
             
             return String.valueOf(executionId);
         } catch (Exception e) {
             // 실패 처리
             updateJobExecutionFailure(executionId, e.getMessage());
-            log.error("[배치] 작업 실패: {} (executionId: {})", jobId, executionId, e);
+            log.error("[batch] job failed: {} (executionId: {})", jobId, executionId, e);
             throw new RuntimeException("배치 작업 실패: " + jobId, e);
         }
     }
@@ -134,9 +137,9 @@ public class BatchJobService {
                 try {
                     int mapped = codeMappingService.runAutoMapping(p, scope);
                     total += mapped;
-                    log.info("[코드 매핑] {}: {}건", p, mapped);
+                    log.info("[code mapping] {}: {} rows", p, mapped);
                 } catch (Exception e) {
-                    log.error("[코드 매핑] {} 실패", p, e);
+                    log.error("[code mapping] {} failed", p, e);
                 }
             }
             return Map.of("mappedCount", total, "scope", scope.toString());
@@ -162,6 +165,14 @@ public class BatchJobService {
             "updatedCount", updated,
             "bizDate", bizDate.toString()
         );
+    }
+
+    /**
+     * 모델별 신차 출고가 집계 (car_master → cz_model_new_price)
+     */
+    private Map<String, Object> executeModelNewPriceJob(String jobId, Map<String, Object> config) throws Exception {
+        int rows = modelNewPriceService.aggregateFromCarMaster();
+        return Map.of("upsertedCount", rows);
     }
 
     /**

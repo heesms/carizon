@@ -12,13 +12,17 @@ type CarListItem = {
     priceMax?: number
     representativeImageUrl?: string
     modelCode?: string
+    fuel?: string
+    region?: string
 }
 
 const NO_IMAGE = '/image/car/noimage/no_image.png'
 
-function modelImageUrl(modelCode?: string, fallback?: string) {
+/** 리스트 이미지: representativeImageUrl 우선, 없으면 모델 이미지, 최후 noimage */
+function listImageUrl(representativeImageUrl?: string, modelCode?: string) {
+    if (representativeImageUrl && representativeImageUrl.trim() !== '') return representativeImageUrl
     if (modelCode) return `/image/car/model/${modelCode}.webp`
-    return fallback || NO_IMAGE
+    return NO_IMAGE
 }
 
 export default function CarCard({
@@ -26,15 +30,16 @@ export default function CarCard({
     compact = true,
 }: { item: CarListItem; compact?: boolean }) {
     if (!item) return null
+    if (item.priceMin == null && item.priceMax == null) return null
 
     const [imgSrc, setImgSrc] = React.useState(
-        modelImageUrl(item.modelCode, item.representativeImageUrl)
+        listImageUrl(item.representativeImageUrl, item.modelCode)
     )
 
     const price =
-        item.priceMin && item.priceMax && item.priceMin !== item.priceMax
-            ? `${item.priceMin.toLocaleString()} ~ ${item.priceMax.toLocaleString()}원`
-            : (item.priceMin ? `${item.priceMin.toLocaleString()}원` : '가격정보 없음')
+        item.priceMin != null && item.priceMax != null && item.priceMin !== item.priceMax
+            ? `${item.priceMin.toLocaleString()} ~ ${item.priceMax.toLocaleString()}만원`
+            : (item.priceMin != null ? `${item.priceMin.toLocaleString()}만원` : item.priceMax != null ? `${item.priceMax.toLocaleString()}만원` : null)
 
     if (compact) {
         return (
@@ -56,27 +61,44 @@ export default function CarCard({
                         <h3 className="font-bold text-lg leading-tight line-clamp-2 group-hover:text-blue-600 transition mb-1">
                             {item.maker} {item.model}{item.trim ? ` ${item.trim}` : ''}
                         </h3>
-                        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                        {/* 1행: 연식, 키로수 */}
+                        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600 mb-1">
                             {item.year && (
                                 <span className="flex items-center gap-1">
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                     </svg>
                                     {item.year}년식
                                 </span>
                             )}
-                            {item.km && (
+                            {item.km != null && item.km !== 0 && (
                                 <span className="flex items-center gap-1">
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                     </svg>
                                     {item.km.toLocaleString()}km
                                 </span>
                             )}
                         </div>
+                        {/* 2행: 연료, 지역 (아이콘 포함) */}
+                        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                            <span className="flex items-center gap-1">
+                                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7v1a2 2 0 01-2 2h-1V6a2 2 0 00-2-2H6a2 2 0 00-2 2v4H5a2 2 0 01-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 01-2-2h-1V7a2 2 0 012-2z" />
+                                </svg>
+                                {item.fuel || '-'}
+                            </span>
+                            <span className="flex items-center gap-1">
+                                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L12 21.314l-5.657-4.657a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
+                                </svg>
+                                {item.region || '-'}
+                            </span>
+                        </div>
                     </div>
                     <div className="mt-2">
-                        <div className="text-xl font-bold text-blue-600">{price}</div>
+                        {price != null && <div className="text-xl font-bold text-blue-600">{price}</div>}
                     </div>
                 </div>
                 <div className="flex-shrink-0 self-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -108,11 +130,42 @@ export default function CarCard({
                 <h3 className="font-bold text-lg leading-tight line-clamp-1 group-hover:text-blue-600 transition">
                     {item.maker} {item.model}{item.trim ? ` ${item.trim}` : ''}
                 </h3>
-                <div className="flex items-center gap-3 text-sm text-gray-600">
-                    {item.year && <span>{item.year}년식</span>}
-                    {item.km && <span>{item.km.toLocaleString()}km</span>}
+                {/* 1행: 연식, 키로수 */}
+                <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                    {item.year && (
+                        <span className="flex items-center gap-1">
+                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            {item.year}년식
+                        </span>
+                    )}
+                    {item.km != null && item.km !== 0 && (
+                        <span className="flex items-center gap-1">
+                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                            {item.km.toLocaleString()}km
+                        </span>
+                    )}
                 </div>
-                <div className="text-xl font-bold text-blue-600">{price}</div>
+                {/* 2행: 연료, 지역 (아이콘 포함) */}
+                <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                    <span className="flex items-center gap-1">
+                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7v1a2 2 0 01-2 2h-1V6a2 2 0 00-2-2H6a2 2 0 00-2 2v4H5a2 2 0 01-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 01-2-2h-1V7a2 2 0 012-2z" />
+                        </svg>
+                        {item.fuel || '-'}
+                    </span>
+                    <span className="flex items-center gap-1">
+                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L12 21.314l-5.657-4.657a8 8 0 1111.314 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
+                        </svg>
+                        {item.region || '-'}
+                    </span>
+                </div>
+                {price != null && <div className="text-xl font-bold text-blue-600">{price}</div>}
             </div>
         </Link>
     )

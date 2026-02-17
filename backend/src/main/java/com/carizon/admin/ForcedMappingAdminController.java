@@ -51,7 +51,7 @@ public class ForcedMappingAdminController {
             List<Map<String, Object>> mappings = jdbc.queryForList(sql.toString(), params.toArray());
             return ApiResponse.success(mappings);
         } catch (Exception e) {
-            log.error("[강제 매핑] 조회 실패", e);
+            log.error("[forced mapping] fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -106,10 +106,10 @@ public class ForcedMappingAdminController {
                 pMakerCode, pModelGroupCode, pModelCode, pTrimCode, pGradeCode,
                 makerCode, modelGroupCode, modelCode, trimCode, gradeCode);
 
-            log.info("[강제 매핑] 추가 완료: platform={}, depth={}", platformName, depth);
+            log.info("[forced mapping] add done: platform={}, depth={}", platformName, depth);
             return ApiResponse.success("강제 매핑이 추가되었습니다.");
         } catch (Exception e) {
-            log.error("[강제 매핑] 추가 실패", e);
+            log.error("[forced mapping] add failed", e);
             return ApiResponse.error("추가 실패: " + e.getMessage());
         }
     }
@@ -162,7 +162,7 @@ public class ForcedMappingAdminController {
                 return ApiResponse.error("매핑을 찾을 수 없습니다.");
             }
         } catch (Exception e) {
-            log.error("[강제 매핑] 수정 실패", e);
+            log.error("[forced mapping] update failed", e);
             return ApiResponse.error("수정 실패: " + e.getMessage());
         }
     }
@@ -214,7 +214,7 @@ public class ForcedMappingAdminController {
                 return ApiResponse.error("매핑을 찾을 수 없습니다.");
             }
         } catch (Exception e) {
-            log.error("[강제 매핑] 삭제 실패", e);
+            log.error("[forced mapping] delete failed", e);
             return ApiResponse.error("삭제 실패: " + e.getMessage());
         }
     }

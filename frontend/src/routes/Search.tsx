@@ -20,6 +20,8 @@ export type CarListItem = {
     priceUpdatedAt?: string
     representativeImageUrl?: string
     modelCode?: string
+    fuel?: string
+    region?: string
 }
 // 페이지 응답 타입(백엔드 표준 페이징)
 export type CarListResponse = {
@@ -35,6 +37,7 @@ export default function Search() {
     const [list, setList] = useState<CarListItem[]>([])
     const [page, setPage] = useState(0)
     const [totalPages, setTotalPages] = useState(0)
+    const [totalElements, setTotalElements] = useState(0)
     const [loading, setLoading] = useState(false)
     const params = useMemo(() => Object.fromEntries(sp.entries()), [sp])
 
@@ -47,6 +50,7 @@ export default function Search() {
             const res: CarListResponse = (response as any).data || response
             setList((res && res.content) ? res.content : [])
             setTotalPages(res?.totalPages ?? 0)
+            setTotalElements(res?.totalElements ?? 0)
         } catch (e) {
             setList([])
             setTotalPages(0)
@@ -86,27 +90,54 @@ export default function Search() {
                             </div>
                             <h2 className="text-3xl font-bold">검색 결과</h2>
                         </div>
-                        {!loading && list.length > 0 && (
+                        {!loading && (
                             <p className="text-sm text-gray-600 ml-13">
-                                총 <span className="font-semibold text-gray-900">{list.length}</span>개의 매물을 찾았습니다
+                                총 <span className="font-semibold text-gray-900">{totalElements.toLocaleString()}</span>개의 매물을 찾았습니다
                             </p>
                         )}
                     </div>
-                    {loading && (
-                        <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl text-sm text-gray-600">
-                            <div className="spinner w-4 h-4"></div>
-                            <span>로딩 중…</span>
-                        </div>
-                    )}
+                    <div className="flex items-center gap-3">
+                        {loading ? (
+                            <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl text-sm text-gray-600">
+                                <div className="spinner w-4 h-4"></div>
+                                <span>로딩 중…</span>
+                            </div>
+                        ) : (
+                            <>
+                                <span className="text-sm font-medium text-gray-600">정렬</span>
+                                <select
+                                    value={params.sort ?? ''}
+                                    onChange={(e) => {
+                                        const sort = e.target.value
+                                        const next = new URLSearchParams(sp)
+                                        if (sort) next.set('sort', sort); else next.delete('sort')
+                                        next.set('page', '0')
+                                        setSp(next)
+                                        setPage(0)
+                                        fetchPage(0)
+                                    }}
+                                    className="input-modern py-2 pl-3 pr-8 text-sm min-w-[140px]"
+                                >
+                                    <option value="">무작위</option>
+                                    <option value="RECENT">최신순</option>
+                                    <option value="LOW_PRICE">낮은 가격순</option>
+                                    <option value="LOW_KM">적은 주행순</option>
+                                    <option value="NEW_YEAR">신형순</option>
+                                </select>
+                            </>
+                        )}
+                    </div>
                 </div>
 
-                {/* 결과 리스트 */}
+                {/* 결과 리스트 (가격 정보 없는 매물은 표시하지 않음) */}
                 <div className="grid gap-4">
-                    {list.filter(Boolean).map((it, idx) => (
-                        <div key={it.carId} className="animate-fade-in" style={{ animationDelay: `${idx * 0.05}s` }}>
-                            <CarCard item={it} compact />
-                        </div>
-                    ))}
+                    {list
+                        .filter((it) => it && (it.priceMin != null || it.priceMax != null))
+                        .map((it, idx) => (
+                            <div key={it.carId} className="animate-fade-in" style={{ animationDelay: `${idx * 0.05}s` }}>
+                                <CarCard item={it} compact />
+                            </div>
+                        ))}
                 </div>
 
                 {!loading && list.length === 0 && (
@@ -119,26 +150,63 @@ export default function Search() {
                     </div>
                 )}
 
-                {totalPages > 1 && (
-                    <div className="flex items-center justify-center gap-2 flex-wrap pt-4">
-                        {Array.from({ length: totalPages }, (_, i) => i).map((p) => (
+                {totalPages > 1 && (() => {
+                    const maxVisible = 10
+                    const half = Math.floor(maxVisible / 2)
+                    let startPage = Math.max(0, page - half)
+                    let endPage = Math.min(totalPages - 1, startPage + maxVisible - 1)
+                    if (endPage - startPage + 1 < maxVisible && startPage > 0) {
+                        startPage = Math.max(0, endPage - maxVisible + 1)
+                    }
+                    const visiblePages = Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i)
+                    return (
+                        <div className="flex items-center justify-center gap-1 sm:gap-2 flex-wrap pt-4">
                             <button
-                                key={p}
+                                type="button"
                                 onClick={() => {
-                                    setSp(prev => { prev.set('page', String(p)); return prev })
-                                    fetchPage(p)
+                                    const next = Math.max(0, page - 1)
+                                    setSp(prev => { prev.set('page', String(next)); return prev })
+                                    fetchPage(next)
                                 }}
-                                className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                                    p === page
-                                        ? 'bg-black text-white shadow-lg scale-105'
-                                        : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'
-                                }`}
+                                disabled={page === 0}
+                                className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                aria-label="이전 페이지"
                             >
-                                {p + 1}
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                             </button>
-                        ))}
-                    </div>
-                )}
+                            {visiblePages.map((p) => (
+                                <button
+                                    key={p}
+                                    type="button"
+                                    onClick={() => {
+                                        setSp(prev => { prev.set('page', String(p)); return prev })
+                                        fetchPage(p)
+                                    }}
+                                    className={`min-w-[2.25rem] px-3 py-2 rounded-lg font-medium transition-all ${
+                                        p === page
+                                            ? 'bg-black text-white shadow-lg scale-105'
+                                            : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'
+                                    }`}
+                                >
+                                    {p + 1}
+                                </button>
+                            ))}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const next = Math.min(totalPages - 1, page + 1)
+                                    setSp(prev => { prev.set('page', String(next)); return prev })
+                                    fetchPage(next)
+                                }}
+                                disabled={page >= totalPages - 1}
+                                className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                aria-label="다음 페이지"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                            </button>
+                        </div>
+                    )
+                })()}
             </section>
         </div>
     )

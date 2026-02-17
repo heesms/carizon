@@ -33,11 +33,11 @@ public class WeeklyBestAdminController {
                description = "주간 Best 매물 선정 및 블로그 포스팅 내용 생성 배치 작업을 수동 실행합니다.")
     public ApiResponse<String> runBatch() {
         try {
-            log.info("[관리자] 주간 Best 배치 작업 수동 실행");
+            log.info("[admin] weekly Best batch job manual run");
             batchService.runManually();
             return ApiResponse.success("배치 작업 실행 완료");
         } catch (Exception e) {
-            log.error("[관리자] 주간 Best 배치 작업 실행 실패", e);
+            log.error("[admin] weekly Best batch run failed", e);
             return ApiResponse.error("배치 작업 실행 실패: " + e.getMessage());
         }
     }
@@ -50,7 +50,7 @@ public class WeeklyBestAdminController {
             @RequestParam(required = false) String trimCode,
             @RequestParam(defaultValue = "10") int limit) {
         try {
-            log.info("[관리자] 모델 {} 트림 {} Best 매물 포스팅 생성", modelCode, trimCode);
+            log.info("[admin] model {} trim {} Best listing post create", modelCode, trimCode);
             
             List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, trimCode, limit);
             
@@ -75,7 +75,7 @@ public class WeeklyBestAdminController {
                     "carCount", String.valueOf(bestCars.size())
             ));
         } catch (Exception e) {
-            log.error("[관리자] 포스팅 생성 실패", e);
+            log.error("[admin] post create failed", e);
             return ApiResponse.error("포스팅 생성 실패: " + e.getMessage());
         }
     }
@@ -89,7 +89,7 @@ public class WeeklyBestAdminController {
             @RequestParam(defaultValue = "10") int limit,
             @RequestParam(defaultValue = "draft") String status) {
         try {
-            log.info("[관리자] 모델 {} 트림 {} WordPress 포스팅 시작", modelCode, trimCode);
+            log.info("[admin] model {} trim {} WordPress post start", modelCode, trimCode);
             
             // Best 매물 선정
             List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, trimCode, limit);
@@ -121,7 +121,7 @@ public class WeeklyBestAdminController {
                     "message", "WordPress 포스팅이 성공적으로 생성되었습니다."
             ));
         } catch (Exception e) {
-            log.error("[관리자] WordPress 포스팅 실패", e);
+            log.error("[admin] WordPress post failed", e);
             return ApiResponse.error("WordPress 포스팅 실패: " + e.getMessage());
         }
     }
@@ -140,7 +140,7 @@ public class WeeklyBestAdminController {
             }
             return ApiResponse.success(bestCars);
         } catch (Exception e) {
-            log.error("[관리자] Best 매물 조회 실패", e);
+            log.error("[admin] Best listing fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }

@@ -79,16 +79,16 @@ public class WeeklyBestCarRankingService {
     public List<WeeklyBestCarDto> getWeeklyBestCars(String modelCode, String trimCode, int limit) {
         long startTime = System.currentTimeMillis();
         List<String> modelCodes = parseModelCodes(modelCode);
-        log.info("[주간 Best] 모델={}, 트림={}, limit={} 시작 (파싱: {}개 모델)", modelCode, trimCode, limit, modelCodes.size());
+        log.info("[weekly Best] model={}, trim={}, limit={} start (parsed: {} models)", modelCode, trimCode, limit, modelCodes.size());
 
         // 1. 기본 매물 조회 (복수 모델이면 각각 조회 후 합침, car_image_url 있는 것만, ONSALE만)
         long step1Start = System.currentTimeMillis();
         List<WeeklyBestCarDto> candidates = fetchCandidatesForModels(modelCodes, trimCode);
         long step1Time = System.currentTimeMillis() - step1Start;
-        log.info("[주간 Best] [1단계] 후보 매물 조회 완료: {}건 (소요: {}ms)", candidates.size(), step1Time);
+        log.info("[weekly Best] [step1] candidate listings fetched: {} ({}ms)", candidates.size(), step1Time);
 
         if (candidates.isEmpty()) {
-            log.warn("[주간 Best] 후보 0건 - model_code={}. car_master와 platform_car가 car_id로 연결된 매물이 없거나, merge/postProcess(linkToMaster) 실행 후 다시 시도해 보세요.", modelCode);
+            log.warn("[weekly Best] no candidates for model_code={}. Run merge/postProcess(linkToMaster) and retry.", modelCode);
             return Collections.emptyList();
         }
 
@@ -96,7 +96,7 @@ public class WeeklyBestCarRankingService {
         long step2Start = System.currentTimeMillis();
         List<WeeklyBestCarDto> filteredCars = applyFilters(candidates);
         long step2Time = System.currentTimeMillis() - step2Start;
-        log.info("[주간 Best] [2단계] 필터링 완료: {}건 (소요: {}ms)", filteredCars.size(), step2Time);
+        log.info("[weekly Best] [step2] filtering done: {} ({}ms)", filteredCars.size(), step2Time);
 
         if (filteredCars.isEmpty()) {
             return Collections.emptyList();
@@ -106,7 +106,7 @@ public class WeeklyBestCarRankingService {
         long step3Start = System.currentTimeMillis();
         Map<String, ModelStatistics> modelStats = calculateModelStatistics(filteredCars);
         long step3Time = System.currentTimeMillis() - step3Start;
-        log.info("[주간 Best] [3단계] 모델별 통계 계산 완료: {}개 모델 (소요: {}ms)", modelStats.size(), step3Time);
+        log.info("[weekly Best] [step3] model stats done: {} models ({}ms)", modelStats.size(), step3Time);
 
         // 4. 각 매물에 스코어 계산 (새로운 점수 체계) - 모든 매물에 대해 스코어 계산
         long step4Start = System.currentTimeMillis();
@@ -114,7 +114,7 @@ public class WeeklyBestCarRankingService {
                 .map(car -> calculateScores(car, modelStats, false)) // 평가 사유는 규칙 기반으로 먼저 생성
                 .collect(Collectors.toList());
         long step4Time = System.currentTimeMillis() - step4Start;
-        log.info("[주간 Best] [4단계] 스코어 계산 완료: {}건 (소요: {}ms, 평균: {}ms/건)", 
+        log.info("[weekly Best] [step4] score calc done: {} ({}ms, avg {}ms/row)", 
                 scoredCars.size(), step4Time, step4Time / Math.max(1, scoredCars.size()));
 
         // 5. 카리즌 스코어 기준 정렬 및 순위 부여 (동점 시 가솔린·디젤 > LPG 우선)
@@ -129,7 +129,7 @@ public class WeeklyBestCarRankingService {
             scoredCars.get(i).setRank(i + 1);
         }
         long step5Time = System.currentTimeMillis() - step5Start;
-        log.info("[주간 Best] [5단계] 정렬 및 순위 부여 완료 (소요: {}ms)", step5Time);
+        log.info("[weekly Best] [step5] sort and rank done ({}ms)", step5Time);
 
         // 6. 상위 N개 반환
         long step7Start = System.currentTimeMillis();
@@ -139,10 +139,10 @@ public class WeeklyBestCarRankingService {
         long step7Time = System.currentTimeMillis() - step7Start;
 
         long totalTime = System.currentTimeMillis() - startTime;
-        log.info("[주간 Best] [7단계] 결과 반환 완료 (소요: {}ms)", step7Time);
-        log.info("[주간 Best] 전체 완료: {}건 선정 (총 소요: {}ms)", result.size(), totalTime);
+        log.info("[weekly Best] [step7] result return done ({}ms)", step7Time);
+        log.info("[weekly Best] done: {} selected (total {}ms)", result.size(), totalTime);
         for (WeeklyBestCarDto car : result) {
-            log.debug("  [{}위] {} {} - 카리즌 스코어: {}, 가격: {}만원, 주행: {}km", 
+            log.debug("  [rank {}] {} {} - carizon score: {}, price: {} manwon, mileage: {}km", 
                     car.getRank(), car.getMakerName(), car.getModelName(),
                     car.getCarizonScore() != null ? car.getCarizonScore().setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO,
                     car.getPrice(), car.getMileage());
@@ -180,9 +180,6 @@ public class WeeklyBestCarRankingService {
      * @param modelCode 모델 코드 (null이면 모델 필터 없음)
      * @param trimCode 트림 코드 (선택사항, null이면 모델코드만으로 필터링)
      */
-    /** 후보 조회 시 상위 건수 제한 (정렬 후 상위 N개만 랭킹에 사용, 성능·메모리 절약) */
-    private static final int FETCH_CANDIDATES_LIMIT = 500;
-
     private List<WeeklyBestCarDto> fetchCandidates(String modelCode, String trimCode) {
         StringBuilder sql = new StringBuilder("""
             SELECT 
@@ -244,8 +241,7 @@ public class WeeklyBestCarRankingService {
             params.add(trimCode);
         }
 
-        sql.append(" ORDER BY pc.last_seen_date DESC, pc.updated_at DESC LIMIT ?");
-        params.add(FETCH_CANDIDATES_LIMIT);
+        sql.append(" ORDER BY pc.last_seen_date DESC, pc.updated_at DESC");
 
         return jdbc.query(sql.toString(), params.toArray(), (rs, rowNum) -> {
             LocalDate lastSeenDate = rs.getDate("last_seen_date") != null 
@@ -318,6 +314,13 @@ public class WeeklyBestCarRankingService {
         return isGasoline(fuel) || isDiesel(fuel);
     }
 
+    /** 하이브리드 여부 (가격 점수 매리트 적용용) */
+    private boolean isHybrid(String fuel) {
+        if (fuel == null || fuel.isBlank()) return false;
+        String f = fuel.trim().toUpperCase();
+        return f.contains("하이브리드") || f.contains("HYBRID") || "HEV".equals(f);
+    }
+
     /**
      * 포스팅 랭킹 연료 가산점 (가솔린 > 디젤 > LPG/기타 0).
      */
@@ -335,36 +338,36 @@ public class WeeklyBestCarRankingService {
                 .filter(car -> {
                     // 1. 업데이트가 너무 오래됨 (14일 이상) - 제외
                     if (car.getDaysSinceUpdate() >= MAX_DAYS_SINCE_UPDATE) {
-                        log.debug("[필터] 업데이트 오래됨 제외: carId={}, days={}", 
+                        log.debug("[filter] exclude stale update: carId={}, days={}", 
                                 car.getCarId(), car.getDaysSinceUpdate());
                         return false;
                     }
                     
                     // 2. 핵심 필드 누락 체크
                     if (car.getPrice() == null || car.getPrice() <= 0) {
-                        log.debug("[필터] 가격 정보 없음 제외: carId={}", car.getCarId());
+                        log.debug("[filter] exclude no price: carId={}", car.getCarId());
                         return false;
                     }
                     if (car.getMileage() == null || car.getMileage() < 0) {
-                        log.debug("[필터] 주행거리 정보 없음 제외: carId={}", car.getCarId());
+                        log.debug("[filter] exclude no mileage: carId={}", car.getCarId());
                         return false;
                     }
                     if (car.getYear() == null || car.getYear() <= 0) {
-                        log.debug("[필터] 연식 정보 없음 제외: carId={}", car.getCarId());
+                        log.debug("[filter] exclude no year: carId={}", car.getCarId());
                         return false;
                     }
                     
                     // 2-1. 차량 정보 필수 필드 체크 (포스팅에 필요)
                     if (car.getMakerName() == null || car.getMakerName().trim().isEmpty()) {
-                        log.debug("[필터] 제조사명 없음 제외: carId={}", car.getCarId());
+                        log.debug("[filter] exclude no maker: carId={}", car.getCarId());
                         return false;
                     }
                     if (car.getModelGroupName() == null || car.getModelGroupName().trim().isEmpty()) {
-                        log.debug("[필터] 모델그룹명 없음 제외: carId={}", car.getCarId());
+                        log.debug("[filter] exclude no model group: carId={}", car.getCarId());
                         return false;
                     }
                     if (car.getModelName() == null || car.getModelName().trim().isEmpty()) {
-                        log.debug("[필터] 모델명 없음 제외: carId={}", car.getCarId());
+                        log.debug("[filter] exclude no model: carId={}", car.getCarId());
                         return false;
                     }
                     
@@ -375,13 +378,13 @@ public class WeeklyBestCarRankingService {
                     double kmRatio = expectedKm > 0 ? (double) car.getMileage() / expectedKm : 0;
                     
                     if (kmRatio > MAX_KM_RATIO_FILTER) {
-                        log.debug("[필터] 주행거리 과다 제외: carId={}, kmRatio={}", car.getCarId(), kmRatio);
+                        log.debug("[filter] exclude high mileage: carId={}, kmRatio={}", car.getCarId(), kmRatio);
                         return false;
                     }
                     
                     // 4. 이상한 가격 패턴 체크 (999만원, 1111만원, 1234만원 등)
                     if (isSuspiciousPrice(car.getPrice())) {
-                        log.debug("[필터] 이상한 가격 패턴 제외: carId={}, price={}만원", car.getCarId(), car.getPrice());
+                        log.debug("[filter] exclude suspicious price: carId={}, price={} manwon", car.getCarId(), car.getPrice());
                         return false;
                     }
                     
@@ -438,12 +441,17 @@ public class WeeklyBestCarRankingService {
     private WeeklyBestCarDto calculateScores(WeeklyBestCarDto car, Map<String, ModelStatistics> modelStats, boolean useLlm) {
         ModelStatistics stats = modelStats.get(car.getModelCode());
         if (stats == null) {
-            log.warn("[주간 Best] 모델 통계 없음: {}", car.getModelCode());
+            log.warn("[weekly Best] no model stats: {}", car.getModelCode());
             return car;
         }
 
         // 1. 가격 점수 (0~1) - 시세 대비 저렴할수록 높음 (주행거리 고려)
         ScoreResult priceResult = calculatePriceScoreWithReason(car.getPrice(), stats, car.getMileage(), car.getYear());
+        // 하이브리드는 가격 매리트 1.2배 (상한 1.0)
+        if (isHybrid(car.getFuel())) {
+            BigDecimal adjusted = priceResult.score.multiply(BigDecimal.valueOf(1.2)).min(BigDecimal.ONE);
+            priceResult = new ScoreResult(adjusted.setScale(4, RoundingMode.HALF_UP), priceResult.reason);
+        }
 
         // 2. 주행거리 점수 (0~1) - 연식 대비 적정할수록 높음
         ScoreResult mileageResult = calculateMileageScoreWithReason(car.getMileage(), car.getYear());

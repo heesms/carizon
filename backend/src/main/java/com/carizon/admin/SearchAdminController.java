@@ -1,15 +1,18 @@
 package com.carizon.admin;
 
 import com.carizon.common.dto.ApiResponse;
+import com.carizon.search.kafka.CarIndexSyncProducer;
 import com.carizon.search.service.CarIndexingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -19,20 +22,23 @@ import java.util.Map;
 @RestController
 @RequestMapping("/admin/search")
 @RequiredArgsConstructor
-@Tag(name = "검색 관리", description = "Meilisearch 인덱스 관리 API")
+@Tag(name = "검색 관리", description = "Elasticsearch 인덱스 관리 API")
 public class SearchAdminController {
 
     private final CarIndexingService indexingService;
 
+    @Autowired(required = false)
+    private CarIndexSyncProducer carIndexSyncProducer;
+
     @PostMapping("/reindex")
-    @Operation(summary = "전체 차량 재인덱싱", description = "모든 차량 데이터를 Meilisearch에 재인덱싱합니다. (기존 인덱스 삭제 후 재생성)")
+    @Operation(summary = "전체 차량 재인덱싱", description = "모든 차량 데이터를 Elasticsearch에 재인덱싱합니다. (기존 인덱스 삭제 후 재생성)")
     public ApiResponse<String> reindexAll() {
-        log.info("[검색관리] 전체 재인덱싱 시작");
+        log.info("[search admin] full reindex start");
         try {
             indexingService.reindexAllCars();
             return ApiResponse.success("재인덱싱 완료");
         } catch (Exception e) {
-            log.error("[검색관리] 재인덱싱 실패", e);
+            log.error("[search admin] reindex failed", e);
             return ApiResponse.error("재인덱싱 실패: " + e.getMessage());
         }
     }
@@ -41,7 +47,7 @@ public class SearchAdminController {
     @Operation(summary = "증분 인덱싱", description = "지정된 시간 이후에 업데이트된 차량만 인덱싱합니다.")
     public ApiResponse<Map<String, Object>> incrementalIndex(
             @RequestParam(required = false) String since) {
-        log.info("[검색관리] 증분 인덱싱 시작: since={}", since);
+        log.info("[search admin] incremental index start: since={}", since);
         try {
             LocalDateTime sinceTime = since != null && !since.isEmpty() 
                 ? LocalDateTime.parse(since) 
@@ -54,7 +60,7 @@ public class SearchAdminController {
                 "since", sinceTime.toString()
             ));
         } catch (Exception e) {
-            log.error("[검색관리] 증분 인덱싱 실패", e);
+            log.error("[search admin] incremental index failed", e);
             return ApiResponse.error("증분 인덱싱 실패: " + e.getMessage());
         }
     }
@@ -63,7 +69,7 @@ public class SearchAdminController {
     @Operation(summary = "배치 인덱싱", description = "지정된 개수만큼 차량을 인덱싱합니다. (스케줄러용)")
     public ApiResponse<Map<String, Object>> batchIndex(
             @RequestParam(defaultValue = "1000") int limit) {
-        log.info("[검색관리] 배치 인덱싱 시작: limit={}", limit);
+        log.info("[search admin] batch index start: limit={}", limit);
         try {
             int count = indexingService.batchIndex(limit);
             return ApiResponse.success(Map.of(
@@ -72,13 +78,35 @@ public class SearchAdminController {
                 "requestedLimit", limit
             ));
         } catch (Exception e) {
-            log.error("[검색관리] 배치 인덱싱 실패", e);
+            log.error("[search admin] batch index failed", e);
             return ApiResponse.error("배치 인덱싱 실패: " + e.getMessage());
         }
     }
 
+    @PostMapping("/sync")
+    @Operation(summary = "차량 인덱스 동기화 (Kafka)", description = "지정한 차량 ID들을 Kafka로 보내 검색 인덱스에 비동기 반영합니다. app.kafka.enabled=true 필요.")
+    public ApiResponse<Map<String, Object>> syncCarIds(@RequestBody Map<String, List<Long>> body) {
+        List<Long> carIds = body != null ? body.get("carIds") : null;
+        if (carIds == null || carIds.isEmpty()) {
+            return ApiResponse.error("carIds 필드에 ID 목록을 넣어주세요.");
+        }
+        if (carIndexSyncProducer == null) {
+            return ApiResponse.error("Kafka가 비활성화되어 있습니다. 단건/배치 동기화를 쓰려면 app.kafka.enabled=true 로 설정하고 Kafka를 실행하세요.");
+        }
+        try {
+            carIndexSyncProducer.sendSyncCarIds(carIds);
+            return ApiResponse.success(Map.of(
+                "message", "동기화 요청 전송됨 (Kafka)",
+                "carIdsCount", carIds.size()
+            ));
+        } catch (Exception e) {
+            log.error("[search admin] sync send failed", e);
+            return ApiResponse.error("동기화 요청 전송 실패: " + e.getMessage());
+        }
+    }
+
     @PostMapping("/test")
-    @Operation(summary = "Meilisearch 검색 테스트", description = "Meilisearch 검색 API를 테스트합니다.")
+    @Operation(summary = "Elasticsearch 검색 테스트", description = "Elasticsearch 검색 API를 테스트합니다.")
     public ApiResponse<Map<String, Object>> testSearch(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String makerCode,
@@ -87,7 +115,7 @@ public class SearchAdminController {
             @RequestParam(required = false) String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        log.info("[검색관리] Meilisearch 테스트: q={}, makerCode={}, priceMin={}, priceMax={}", 
+        log.info("[search admin] Meilisearch test: q={}, makerCode={}, priceMin={}, priceMax={}", 
             q, makerCode, priceMin, priceMax);
         try {
             Map<String, Object> queryParams = new HashMap<>();
@@ -99,10 +127,10 @@ public class SearchAdminController {
             queryParams.put("page", page);
             queryParams.put("size", size);
             
-            Map<String, Object> result = indexingService.getMeilisearchService().search(queryParams);
+            Map<String, Object> result = indexingService.getCarSearchService().search(queryParams);
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.error("[검색관리] 검색 테스트 실패", e);
+            log.error("[search admin] search test failed", e);
             return ApiResponse.error("검색 테스트 실패: " + e.getMessage());
         }
     }

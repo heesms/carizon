@@ -51,15 +51,15 @@ public class TcarCrawler {
         try {
             // ★ 시작 시 한 번만 전체 초기화
             try {
-                log.warn("[TCAR] TRUNCATE raw_tcar 시작");
+                log.warn("[TCAR] TRUNCATE raw_tcar start");
                 jdbc.execute("TRUNCATE TABLE raw_tcar");
-                log.warn("[TCAR] TRUNCATE raw_tcar 완료");
+                log.warn("[TCAR] TRUNCATE raw_tcar done");
             } catch (Exception e) {
-                log.error("[TCAR] TRUNCATE 실패: {}", e.toString(), e);
+                log.error("[TCAR] TRUNCATE failed: {}", e.toString(), e);
                 return; // 초기화 안 되면 적재하지 않음
             }
 
-            log.info("[TCAR] 시작: perPage={}", perPage);
+            log.info("[TCAR] start: perPage={}", perPage);
 
             while (true) {
                 HttpUrl url = buildUrl(page, perPage);
@@ -70,7 +70,7 @@ public class TcarCrawler {
                         .get()
                         .build();
 
-                log.info("[TCAR] 요청 page={} url={}", page, url);
+                log.info("[TCAR] request page={} url={}", page, url);
 
                 try (Response resp = http.newCall(req).execute()) {
                     if (!resp.isSuccessful()) {
@@ -79,7 +79,7 @@ public class TcarCrawler {
                     }
                     String body = resp.body() != null ? resp.body().string() : "";
                     if (body.isBlank()) {
-                        log.info("[TCAR] 빈 응답(page={}) → 종료", page);
+                        log.info("[TCAR] empty response(page={}) → stop", page);
                         break;
                     }
 
@@ -90,7 +90,7 @@ public class TcarCrawler {
 
                     int batchCount = (list == null) ? 0 : list.size();
                     if (batchCount == 0) {
-                        log.info("[TCAR] 더 이상 데이터 없음(page={}) → 종료", page);
+                        log.info("[TCAR] no more data(page={}) → stop", page);
                         break;
                     }
 
@@ -106,18 +106,18 @@ public class TcarCrawler {
                     int[] res = jdbc.batchUpdate(sql, params);
                     fetchedTotal += res.length;
 
-                    log.info("[TCAR] page={} 저장 {}건 (누적={})", page, res.length, fetchedTotal);
+                    log.info("[TCAR] page={} saved {} (total={})", page, res.length, fetchedTotal);
 
                     // 마지막 페이지 추정: 현재 페이지 데이터 수 < perPage
                     if (batchCount < perPage) {
-                        log.info("[TCAR] 마지막 페이지 추정(list < perPage) → 종료 (page={}, items={})", page, batchCount);
+                        log.info("[TCAR] last page (list < perPage) → stop (page={}, items={})", page, batchCount);
                         break;
                     }
 
                     page++;
                     Thread.sleep(600); // 부하 완화
                 } catch (Exception e) {
-                    log.error("[TCAR] 예외 page={} → 종료: {}", page, e.toString(), e);
+                    log.error("[TCAR] exception page={} → stop: {}", page, e.toString(), e);
                     break;
                 }
             }
@@ -127,7 +127,7 @@ public class TcarCrawler {
             recorder.recordFail(runId, fetchedTotal, Instant.now(), e.toString());
         }
 
-        log.info("[TCAR] 완료 totalItems={} elapsed={}s",
+        log.info("[TCAR] done totalItems={} elapsed={}s",
                 fetchedTotal, Duration.between(started, Instant.now()).toSeconds());
     }
 
@@ -203,7 +203,7 @@ public class TcarCrawler {
             
             return "https://img-mycarsave.lotterentacar.net/uploadFile/" + carThumbnail;
         } catch (Exception e) {
-            log.warn("[TCAR] car_image_url 생성 실패: {}", e.getMessage());
+            log.warn("[TCAR] car_image_url build failed: {}", e.getMessage());
             return null;
         }
     }

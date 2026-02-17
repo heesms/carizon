@@ -47,7 +47,7 @@ public class PipelineAdminController {
             
             // 1. 크롤링 (선택적)
             if (!skipCrawl) {
-                log.info("[파이프라인] 크롤링 시작...");
+                log.info("[pipeline] crawl start...");
                 // 크롤링은 별도 스케줄러에서 실행되므로 여기서는 스킵
                 // 필요시 CrawlJobService.runDaily() 호출 가능
                 result.put("crawl", "skipped (별도 실행 필요)");
@@ -56,7 +56,7 @@ public class PipelineAdminController {
             }
 
             // 2. 머지 (raw_* → platform_car)
-            log.info("[파이프라인] 머지 시작...");
+            log.info("[pipeline] merge start...");
             long mergeStart = System.currentTimeMillis();
             int merged = mergeService.mergeAllPlatforms(date);
             long mergeTime = System.currentTimeMillis() - mergeStart;
@@ -66,7 +66,7 @@ public class PipelineAdminController {
             ));
 
             // 3. 코드 매핑 (platform_car → cz_code_map)
-            log.info("[파이프라인] 코드 매핑 시작...");
+            log.info("[pipeline] code mapping start...");
             long mappingStart = System.currentTimeMillis();
             int totalMapped = 0;
             String[] platforms = {"ENCAR", "KCAR", "CHACHACHA", "CHUTCHA", "CHARANCHA", "TCAR"};
@@ -74,9 +74,9 @@ public class PipelineAdminController {
                 try {
                     int mapped = codeMappingService.runAutoMapping(platform, CodeMappingService.Scope.TODAY);
                     totalMapped += mapped;
-                    log.info("[파이프라인] {} 매핑: {}건", platform, mapped);
+                    log.info("[pipeline] {} mapping: {} rows", platform, mapped);
                 } catch (Exception e) {
-                    log.error("[파이프라인] {} 매핑 실패", platform, e);
+                    log.error("[pipeline] {} mapping failed", platform, e);
                 }
             }
             long mappingTime = System.currentTimeMillis() - mappingStart;
@@ -86,7 +86,7 @@ public class PipelineAdminController {
             ));
 
             // 4. car_master 머지 (platform_car + cz_code_map → car_master)
-            log.info("[파이프라인] car_master 머지 시작...");
+            log.info("[pipeline] car_master merge start...");
             long masterStart = System.currentTimeMillis();
             int masterMerged = masterMergeService.upsertAliveToCarMaster(date);
             masterMergeService.updateCarMasterFromMapping();
@@ -100,7 +100,7 @@ public class PipelineAdminController {
             result.put("totalDurationMs", totalTime);
             result.put("bizDate", date.toString());
 
-            log.info("[파이프라인] 전체 파이프라인 완료: {}ms", totalTime);
+            log.info("[pipeline] full pipeline done: {}ms", totalTime);
             
             @SuppressWarnings("unchecked")
             Map<String, Object> masterMerge = (Map<String, Object>) result.getOrDefault("masterMerge", Map.of());
@@ -109,7 +109,7 @@ public class PipelineAdminController {
             
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.error("[파이프라인] 실행 실패", e);
+            log.error("[pipeline] run failed", e);
             apiRunRecorder.recordFail(runId, 0, e);
             return ApiResponse.error("파이프라인 실행 실패: " + e.getMessage());
         }
@@ -133,7 +133,7 @@ public class PipelineAdminController {
             apiRunRecorder.recordSuccess(runId, 0, Map.of("executionId", executionId, "message", message));
             return ApiResponse.success(message);
         } catch (Exception e) {
-            log.error("[파이프라인] 워크플로우 실행 실패", e);
+            log.error("[pipeline] workflow run failed", e);
             apiRunRecorder.recordFail(runId, 0, e);
             return ApiResponse.error("워크플로우 실행 실패: " + e.getMessage());
         }
@@ -160,7 +160,7 @@ public class PipelineAdminController {
             apiRunRecorder.recordSuccess(runId, merged, result);
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.error("[파이프라인] 머지 실행 실패", e);
+            log.error("[pipeline] merge run failed", e);
             apiRunRecorder.recordFail(runId, 0, e);
             return ApiResponse.error("머지 실행 실패: " + e.getMessage());
         }
@@ -185,7 +185,7 @@ public class PipelineAdminController {
                     int mapped = codeMappingService.runAutoMapping(platform, mappingScope);
                     totalMapped += mapped;
                 } catch (Exception e) {
-                    log.error("[파이프라인] {} 매핑 실패", platform, e);
+                    log.error("[pipeline] {} mapping failed", platform, e);
                 }
             }
             long duration = System.currentTimeMillis() - start;
@@ -199,7 +199,7 @@ public class PipelineAdminController {
             apiRunRecorder.recordSuccess(runId, totalMapped, result);
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.error("[파이프라인] 코드 매핑 실행 실패", e);
+            log.error("[pipeline] code mapping run failed", e);
             apiRunRecorder.recordFail(runId, 0, e);
             return ApiResponse.error("코드 매핑 실행 실패: " + e.getMessage());
         }
@@ -227,7 +227,7 @@ public class PipelineAdminController {
             apiRunRecorder.recordSuccess(runId, merged, result);
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.error("[파이프라인] car_master 머지 실행 실패", e);
+            log.error("[pipeline] car_master merge run failed", e);
             apiRunRecorder.recordFail(runId, 0, e);
             return ApiResponse.error("car_master 머지 실행 실패: " + e.getMessage());
         }
@@ -243,7 +243,7 @@ public class PipelineAdminController {
             LocalDate date = bizDate != null ? bizDate : LocalDate.now();
             long start = System.currentTimeMillis();
             
-            log.warn("[파이프라인] rebuildPlatformCar: platform_car를 TRUNCATE하고 재생성합니다!");
+            log.warn("[pipeline] rebuildPlatformCar: TRUNCATE platform_car and rebuild!");
             
             Map<String, Object> result = mergeService.rebuildFromScratch(date);
             long duration = System.currentTimeMillis() - start;
@@ -258,7 +258,7 @@ public class PipelineAdminController {
             apiRunRecorder.recordSuccess(runId, platformCarCount, response);
             return ApiResponse.success(response);
         } catch (Exception e) {
-            log.error("[파이프라인] platform_car 재생성 실패", e);
+            log.error("[pipeline] platform_car rebuild failed", e);
             apiRunRecorder.recordFail(runId, 0, e);
             return ApiResponse.error("platform_car 재생성 실패: " + e.getMessage());
         }
@@ -274,7 +274,7 @@ public class PipelineAdminController {
             LocalDate date = bizDate != null ? bizDate : LocalDate.now();
             long start = System.currentTimeMillis();
             
-            log.warn("[파이프라인] rebuildCarMaster: car_master를 TRUNCATE하고 재생성합니다!");
+            log.warn("[pipeline] rebuildCarMaster: TRUNCATE car_master and rebuild!");
             
             int carMasterCount = masterMergeService.rebuildCarMasterFromScratch(date);
             masterMergeService.updateCarMasterFromMapping();
@@ -291,7 +291,7 @@ public class PipelineAdminController {
             apiRunRecorder.recordSuccess(runId, carMasterCount, result);
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.error("[파이프라인] car_master 재생성 실패", e);
+            log.error("[pipeline] car_master rebuild failed", e);
             apiRunRecorder.recordFail(runId, 0, e);
             return ApiResponse.error("car_master 재생성 실패: " + e.getMessage());
         }
@@ -307,31 +307,31 @@ public class PipelineAdminController {
             LocalDate date = bizDate != null ? bizDate : LocalDate.now();
             long start = System.currentTimeMillis();
             
-            log.warn("[파이프라인] rebuildFromScratch 시작: platform_car, car_master, car_price_history를 TRUNCATE합니다!");
+            log.warn("[pipeline] rebuildFromScratch start: TRUNCATE platform_car, car_master, car_price_history!");
             
             // 1단계: TRUNCATE 및 재생성 (통합 처리)
-            log.info("[파이프라인] rebuildFromScratch 시작...");
+            log.info("[pipeline] rebuildFromScratch start...");
             long mergeStart = System.currentTimeMillis();
             Map<String, Object> mergeResult = mergeService.rebuildFromScratch(date);
             long mergeTime = System.currentTimeMillis() - mergeStart;
-            log.info("[파이프라인] platform_car 재생성 완료: {}건 ({}ms)", mergeResult.get("platformCarCount"), mergeTime);
+            log.info("[pipeline] platform_car rebuild done: {} rows ({}ms)", mergeResult.get("platformCarCount"), mergeTime);
             
             int platformCarCount = (Integer) mergeResult.get("platformCarCount");
             
             // 3단계: car_master 재생성 (순수 INSERT만)
-            log.info("[파이프라인] car_master 재생성 시작...");
+            log.info("[pipeline] car_master rebuild start...");
             long masterStart = System.currentTimeMillis();
             int carMasterCount = masterMergeService.rebuildCarMasterFromScratch(date);
             masterMergeService.updateCarMasterFromMapping();
             long masterTime = System.currentTimeMillis() - masterStart;
-            log.info("[파이프라인] car_master 재생성 완료: {}건 ({}ms)", carMasterCount, masterTime);
+            log.info("[pipeline] car_master rebuild done: {} rows ({}ms)", carMasterCount, masterTime);
             
             // 4단계: platform_car.car_id 매핑
-            log.info("[파이프라인] platform_car.car_id 매핑 시작...");
+            log.info("[pipeline] platform_car.car_id mapping start...");
             long linkStart = System.currentTimeMillis();
             int linkedCount = mergeService.linkToMaster();
             long linkTime = System.currentTimeMillis() - linkStart;
-            log.info("[파이프라인] platform_car.car_id 매핑 완료: {}건 ({}ms)", linkedCount, linkTime);
+            log.info("[pipeline] platform_car.car_id mapping done: {} rows ({}ms)", linkedCount, linkTime);
             
             long totalTime = System.currentTimeMillis() - start;
             
@@ -349,7 +349,7 @@ public class PipelineAdminController {
             apiRunRecorder.recordSuccess(runId, platformCarCount + carMasterCount, response);
             return ApiResponse.success(response);
         } catch (Exception e) {
-            log.error("[파이프라인] rebuildFromScratch 실행 실패", e);
+            log.error("[pipeline] rebuildFromScratch run failed", e);
             apiRunRecorder.recordFail(runId, 0, e);
             return ApiResponse.error("rebuildFromScratch 실행 실패: " + e.getMessage());
         }

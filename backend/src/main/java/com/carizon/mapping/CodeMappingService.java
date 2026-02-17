@@ -377,7 +377,7 @@ public class CodeMappingService {
                 int x=1;
                 // 1) platform_name
                 if (i == 0) { // 첫 번째 행만 로그
-                    log.debug("[코드매핑] platform={}, reason={}, status={}", p.platform, p.reason, p.status);
+                    log.debug("[code mapping] platform={}, reason={}, status={}", p.platform, p.reason, p.status);
                 }
                 ps.setString(x++, p.platform);
                 // 2~6) p_*_code

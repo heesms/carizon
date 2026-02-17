@@ -8,7 +8,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -27,11 +29,33 @@ public class CarEmbeddingBatchService {
     private final EmbeddingService embeddingService;
     private final ChromaVectorStoreService vectorStoreService;
 
-    private static final int WORKERS = 6;          // 병렬 워커 수
-    private static final int BATCH_SIZE_DB = 300;  // DB에서 끊어 처리할 청크 크기
-    private static final int BATCH_SIZE_CHROMA = 50; // Chroma add 배치 크기
-    
+    private static final int WORKERS = 10;         // 병렬 워커 수 (Ollama 병목 시 조정)
+    private static final int BATCH_SIZE_DB = 400;  // DB에서 끊어 처리할 청크 크기
+    private static final int BATCH_SIZE_CHROMA = 80; // Chroma add 배치 크기
+    private static final int PROGRESS_LOG_INTERVAL = 50; // N건마다 진행 로그
+
     private final AtomicInteger metadataLogCount = new AtomicInteger(0); // Metadata 로그 출력 카운터
+
+    /** API/로그용 진행 상황 (진행 중일 때만 갱신, 배치 종료 후 마지막 결과 유지) */
+    private volatile boolean progressRunning = false;
+    private volatile int progressTotal = 0;
+    private volatile int progressProcessed = 0;
+    private volatile int progressOk = 0;
+    private volatile int progressFail = 0;
+    private volatile long progressStartedAt = 0L;
+    private volatile String progressMessage = "";
+
+    public Map<String, Object> getProgress() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("running", progressRunning);
+        m.put("total", progressTotal);
+        m.put("processed", progressProcessed);
+        m.put("ok", progressOk);
+        m.put("fail", progressFail);
+        m.put("startedAt", progressStartedAt > 0 ? progressStartedAt : null);
+        m.put("message", progressMessage != null ? progressMessage : "");
+        return m;
+    }
     
     /**
      * 모든 차량을 벡터 DB에 임베딩으로 저장
@@ -45,7 +69,7 @@ public class CarEmbeddingBatchService {
      * 특정 차량을 임베딩으로 변환하여 벡터 DB에 저장
      */
     public void embedCar(Long carId) throws Exception {
-        log.info("[임베딩] 시작: carId={}", carId);
+        log.info("[embedding] start: carId={}", carId);
         
         // 차량 데이터를 텍스트로 변환
         CarEmbeddingDto carEmbedding = textConverterService.createCarEmbedding(carId);
@@ -54,18 +78,18 @@ public class CarEmbeddingBatchService {
         }
         
         // Metadata 정보 로그
-        log.info("[임베딩] 정보 [carId={}]:", carId);
+        log.info("[embedding] info [carId={}]:", carId);
         log.info("   - Metadata: {}", carEmbedding.getMetadata());
         log.info("   - Text: {}", carEmbedding.getText().replace("\n", " | "));
         
         // 임베딩 생성
         float[] embedding = embeddingService.generateEmbedding(carEmbedding.getText());
         carEmbedding.setEmbedding(embedding);
-        log.info("   - Embedding 크기: {}차원", embedding.length);
+        log.info("   - Embedding size: {} dims", embedding.length);
         
         // 벡터 DB에 저장
         vectorStoreService.addCarEmbedding(carEmbedding);
-        log.info("[임베딩] 완료: carId={}", carId);
+        log.info("[embedding] done: carId={}", carId);
     }
     
     /**
@@ -81,6 +105,7 @@ public class CarEmbeddingBatchService {
               pc.status = 'ONSALE'
               OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
             )
+              AND pc.price IS NOT NULL AND pc.price > 0
               AND cm.updated_at >= ?
             ORDER BY cm.updated_at ASC
             """;
@@ -88,31 +113,46 @@ public class CarEmbeddingBatchService {
         List<Long> carIds = jdbcTemplate.queryForList(sql, Long.class, 
             java.sql.Timestamp.valueOf(since));
         int totalCount = carIds.size();
-        log.info("========================================");
-        log.info("[임베딩] 증분 작업 시작");
-        log.info("[임베딩] 총 요청 개수: {}개 (since: {})", totalCount, since);
-        log.info("========================================");
-        
+        progressRunning = true;
+        progressTotal = totalCount;
+        progressProcessed = 0;
+        progressOk = 0;
+        progressFail = 0;
+        progressStartedAt = System.currentTimeMillis();
+        progressMessage = "증분 임베딩 (since: " + since + ")";
+
+        log.info("************************************");
+        log.info("***   INCREMENTAL JOB START      ***  total={} (since: {})", totalCount, since);
+        log.info("************************************");
+
         int successCount = 0;
         int failCount = 0;
         for (Long carId : carIds) {
             try {
                 embedCar(carId);
                 successCount++;
-                if ((successCount + failCount) % 10 == 0) {
-                    log.info("[임베딩] 진행 상황: {}/{} (성공: {}, 실패: {})", 
-                        successCount + failCount, totalCount, successCount, failCount);
+                progressProcessed = successCount + failCount;
+                progressOk = successCount;
+                progressFail = failCount;
+                if ((successCount + failCount) % PROGRESS_LOG_INTERVAL == 0) {
+                    log.info("[embedding] 진행: {}/{} 건 (성공: {}, 실패: {})", successCount + failCount, totalCount, successCount, failCount);
                 }
             } catch (Exception e) {
                 failCount++;
-                log.warn("[임베딩] 실패 [carId={}]: {}", carId, e.getMessage());
+                progressProcessed = successCount + failCount;
+                progressFail = failCount;
+                log.warn("[embedding] fail [carId={}]: {}", carId, e.getMessage());
             }
         }
-        
-        log.info("========================================");
-        log.info("[임베딩] 증분 작업 완료");
-        log.info("[임베딩] 총 요청: {}개 | 성공: {}개 | 실패: {}개", totalCount, successCount, failCount);
-        log.info("========================================");
+
+        progressRunning = false;
+        progressProcessed = totalCount;
+        progressOk = successCount;
+        progressFail = failCount;
+
+        log.info("************************************");
+        log.info("***   INCREMENTAL JOB DONE       ***  ok={} fail={}", successCount, failCount);
+        log.info("************************************");
         return successCount;
     }
 
@@ -129,16 +169,17 @@ public class CarEmbeddingBatchService {
               pc.status = 'ONSALE'
               OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
             )
+              AND pc.price IS NOT NULL AND pc.price > 0
               AND cm.car_id > ? AND cm.car_id <= ?
             ORDER BY cm.car_id
             """;
         
         List<Long> carIds = jdbcTemplate.queryForList(sql, Long.class, fromCarId, toCarId);
         int totalCount = carIds.size();
-        log.info("========================================");
-        log.info("[임베딩] 범위 작업 시작");
-        log.info("[임베딩] 총 요청 개수: {}개 (범위: {} - {})", totalCount, fromCarId, toCarId);
-        log.info("========================================");
+        log.info("************************************");
+        log.info("***   RANGE JOB START           ***");
+        log.info("************************************");
+        log.info("[embedding] total requests: {} (range: {} - {})", totalCount, fromCarId, toCarId);
         
         int successCount = 0;
         int failCount = 0;
@@ -146,18 +187,18 @@ public class CarEmbeddingBatchService {
             try {
                 embedCar(carId);
                 successCount++;
-                log.info("[임베딩] 진행 상황: {}/{} (성공: {}, 실패: {})", 
+                log.info("[embedding] progress: {}/{} (ok: {}, fail: {})", 
                     successCount + failCount, totalCount, successCount, failCount);
             } catch (Exception e) {
                 failCount++;
-                log.warn("[임베딩] 실패 [carId={}]: {}", carId, e.getMessage());
+                log.warn("[embedding] fail [carId={}]: {}", carId, e.getMessage());
             }
         }
         
-        log.info("========================================");
-        log.info("[임베딩] 범위 작업 완료");
-        log.info("[임베딩] 총 요청: {}개 | 성공: {}개 | 실패: {}개", totalCount, successCount, failCount);
-        log.info("========================================");
+        log.info("************************************");
+        log.info("***   RANGE JOB DONE            ***");
+        log.info("************************************");
+        log.info("[embedding] total: {} | ok: {} | fail: {}", totalCount, successCount, failCount);
     }
 
     /**
@@ -173,26 +214,32 @@ public class CarEmbeddingBatchService {
               pc.status = 'ONSALE'
               OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
             )
+              AND pc.price IS NOT NULL AND pc.price > 0
             ORDER BY cm.car_id
             """;
 
         List<Long> carIds = jdbcTemplate.queryForList(sql, Long.class);
         int totalCount = carIds.size();
-        log.info("========================================");
-        log.info("[임베딩] 작업 시작");
-        log.info("[임베딩] 총 요청 개수: {}개", totalCount);
-        log.info("========================================");
 
-        // Metadata 로그 카운터 초기화
+        progressRunning = true;
+        progressTotal = totalCount;
+        progressProcessed = 0;
+        progressOk = 0;
+        progressFail = 0;
+        progressStartedAt = System.currentTimeMillis();
+        progressMessage = "전체 임베딩";
+
+        log.info("************************************");
+        log.info("***   EMBEDDING JOB START       ***  total={}", totalCount);
+        log.info("************************************");
+
         metadataLogCount.set(0);
-
         ExecutorService executor = Executors.newFixedThreadPool(WORKERS);
         AtomicInteger success = new AtomicInteger();
         AtomicInteger fail = new AtomicInteger();
         AtomicInteger processed = new AtomicInteger();
 
         try {
-            // DB 청크 단위로 처리 (너무 많은 future 생성 방지)
             for (List<Long> chunk : partition(carIds, BATCH_SIZE_DB)) {
                 List<Future<CarEmbeddingDto>> futures = new ArrayList<>();
                 for (Long carId : chunk) {
@@ -205,66 +252,199 @@ public class CarEmbeddingBatchService {
                         CarEmbeddingDto dto = f.get();
                         if (dto != null && dto.getEmbedding() != null) {
                             ready.add(dto);
-                            int currentSuccess = success.incrementAndGet();
-                            int currentProcessed = processed.incrementAndGet();
-                            
-                            // 진행 상황 로그 (10개마다 또는 마지막)
-                            if (currentProcessed % 10 == 0 || currentProcessed == totalCount) {
-                                log.info("[임베딩] 진행 상황: {}/{} (성공: {}, 실패: {})", 
-                                    currentProcessed, totalCount, currentSuccess, fail.get());
+                            int curOk = success.incrementAndGet();
+                            int curProcessed = processed.incrementAndGet();
+                            progressOk = curOk;
+                            progressProcessed = curProcessed;
+                            progressFail = fail.get();
+
+                            if (curProcessed % PROGRESS_LOG_INTERVAL == 0 || curProcessed == totalCount) {
+                                log.info("[embedding] 진행: {}/{} 건 (성공: {}, 실패: {})", curProcessed, totalCount, curOk, fail.get());
                             }
                         } else {
                             fail.incrementAndGet();
-                            processed.incrementAndGet();
+                            int curProcessed = processed.incrementAndGet();
+                            progressProcessed = curProcessed;
+                            progressFail = fail.get();
                         }
                     } catch (Exception e) {
                         fail.incrementAndGet();
-                        processed.incrementAndGet();
-                        log.warn("[임베딩] 실패: {}", e.getMessage());
+                        int curProcessed = processed.incrementAndGet();
+                        progressProcessed = curProcessed;
+                        progressFail = fail.get();
+                        log.warn("[embedding] fail: {}", e.getMessage());
                     }
                 }
 
-                // Chroma 배치 전송
                 for (List<CarEmbeddingDto> chromaBatch : partition(ready, BATCH_SIZE_CHROMA)) {
                     try {
                         vectorStoreService.addCarEmbeddingsBatch(chromaBatch);
-                        log.debug("[ChromaDB] 배치 저장 완료: {}개", chromaBatch.size());
+                        log.debug("[ChromaDB] batch save done: {}", chromaBatch.size());
                     } catch (Exception e) {
                         int batchSize = chromaBatch.size();
                         fail.addAndGet(batchSize);
-                        success.addAndGet(-batchSize); // 성공 카운트에서 제거
-                        log.warn("[ChromaDB] 배치 저장 실패 ({}개): {}", batchSize, e.getMessage());
+                        success.addAndGet(-batchSize);
+                        progressFail = fail.get();
+                        progressOk = success.get();
+                        log.warn("[ChromaDB] batch save failed ({}): {}", batchSize, e.getMessage());
                     }
                 }
             }
         } finally {
             executor.shutdown();
+            progressRunning = false;
+            progressProcessed = processed.get();
+            progressOk = success.get();
+            progressFail = fail.get();
         }
 
-        log.info("========================================");
-        log.info("[임베딩] 작업 완료");
-        log.info("[임베딩] 총 요청: {}개 | 성공: {}개 | 실패: {}개", 
-            totalCount, success.get(), fail.get());
-        log.info("========================================");
+        log.info("************************************");
+        log.info("***   EMBEDDING JOB DONE        ***  ok={} fail={}", success.get(), fail.get());
+        log.info("************************************");
     }
 
     private CarEmbeddingDto buildEmbeddingDto(Long carId) throws Exception {
         CarEmbeddingDto dto = textConverterService.createCarEmbedding(carId);
         if (dto == null) {
-            log.warn("[임베딩] 차량 데이터 없음: carId={}", carId);
+            log.warn("[embedding] no car data: carId={}", carId);
             return null;
         }
         
         // Metadata 정보 로그 출력 (처음 3개만 상세 로그)
         int logCount = metadataLogCount.incrementAndGet();
         if (logCount <= 3) {
-            log.info("[임베딩] 정보 [carId={}]:", carId);
+            log.info("[embedding] info [carId={}]:", carId);
             log.info("   - Metadata: {}", dto.getMetadata());
             log.info("   - Text: {}", dto.getText().replace("\n", " | "));
         }
         
         dto.setEmbedding(embeddingService.generateEmbedding(dto.getText()));
         return dto;
+    }
+
+    /**
+     * 조건별 제한 임베딩: 제조사(메이커)·개수로 필터링하여 해당 차량만 Chroma에 임베딩.
+     * 예: 볼보 100개 → makerCode=VOLVO 또는 maker=볼보, limit=100
+     *
+     * @param limit     임베딩할 최대 건수 (기본 100, 최대 5000)
+     * @param makerCode 제조사 코드 (예: VOLVO), null이면 무시
+     * @param maker     제조사 한글명 부분 일치 (예: 볼보), null이면 무시. cz_maker.maker_name LIKE %maker%
+     * @return 실제 임베딩 성공 건수
+     */
+    @Transactional(readOnly = true)
+    public int embedByFilter(int limit, String makerCode, String maker) {
+        int cappedLimit = Math.min(Math.max(limit, 1), 5000);
+
+        StringBuilder sql = new StringBuilder("""
+            SELECT DISTINCT cm.car_id
+            FROM car_master cm
+            INNER JOIN platform_car pc ON pc.car_id = cm.car_id
+            """);
+        if (maker != null && !maker.isBlank()) {
+            sql.append(" LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code ");
+        }
+        sql.append("""
+            WHERE (
+              pc.status = 'ONSALE'
+              OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
+            )
+              AND pc.price IS NOT NULL AND pc.price > 0
+            """);
+        List<Object> params = new ArrayList<>();
+        if (makerCode != null && !makerCode.isBlank()) {
+            sql.append(" AND cm.maker_code = ? ");
+            params.add(makerCode.trim());
+        }
+        if (maker != null && !maker.isBlank()) {
+            sql.append(" AND m.maker_name LIKE ? ");
+            params.add("%" + maker.trim() + "%");
+        }
+        sql.append(" ORDER BY cm.car_id LIMIT ? ");
+        params.add(cappedLimit);
+
+        List<Long> carIds = jdbcTemplate.queryForList(sql.toString(), Long.class, params.toArray());
+        int totalCount = carIds.size();
+
+        progressRunning = true;
+        progressTotal = totalCount;
+        progressProcessed = 0;
+        progressOk = 0;
+        progressFail = 0;
+        progressStartedAt = System.currentTimeMillis();
+        progressMessage = "필터 임베딩 (limit=" + cappedLimit + ", maker=" + (maker != null ? maker : "") + ")";
+
+        log.info("************************************");
+        log.info("***   FILTER EMBEDDING START     ***  total={}", totalCount);
+        log.info("************************************");
+
+        if (carIds.isEmpty()) {
+            progressRunning = false;
+            log.info("[embedding] no cars match filter, skip.");
+            return 0;
+        }
+
+        metadataLogCount.set(0);
+        ExecutorService executor = Executors.newFixedThreadPool(WORKERS);
+        AtomicInteger success = new AtomicInteger();
+        AtomicInteger fail = new AtomicInteger();
+        AtomicInteger processed = new AtomicInteger();
+
+        try {
+            for (List<Long> chunk : partition(carIds, BATCH_SIZE_DB)) {
+                List<Future<CarEmbeddingDto>> futures = new ArrayList<>();
+                for (Long carId : chunk) {
+                    futures.add(executor.submit(() -> buildEmbeddingDto(carId)));
+                }
+                List<CarEmbeddingDto> ready = new ArrayList<>();
+                for (Future<CarEmbeddingDto> f : futures) {
+                    try {
+                        CarEmbeddingDto dto = f.get();
+                        if (dto != null && dto.getEmbedding() != null) {
+                            ready.add(dto);
+                            success.incrementAndGet();
+                        } else {
+                            fail.incrementAndGet();
+                        }
+                        int cur = processed.incrementAndGet();
+                        progressProcessed = cur;
+                        progressOk = success.get();
+                        progressFail = fail.get();
+                        if (cur % PROGRESS_LOG_INTERVAL == 0 || cur == totalCount) {
+                            log.info("[embedding] 진행: {}/{} 건 (성공: {}, 실패: {})", cur, totalCount, success.get(), fail.get());
+                        }
+                    } catch (Exception e) {
+                        fail.incrementAndGet();
+                        processed.incrementAndGet();
+                        progressProcessed = processed.get();
+                        progressFail = fail.get();
+                        log.warn("[embedding] fail: {}", e.getMessage());
+                    }
+                }
+                for (List<CarEmbeddingDto> chromaBatch : partition(ready, BATCH_SIZE_CHROMA)) {
+                    try {
+                        vectorStoreService.addCarEmbeddingsBatch(chromaBatch);
+                    } catch (Exception e) {
+                        int batchSize = chromaBatch.size();
+                        fail.addAndGet(batchSize);
+                        success.addAndGet(-batchSize);
+                        progressFail = fail.get();
+                        progressOk = success.get();
+                        log.warn("[ChromaDB] batch save failed ({}): {}", batchSize, e.getMessage());
+                    }
+                }
+            }
+        } finally {
+            executor.shutdown();
+            progressRunning = false;
+            progressProcessed = processed.get();
+            progressOk = success.get();
+            progressFail = fail.get();
+        }
+
+        log.info("************************************");
+        log.info("***   FILTER EMBEDDING DONE      ***  ok={} fail={}", success.get(), fail.get());
+        log.info("************************************");
+        return success.get();
     }
 
     private static <T> List<List<T>> partition(List<T> list, int size) {

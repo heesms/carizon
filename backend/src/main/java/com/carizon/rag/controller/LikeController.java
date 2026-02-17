@@ -37,14 +37,15 @@ public class LikeController {
     }
     
     @PostMapping("/{carId}")
-    @Operation(summary = "좋아요 토글", description = "차량 추천에 좋아요를 추가하거나 제거합니다")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> toggleLike(
+    @Operation(summary = "좋아요 추가", description = "차량 추천에 좋아요를 추가합니다. 브라우저(IP)당 한 번만 반영됩니다.")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> addLike(
             @PathVariable Long carId,
             HttpServletRequest request) {
         
         String userId = getUserId(request);
-        boolean liked = likeService.toggleLike(carId, userId);
+        likeService.addLikeOnce(carId, userId);
         long count = likeService.getLikeCount(carId);
+        boolean liked = likeService.hasLiked(carId, userId);
         
         Map<String, Object> result = Map.of(
             "liked", liked,

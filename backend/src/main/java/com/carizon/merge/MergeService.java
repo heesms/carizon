@@ -253,13 +253,14 @@ public class MergeService {
                       (platform_name, platform_car_key, car_no, car_id,
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
-                       price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
+                       price, price_new, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
                        m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
                     SELECT
                       'ENCAR', r.vehicle_id, r.vehicle_no, NULL,
                       r.manufacturer_code, r.model_group_code, r.model_code, r.grade_code, r.grade_detail_code,
                       r.manufacturer_name, r.model_group_name, r.model_name, r.grade_name, r.grade_detail_name,
                       COALESCE(CAST(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.price')), ',', '') AS UNSIGNED), r.price),
+                      NULLIF(r.price_new, 0),
                       r.mileage, r.displacement , r.form_year,
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.status')),
                       r.color, r.fuel, r.transmission, r.body_type, r.region,
@@ -271,6 +272,7 @@ public class MergeService {
                     WHERE r.id > ? AND r.id <= ? AND r.sell_type = 'NORMAL'
                     ON DUPLICATE KEY UPDATE
                       price          = VALUES(price),
+                      price_new      = COALESCE(VALUES(price_new), platform_car.price_new),
                       status         = VALUES(status),
                       extra          = VALUES(extra),
                       car_image_url  = VALUES(car_image_url),
@@ -484,7 +486,7 @@ public class MergeService {
                       (platform_name, platform_car_key, car_no, car_id,
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
-                       price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
+                       price, price_new, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
                        m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
                     SELECT
                       'TCAR', 
@@ -504,6 +506,7 @@ public class MergeService {
                       COALESCE(
                         NULLIF(CAST(NULLIF(TRIM(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.returnPrice')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.return_price'))), ',', '')), '') AS UNSIGNED), 0) DIV 10000,
                         CAST(NULLIF(TRIM(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.price')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.priceNew')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.priceSell')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.promotionPrice'))), ',', '')), '') AS UNSIGNED)),
+                      NULLIF(CAST(NULLIF(TRIM(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.priceNew')), ''), ',', '')), '') AS UNSIGNED) DIV 10000, 0),
                       CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.mileage')), ',', ''), 'null') AS UNSIGNED),
                       CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.displacement')), ',', ''), 'null') AS UNSIGNED),
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.regYear')),
@@ -515,8 +518,8 @@ public class MergeService {
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.trans')),
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.shapeType')),
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.areaCd')),
-      CONCAT('https://mycarsave.lotterentacar.net/cr/detail/', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
-      CONCAT('https://mycarsave.lotterentacar.net/cr/detail/', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
+      CONCAT('https://mycarsave.lotterentacar.net/cr/search/view?carId=', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
+      CONCAT('https://mycarsave.lotterentacar.net/cr/search/view?carId=', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
       CASE 
         WHEN JSON_EXTRACT(r.payload, '$.postStartDt') IS NULL 
              OR JSON_EXTRACT(r.payload, '$.postStartDt') = JSON_QUOTE('null')
@@ -529,8 +532,10 @@ public class MergeService {
                       NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url2
                     FROM raw_tcar r
                     WHERE r.id > ? AND r.id <= ?
+                      AND (JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sale_type')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sale_type')) != 'R')
                     ON DUPLICATE KEY UPDATE
                       price          = VALUES(price),
+                      price_new      = COALESCE(VALUES(price_new), platform_car.price_new),
                       status         = VALUES(status),
                       extra          = VALUES(extra),
                       car_image_url  = VALUES(car_image_url),
@@ -554,10 +559,10 @@ public class MergeService {
                 // 디버깅: 첫 번째 배치의 payload 샘플 로깅
                 if (isFirst) {
                     String samplePayload = jdbc.queryForObject(
-                        "SELECT payload FROM raw_tcar WHERE id > ? LIMIT 1", 
+                        "SELECT payload FROM raw_tcar WHERE id > ? AND (JSON_UNQUOTE(JSON_EXTRACT(payload, '$.sale_type')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(payload, '$.sale_type')) != 'R') LIMIT 1",
                         String.class, cursorFrom);
                     if (samplePayload != null) {
-                        log.info("[TCAR] 샘플 payload (첫 배치): {}", samplePayload);
+                        log.info("[TCAR] sample payload (first batch): {}", samplePayload);
                     }
                 }
                 return null;
@@ -581,22 +586,22 @@ public class MergeService {
 
     /** TRUNCATE 후 platform_car와 car_master 재생성 (순수 INSERT만 사용, 더 빠름) */
     public Map<String, Object> rebuildFromScratch(LocalDate bizDate) {
-        log.warn("[merge] rebuildFromScratch: platform_car, car_master, car_price_history를 TRUNCATE하고 재생성합니다!");
+        log.warn("[merge] rebuildFromScratch: TRUNCATE platform_car, car_master, car_price_history and rebuild!");
         
         // 1단계: TRUNCATE (car_price_history → car_master → platform_car 순서)
         jdbc.execute("TRUNCATE TABLE car_price_history");
-        log.info("[merge] car_price_history TRUNCATE 완료");
+        log.info("[merge] car_price_history TRUNCATE done");
         
         jdbc.execute("TRUNCATE TABLE car_master");
-        log.info("[merge] car_master TRUNCATE 완료");
+        log.info("[merge] car_master TRUNCATE done");
         
         jdbc.execute("TRUNCATE TABLE platform_car");
-        log.info("[merge] platform_car TRUNCATE 완료");
+        log.info("[merge] platform_car TRUNCATE done");
         
         // 2단계: platform_car 재생성 (raw_*에서 INSERT만 - ON DUPLICATE KEY UPDATE 제거)
-        log.info("[merge] platform_car 재생성 시작...");
+        log.info("[merge] platform_car rebuild start...");
         int platformCarCount = mergeAllPlatformsInsertOnly(bizDate);
-        log.info("[merge] platform_car 재생성 완료: {}건", platformCarCount);
+        log.info("[merge] platform_car rebuild done: {} rows", platformCarCount);
         
         return Map.of("platformCarCount", platformCarCount);
     }
@@ -687,13 +692,14 @@ public class MergeService {
                       (platform_name, platform_car_key, car_no, car_id,
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
-                       price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
+                       price, price_new, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
                        m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
                     SELECT DISTINCT
                       'ENCAR', r.vehicle_id, r.vehicle_no, NULL,
                       r.manufacturer_code, r.model_group_code, r.model_code, r.grade_code, r.grade_detail_code,
                       r.manufacturer_name, r.model_group_name, r.model_name, r.grade_name, r.grade_detail_name,
                       COALESCE(CAST(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.price')), ',', '') AS UNSIGNED), r.price),
+                      NULLIF(r.price_new, 0),
                       r.mileage, r.displacement , r.form_year,
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.status')),
                       r.color, r.fuel, r.transmission, r.body_type, r.region,
@@ -850,7 +856,7 @@ public class MergeService {
                       (platform_name, platform_car_key, car_no, car_id,
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
-                       price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
+                       price, price_new, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
                        m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
                     SELECT
                       'TCAR', 
@@ -876,6 +882,7 @@ public class MergeService {
                                CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.priceNew')), ',', ''), 'null') AS UNSIGNED),
                                CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.priceSell')), ',', ''), 'null') AS UNSIGNED),
                                CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.promotionPrice')), ',', ''), 'null') AS UNSIGNED))),
+                      NULLIF(CAST(NULLIF(TRIM(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.priceNew')), ''), ',', '')), '') AS UNSIGNED) DIV 10000, 0),
                       CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.mileage')), ',', ''), 'null') AS UNSIGNED),
                       CAST(NULLIF(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.displacement')), ',', ''), 'null') AS UNSIGNED),
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.regYear')),
@@ -887,8 +894,8 @@ public class MergeService {
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.trans')),
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.shapeType')),
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.areaCd')),
-      CONCAT('https://mycarsave.lotterentacar.net/cr/detail/', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
-      CONCAT('https://mycarsave.lotterentacar.net/cr/detail/', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
+      CONCAT('https://mycarsave.lotterentacar.net/cr/search/view?carId=', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
+      CONCAT('https://mycarsave.lotterentacar.net/cr/search/view?carId=', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
       CASE 
         WHEN JSON_EXTRACT(r.payload, '$.postStartDt') IS NULL 
              OR JSON_EXTRACT(r.payload, '$.postStartDt') = JSON_QUOTE('null')
@@ -901,6 +908,7 @@ public class MergeService {
                       NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url2
                     FROM raw_tcar r
                     WHERE r.id > ? AND r.id <= ?
+                      AND (JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sale_type')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sale_type')) != 'R')
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
@@ -988,6 +996,25 @@ public class MergeService {
             cursor = res.nextCursor();
             total  += res.processed();
         }
+
+        // car_id 링크 후: car_master.price_new가 비어 있으면 platform_car의 price_new로 채움
+        runWithRetry(3, 200L, () ->
+            requiresNew().execute(status -> {
+                int filled = jdbc.update("""
+                    UPDATE car_master cm
+                    INNER JOIN (
+                        SELECT car_id, MAX(price_new) AS price_new
+                        FROM platform_car
+                        WHERE car_id IS NOT NULL AND price_new IS NOT NULL AND price_new > 0
+                        GROUP BY car_id
+                    ) pc ON pc.car_id = cm.car_id
+                    SET cm.price_new = pc.price_new, cm.updated_at = NOW()
+                    WHERE cm.price_new IS NULL
+                    """);
+                if (filled > 0) log.info("[merge] backfill car_master.price_new from platform_car: {} rows", filled);
+                return null;
+            }));
+
         log.info("linkToMaster linked rows: {}", total);
         return total;
     }
@@ -1079,7 +1106,7 @@ public class MergeService {
                         }
                     } while (currentBatch == BATCH_SIZE);
                     
-                    log.info("[SOLD] closeMissingAds 완료: {}건 처리", totalAffected);
+                    log.info("[SOLD] closeMissingAds done: {} rows", totalAffected);
                     return null;
                 })
         );

@@ -18,8 +18,13 @@ export type RecommendedCar = {
     fuel?: string;
     transmission?: string;
     color?: string;
+    region?: string;
     url?: string;
+    pcUrl?: string;
+    mUrl?: string;
+    /** 차량 이미지 URL (API는 imageUrl 또는 car_image_url 반환 가능) */
     imageUrl?: string;
+    car_image_url?: string;
     relevanceScore?: number;
     reason?: string;
 };
@@ -58,18 +63,4 @@ export async function getRecommendations(request: RecommendationRequest): Promis
     
     const apiResponse: ApiResponse<RecommendationResponse> = await res.json();
     return apiResponse.data;
-}
-
-export async function extractImageFromUrl(url: string): Promise<string | null> {
-    try {
-        const res = await fetch(`/api/images/extract?url=${encodeURIComponent(url)}`);
-        if (!res.ok) {
-            return null;
-        }
-        const apiResponse: ApiResponse<string> = await res.json();
-        return apiResponse.data || null;
-    } catch (err) {
-        console.warn('Failed to extract image from URL:', url, err);
-        return null;
-    }
 }

@@ -36,7 +36,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props){
     onChange(next)
   }
 
-  const hasActiveFilters = Object.keys(value).some(k => value[k] !== undefined && value[k] !== '' && k !== 'page' && k !== 'size')
+  const hasActiveFilters = Object.keys(value).some(k => value[k] !== undefined && value[k] !== '' && k !== 'page' && k !== 'size' && k !== 'sort')
 
   return (
       <aside className="modern-card p-6 lg:p-8 space-y-6 lg:sticky lg:top-24 lg:h-fit animate-slide-in">
@@ -72,6 +72,19 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props){
               차량 정보
             </h4>
             <div className="space-y-4">
+              <Field label="차량번호" icon={
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                </svg>
+              }>
+                <input
+                  type="text"
+                  placeholder="차량번호로 검색"
+                  value={String(value.carNo ?? '')}
+                  onChange={onField('carNo')}
+                  className="input-modern"
+                />
+              </Field>
               <Field label="제조사" icon={
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
@@ -149,23 +162,6 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props){
                   ]}
                   placeholder="전체 등급"
                   disabled={!trimCode}
-                />
-              </Field>
-              <Field label="정렬" icon={
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
-                </svg>
-              }>
-                <CustomSelect
-                  value={String(value.sort||'RECENT')}
-                  onChange={(v) => onField('sort')({ target: { value: v } } as any)}
-                  options={[
-                    { value: 'RECENT', label: '최신순' },
-                    { value: 'LOW_PRICE', label: '낮은 가격순' },
-                    { value: 'LOW_KM', label: '적은 주행순' },
-                    { value: 'NEW_YEAR', label: '신형순' }
-                  ]}
-                  placeholder="정렬 선택"
                 />
               </Field>
             </div>

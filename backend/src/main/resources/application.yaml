@@ -14,34 +14,57 @@ spring:
       host: localhost
       port: 6379
       timeout: 2000ms
+  # Elasticsearch (차량 검색)
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URIS:http://localhost:9200}
+  # Kafka (차량 인덱스 동기화)
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: car-index-sync-consumer
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+
+# 앱 설정
+app:
+  kafka:
+    enabled: ${KAFKA_ENABLED:false}  # true로 켜야 Consumer/Producer 동작, 단건·배치 sync API 사용 시에만 필요
+    car-sync-topic: ${KAFKA_CAR_SYNC_TOPIC:car-index-sync}
 
 mybatis:
   mapper-locations: classpath:/mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true
 
-# Meilisearch 설정
-meilisearch:
-  host: http://localhost:7700
-  api-key: ${MEILISEARCH_API_KEY:XIczFckMSgIl7hflj3Xo91iBznGx1Sej4-oIhEf6pjs}
-  index-name: cars
-
 logging:
   level:
-    org.springframework.jdbc: DEBUG
+    org.springframework.jdbc: INFO   # DEBUG 시 INSERT/연결 로그 과다 → 청크 단위 로그만 사용
     org.springframework.jdbc.core.StatementCreatorUtils: WARN  # 파라미터 메타데이터 fallback 로그 억제
     org.mybatis: DEBUG
     com.zaxxer.hikari: DEBUG
     com.carizon: DEBUG
+    # Kafka 클라이언트 재연결/연결 실패 로그 억제 (메시지 수신·처리 시에는 com.carizon 로그만 출력)
+    org.apache.kafka: ERROR
 
 # RAG 설정
 rag:
+  # (미사용) TSV 자동 적재는 제거됨. 데이터는 수동 INSERT 또는 별도 스크립트로 적재.
+  model-embedding-source-file: ${RAG_MODEL_EMBEDDING_SOURCE_FILE:}
+
   # Chroma 벡터 DB (로컬 실행: docker run -p 8000:8000 chromadb/chroma)
   chroma:
     base-url: http://localhost:8000
     tenant: default_tenant
     database: default_database
     collection-name: car_listings
+    # 모델코드별 설명 임베딩 (AI 추천 시 활용)
+    model-collection-name: model_descriptions
   
   # Hugging Face Inference API (무료 티어, API 키 필요)
   # 또는 로컬 Ollama 사용 시 ollama 설정 사용
@@ -52,21 +75,25 @@ rag:
       model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 # 한국어 지원 모델
     ollama:
       base-url: http://localhost:11434
-      model: nomic-embed-text # 또는 다른 임베딩 모델
+      # 현재 임베딩 모델: nomic-embed-text (다국어). 한국어 강화: mxbai-embed-large 등
+      model: nomic-embed-text
   
   # LLM 설정 (Ollama 로컬 실행)
+  # 한글이 깨지면: 앱·Ollama 모두 UTF-8 사용 확인. 한문(중국어) 나오면 프롬프트에 '한국어만' 강조됨.
   llm:
     provider: ollama # ollama 또는 huggingface
     ollama:
       base-url: http://localhost:11434
-      model: llama3.1:8b # 추천: llama3.1:8b (안정적, 성능 우수)
-      # 기타 옵션: qwen2.5:7b (한국어 특화, 일부 불안정), gemma2:9b (경량)
+      # Qwen2.5 (ollama pull qwen2.5:14b-instruct). 속도 느리면 qwen2.5:3b 등 소형 모델로 변경 추천
+      model: qwen2.5:14b-instruct
     huggingface:
       api-key: ${HUGGINGFACE_API_KEY:}
       model: meta-llama/Llama-3.1-8B-Instruct
   
   # 추천 로직 설정 (사용자 수정 가능)
   recommendation:
+    # 평가 사유를 Ollama로 다듬기 (true면 차량 1대당 1회 호출 → 블로그 10대 시 10회 호출이라 느릴 수 있음. false면 조합 문구만 사용)
+    reason-polish-enabled: true
     # 추천 이유 생성 로직
     reason:
       # 유사도 점수 임계값 (0.0 ~ 1.0)
@@ -92,10 +119,12 @@ rag:
       car-list-title: "검색된 차량 목록:"
       # 차량 정보 형식 (${index}, ${maker}, ${model}, ${trim}, ${year}, ${mileage}, ${price} 사용 가능)
       car-format: "${index}. ${maker} ${model} ${trim} (${year}년식) 주행거리: ${mileage}km 가격: ${price}만원"
-      # LLM에게 보낼 지시사항
+      # LLM에게 보낼 지시사항 (질문 이해 + 선택 이유 + 5대별 선정 이유)
       instruction: |
-        위 차량 목록을 바탕으로 사용자에게 친절하고 자연스러운 한국어로 추천 설명을 작성해주세요.
-        각 차량의 특징과 사용자 요구사항과의 매칭 포인트를 설명해주세요.
-        너무 길지 않게 3-5문장 정도로 간결하게 작성해주세요.
+        아래 형식으로 한국어로 작성해주세요. 반드시 위 차량 목록만 언급하고, 목록에 없는 차량은 절대 추가하지 마세요.
+        1) 질문 이해: 사용자 요구사항을 어떻게 이해했는지 1~2문장으로 적어주세요.
+        2) 선택 이유: 왜 이 차량들을 추천했는지(전체적인 선정 기준) 1~2문장으로 적어주세요.
+        3) 5대 차량 선정 이유: 위 목록의 1번~5번 차량에 대해, 각 차량을 왜 추천했는지 한 대씩 1문장씩 적어주세요. (예: 1번 볼보 XC60 - ... 2번 ...)
+        친절하고 자연스럽게, 너무 길지 않게 작성해주세요.
       # LLM 실패 시 기본 메시지
       default-recommendation: "검색된 차량 중에서 요구사항에 맞는 차량을 추천드립니다."

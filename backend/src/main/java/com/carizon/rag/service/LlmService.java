@@ -10,29 +10,42 @@ import okhttp3.*;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
- * LLM 서비스 (Ollama 또는 Hugging Face 사용)
+ * LLM ??뺥돩??(Ollama ?癒?뮉 Hugging Face ????
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class LlmService {
+
+    private static final Pattern HANJA_PATTERN = Pattern.compile("[\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF]");
+    private static final String KOREAN_ONLY_SYSTEM_PROMPT =
+            "Always answer in Korean Hangul only. Do not use Hanja or Chinese characters. "
+                    + "Keep the wording concise and natural.";
     
     private final RagProperties ragProperties;
     private final HttpClientService httpClientService;
     private final ObjectMapper objectMapper;
     
     /**
-     * 프롬프트를 LLM에 전달하고 응답 받기
-     */
+     * ?袁⑨세?袁る뱜??LLM???袁⑤뼎??랁??臾먮뼗 獄쏆룄由?     */
     public String generateResponse(String prompt) throws IOException {
+        return generateResponse(prompt, null);
+    }
+
+    /**
+     * ?袁⑨세?袁る뱜??LLM???袁⑤뼎??랁??臾먮뼗 獄쏆룄由?(????筌왖??
+     */
+    public String generateResponse(String prompt, GenerationOptions options) throws IOException {
         String provider = ragProperties.getLlm().getProvider();
-        
+
         if ("ollama".equalsIgnoreCase(provider)) {
-            return generateOllamaResponse(prompt);
+            return generateOllamaResponse(prompt, options);
         } else if ("huggingface".equalsIgnoreCase(provider)) {
             return generateHuggingFaceResponse(prompt);
         } else {
@@ -41,36 +54,57 @@ public class LlmService {
     }
     
     /**
-     * Ollama를 사용한 응답 생성 (로컬 실행 필요)
+     * Ollama????????臾먮뼗 ??밴쉐 (嚥≪뮇類???쎈뻬 ?袁⑹뒄)
      */
-    private String generateOllamaResponse(String prompt) throws IOException {
+    private String generateOllamaResponse(String prompt, GenerationOptions options) throws IOException {
         RagProperties.Llm.Ollama config = ragProperties.getLlm().getOllama();
         String baseUrl = config.getBaseUrl();
         String model = config.getModel();
-        
+        log.debug("[Ollama] model={}, url={}/api/generate", model, baseUrl);
+
         String url = baseUrl + "/api/generate";
-        
         Map<String, Object> body = new HashMap<>();
         body.put("model", model);
         body.put("prompt", prompt);
         body.put("stream", false);
-        
+        body.put("system", KOREAN_ONLY_SYSTEM_PROMPT);
+        body.put("keep_alive", "10m");
+
+        Map<String, Object> ollamaOptions = new HashMap<>();
+        ollamaOptions.put("temperature", options != null && options.temperature() != null ? options.temperature() : 0.2);
+        ollamaOptions.put("top_p", 0.9);
+        ollamaOptions.put("num_ctx", 2048);
+        ollamaOptions.put("num_predict", options != null && options.maxTokens() != null ? options.maxTokens() : 300);
+        body.put("options", ollamaOptions);
+
         try (Response response = httpClientService.postJson(url, body)) {
             if (!response.isSuccessful()) {
                 throw new IOException("Ollama API error: " + response.code() + " " + response.message());
             }
-            
-            JsonNode jsonNode = objectMapper.readTree(response.body().string());
+            // ??? 繹먥뫁彛?獄쎻뫗?: ?臾먮뼗 獄쏅뗄??紐? UTF-8嚥???곴퐤 (Ollama揶쎛 charset 沃섎챷?????疫꿸퀡??첎誘れ몵嚥?繹먥뫁彛?????됱벉)
+            byte[] bytes = response.body().bytes();
+            String responseBody = new String(bytes, StandardCharsets.UTF_8);
+            JsonNode jsonNode = objectMapper.readTree(responseBody);
             if (jsonNode.has("response")) {
-                return jsonNode.get("response").asText();
-            } else {
-                throw new IOException("Unexpected response format from Ollama API");
+                String raw = jsonNode.get("response").asText();
+                return sanitizeKoreanOnly(raw);
             }
+            throw new IOException("Unexpected response format from Ollama API");
         }
+    }
+
+    private String sanitizeKoreanOnly(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        String sanitized = HANJA_PATTERN.matcher(raw).replaceAll("");
+        sanitized = sanitized.replaceAll("[ \\t\\x0B\\f\\r]+", " ");
+        sanitized = sanitized.replaceAll("\\n{3,}", "\n\n");
+        return sanitized.trim();
     }
     
     /**
-     * Hugging Face Inference API를 사용한 응답 생성
+     * Hugging Face Inference API????????臾먮뼗 ??밴쉐
      */
     private String generateHuggingFaceResponse(String prompt) throws IOException {
         RagProperties.Llm.HuggingFace config = ragProperties.getLlm().getHuggingface();
@@ -109,4 +143,6 @@ public class LlmService {
             throw new IOException("Unexpected response format from Hugging Face API");
         }
     }
+
+    public record GenerationOptions(Integer maxTokens, Double temperature) {}
 }

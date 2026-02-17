@@ -2,7 +2,8 @@
 package com.carizon.service;
 
 import com.carizon.domain.mapper.CarMapper;
-import com.carizon.search.service.MeilisearchService;
+import com.carizon.dto.CarDetailRow;
+import com.carizon.search.service.ElasticsearchCarSearchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -15,11 +16,11 @@ import java.util.Map;
 
 /**
  * 차량 검색/상세 조회 서비스.
- * - Meilisearch를 사용한 빠른 검색
+ * - Elasticsearch를 사용한 빠른 검색
  * - 상세 조회는 기존 MyBatis 사용
  *
  * NOTE:
- *  - 검색은 Meilisearch를 사용하여 성능 향상
+ *  - 검색은 Elasticsearch 사용
  *  - 상세 조회는 기존 Mapper 사용
  */
 @Slf4j
@@ -29,7 +30,7 @@ import java.util.Map;
 public class CarQueryService {
 
   private final CarMapper mapper;
-  private final MeilisearchService meilisearchService;
+  private final ElasticsearchCarSearchService elasticsearchCarSearchService;
 
   /**
    * 차량 목록 검색 + 페이지 정보.
@@ -42,24 +43,24 @@ public class CarQueryService {
    *  - sort: LOW_PRICE, LOW_KM, NEW_YEAR (기본: 최신순)
    */
   public Map<String, Object> search(Map<String, Object> query) {
-    log.debug("[CarQueryService] search 시작: query={}", query);
+    log.debug("[CarQueryService] search start: query={}", query);
     
     try {
       // 파라미터 정규화 (yearFrom -> yearMin 등)
       Map<String, Object> normalizedQuery = normalizeQueryParams(query);
       
-      // Meilisearch로 검색
+      // Elasticsearch로 검색
       long startTime = System.currentTimeMillis();
-      Map<String, Object> result = meilisearchService.search(normalizedQuery);
+      Map<String, Object> result = elasticsearchCarSearchService.search(normalizedQuery);
       long elapsed = System.currentTimeMillis() - startTime;
       
-      log.info("[CarQueryService] Meilisearch 검색 완료: {}ms, totalElements={}", 
+      log.info("[CarQueryService] Elasticsearch search done: {}ms, totalElements={}", 
           elapsed, result.get("totalElements"));
       
       return result;
     } catch (Exception e) {
-      log.error("[CarQueryService] search 오류: query={}", query, e);
-      // Meilisearch 실패 시 기존 MyBatis로 폴백 (선택사항)
+      log.error("[CarQueryService] search error: query={}", query, e);
+      // Elasticsearch 실패 시 폴백 (선택사항)
       // return fallbackSearch(query);
       throw e;
     }
@@ -102,14 +103,23 @@ public class CarQueryService {
   }
 
   /**
-   * 차량 상세 조회.
+   * 차량 상세 조회. 상세 행과 대표 이미지를 각각 단순 쿼리로 조회해 지연 최소화.
    */
   public Map<String, Object> detail(long carId) {
-    List<?> rows = mapper.selectCarDetail(carId);
+    long start = System.currentTimeMillis();
+    List<CarDetailRow> rows = mapper.selectCarDetail(carId);
+    String representativeImageUrl = mapper.selectCarRepresentativeImageUrl(carId);
+    long dbMs = System.currentTimeMillis() - start;
+    log.info("[CarQueryService.detail] selectCarDetail+image carId={}, rows={}, dbMs={}", carId, rows.size(), dbMs);
 
     Map<String, Object> res = new LinkedHashMap<>();
     res.put("carId", carId);
     res.put("content", rows);
+    if (representativeImageUrl != null) {
+      res.put("representativeImageUrl", representativeImageUrl);
+    }
+    long totalMs = System.currentTimeMillis() - start;
+    log.info("[CarQueryService.detail] carId={}, totalMs={}ms", carId, totalMs);
     return res;
   }
 

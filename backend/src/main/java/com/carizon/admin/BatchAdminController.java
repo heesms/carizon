@@ -36,7 +36,7 @@ public class BatchAdminController {
             List<Map<String, Object>> jobs = batchJobService.getAllJobDefinitions();
             return ApiResponse.success(jobs);
         } catch (Exception e) {
-            log.error("[배치] 작업 정의 조회 실패", e);
+            log.error("[batch] job definition fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -53,7 +53,7 @@ public class BatchAdminController {
             String executionId = batchJobService.executeJob(jobId, config != null ? config : new HashMap<>());
             return ApiResponse.success("작업 실행 시작됨 (executionId: " + executionId + ")");
         } catch (Exception e) {
-            log.error("[배치] 작업 실행 실패: {}", jobId, e);
+            log.error("[batch] job run failed: {}", jobId, e);
             return ApiResponse.error("작업 실행 실패: " + e.getMessage());
         }
     }
@@ -70,7 +70,7 @@ public class BatchAdminController {
             List<Map<String, Object>> executions = batchJobService.getJobExecutions(jobId, limit);
             return ApiResponse.success(executions);
         } catch (Exception e) {
-            log.error("[배치] 실행 이력 조회 실패", e);
+            log.error("[batch] execution history fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -85,7 +85,7 @@ public class BatchAdminController {
             List<Map<String, Object>> workflows = workflowService.getAllWorkflowDefinitions();
             return ApiResponse.success(workflows);
         } catch (Exception e) {
-            log.error("[배치] 워크플로우 정의 조회 실패", e);
+            log.error("[batch] workflow definition fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -102,7 +102,7 @@ public class BatchAdminController {
             Long executionId = workflowService.executeWorkflow(workflowId, config != null ? config : new HashMap<>());
             return ApiResponse.success("워크플로우 실행 시작됨 (executionId: " + executionId + ")");
         } catch (Exception e) {
-            log.error("[배치] 워크플로우 실행 실패: {}", workflowId, e);
+            log.error("[batch] workflow run failed: {}", workflowId, e);
             return ApiResponse.error("워크플로우 실행 실패: " + e.getMessage());
         }
     }
@@ -119,7 +119,7 @@ public class BatchAdminController {
             List<Map<String, Object>> executions = workflowService.getWorkflowExecutions(workflowId, limit);
             return ApiResponse.success(executions);
         } catch (Exception e) {
-            log.error("[배치] 워크플로우 실행 이력 조회 실패", e);
+            log.error("[batch] workflow execution history fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }

@@ -37,7 +37,7 @@ public class PlatformLinkService {
             return car.getMUrl();
         }
 
-        log.warn("[플랫폼 링크] 링크 없음: carId={}, platform={}", car.getCarId(), car.getPlatformName());
+        log.warn("[platform link] no link: carId={}, platform={}", car.getCarId(), car.getPlatformName());
         return null;
     }
 
@@ -80,7 +80,7 @@ public class PlatformLinkService {
         
         // 두 URL이 모두 없으면 빈 문자열 반환
         if ((pcUrl == null || pcUrl.isEmpty()) && (mUrl == null || mUrl.isEmpty())) {
-            log.warn("[플랫폼 링크] 링크 없음: carId={}, platform={}", car.getCarId(), car.getPlatformName());
+            log.warn("[platform link] no link: carId={}, platform={}", car.getCarId(), car.getPlatformName());
             return "";
         }
 

@@ -28,27 +28,27 @@ public class WeeklyBestCarBatchService {
      */
     @Scheduled(cron = "0 0 9 * * MON", zone = "Asia/Seoul")
     public void generateWeeklyBestPosts() {
-        log.info("[주간 Best 배치] 주간 Best 매물 선정 및 블로그 포스팅 생성 시작");
+        log.info("[weekly Best batch] weekly Best selection and blog post gen start");
 
         try {
             // 1. 인기 모델 목록 조회 (최근 7일간 매물이 10개 이상인 모델)
             List<String> popularModels = getPopularModels(10);
 
-            log.info("[주간 Best 배치] 인기 모델 {}개 발견", popularModels.size());
+            log.info("[weekly Best batch] {} popular models found", popularModels.size());
 
             // 2. 각 모델별로 Best 매물 선정 및 블로그 포스팅 내용 생성
             for (String modelCode : popularModels) {
                 try {
                     generateModelBestPost(modelCode, 10);
                 } catch (Exception e) {
-                    log.error("[주간 Best 배치] 모델 {} 처리 실패", modelCode, e);
+                    log.error("[weekly Best batch] model {} process failed", modelCode, e);
                     // 개별 모델 실패해도 계속 진행
                 }
             }
 
-            log.info("[주간 Best 배치] 완료");
+            log.info("[weekly Best batch] done");
         } catch (Exception e) {
-            log.error("[주간 Best 배치] 전체 실패", e);
+            log.error("[weekly Best batch] full failed", e);
         }
     }
 
@@ -56,13 +56,13 @@ public class WeeklyBestCarBatchService {
      * 특정 모델의 Best 매물 포스팅 생성
      */
     public void generateModelBestPost(String modelCode, int limit) {
-        log.info("[주간 Best 배치] 모델 {} 처리 시작", modelCode);
+        log.info("[weekly Best batch] model {} process start", modelCode);
 
         // Best 매물 선정
         List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(modelCode, null, limit);
 
         if (bestCars.isEmpty()) {
-            log.warn("[주간 Best 배치] 모델 {} 매물 없음", modelCode);
+            log.warn("[weekly Best batch] model {} no listings", modelCode);
             return;
         }
 
@@ -80,9 +80,9 @@ public class WeeklyBestCarBatchService {
         // blogPostService.postToWordPress(title, content);
 
         // 임시: 생성된 내용을 로그로 출력 (실제 구현 시 제거)
-        log.info("[주간 Best 배치] 모델 {} 포스팅 생성 완료", modelCode);
-        log.debug("[주간 Best 배치] 제목: {}", title);
-        log.debug("[주간 Best 배치] 내용 길이: {} bytes", content.length());
+        log.info("[weekly Best batch] model {} post gen done", modelCode);
+        log.debug("[weekly Best batch] title: {}", title);
+        log.debug("[weekly Best batch] content length: {} bytes", content.length());
 
         // TODO: 생성된 포스팅 내용을 DB에 저장하거나 파일로 저장
         // saveBlogPostToDatabase(modelCode, title, content);
@@ -116,7 +116,7 @@ public class WeeklyBestCarBatchService {
      * 수동 실행용 메서드
      */
     public void runManually() {
-        log.info("[주간 Best 배치] 수동 실행 시작");
+        log.info("[weekly Best batch] manual run start");
         generateWeeklyBestPosts();
     }
 }

@@ -1,5 +1,37 @@
 # 임베딩 실행 방식 가이드
 
+## 임베딩이 잘 되고 있는지 확인하는 방법
+
+### 1. API로 상태/진행률 보기
+
+**GET /admin/embedding/status** 를 주기적으로 호출하면 Chroma에 저장된 개수와 **진행 중인 배치 작업** 상태를 볼 수 있습니다.
+
+- **진행 중일 때**: `progress.running === true`, `progress.processed`, `progress.total`, `progress.ok`, `progress.fail`, `progress.startedAt` 로 몇 건 처리했는지 확인 가능.
+- **완료 후**: `progress.running === false`, 마지막 실행 결과가 `progress` 에 남음.
+- **collection.count**: Chroma에 실제 저장된 임베딩 개수.
+- **samples**: 저장된 샘플 메타데이터(확인용).
+
+```bash
+# 상태 조회 (배치 실행 중에는 몇 초마다 호출해서 진행률 확인)
+curl -s http://localhost:8080/admin/embedding/status | jq .
+
+# Chroma에 저장된 개수만 빠르게 보기
+curl -s http://localhost:8080/admin/embedding/status | jq '.data.collection.count'
+```
+
+**임베딩 목록(일부) 조회**: `GET /admin/embedding/list?limit=100` — Chroma에 들어간 차량 목록·메타데이터 확인.
+
+### 2. 서버 로그로 확인
+
+전체/필터/증분 임베딩 실행 시 **50건마다** 다음 로그가 출력됩니다.
+
+- `[embedding] 진행: N/M 건 (성공: O, 실패: F)`
+- 시작/종료 시 `*** EMBEDDING JOB START *** total=...`, `*** EMBEDDING JOB DONE *** ok=... fail=...`
+
+로그에 쿼리만 보이고 진행 로그가 안 보이면, 로그 레벨이 `com.carizon.rag` 에서 INFO 이상인지 확인하세요.
+
+---
+
 ## 전체 임베딩 실행 vs 증분 임베딩 vs 배치 실행
 
 ### 1. 전체 임베딩 실행 (`embedAllCars`)

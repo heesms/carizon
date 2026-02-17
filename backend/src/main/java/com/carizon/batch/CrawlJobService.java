@@ -24,7 +24,7 @@ public class CrawlJobService {
     // 매일 새벽 03:15 KST (순차 실행 - 기존 방식 유지)
     @Scheduled(cron = "0 15 3 * * *", zone = "Asia/Seoul")
     public void runDaily() {
-        log.info("[CRAWL] daily schedule start (순차 실행)");
+        log.info("[CRAWL] daily schedule start (sequential)");
         // 순서: 차차차 -> kcar -> tcar -> 차란차 -> 첫차 -> 엔카
         chachacha.runOnce();
         kcar.runOnceFull();
@@ -40,7 +40,7 @@ public class CrawlJobService {
      * 모든 플랫폼을 동시에 실행하여 전체 크롤링 시간 단축
      */
     public void runDailyAsync() {
-        log.info("[CRAWL] daily schedule start (비동기 실행)");
+        log.info("[CRAWL] daily schedule start (async)");
         
         var executor = Executors.newFixedThreadPool(6);
         try {
@@ -48,63 +48,63 @@ public class CrawlJobService {
             
             CompletableFuture.allOf(
                 CompletableFuture.runAsync(() -> {
-                    log.info("[CRAWL] CHACHACHA 시작");
+                    log.info("[CRAWL] CHACHACHA start");
                     try {
                         chachacha.runOnce();
-                        log.info("[CRAWL] CHACHACHA 완료");
+                        log.info("[CRAWL] CHACHACHA done");
                     } catch (Exception e) {
-                        log.error("[CRAWL] CHACHACHA 실패", e);
+                        log.error("[CRAWL] CHACHACHA failed", e);
                     }
                 }, executor),
                 CompletableFuture.runAsync(() -> {
-                    log.info("[CRAWL] KCAR 시작");
+                    log.info("[CRAWL] KCAR start");
                     try {
                         kcar.runOnceFull();
-                        log.info("[CRAWL] KCAR 완료");
+                        log.info("[CRAWL] KCAR done");
                     } catch (Exception e) {
-                        log.error("[CRAWL] KCAR 실패", e);
+                        log.error("[CRAWL] KCAR failed", e);
                     }
                 }, executor),
                 CompletableFuture.runAsync(() -> {
-                    log.info("[CRAWL] TCAR 시작");
+                    log.info("[CRAWL] TCAR start");
                     try {
                         tcar.runOnceFull();
-                        log.info("[CRAWL] TCAR 완료");
+                        log.info("[CRAWL] TCAR done");
                     } catch (Exception e) {
-                        log.error("[CRAWL] TCAR 실패", e);
+                        log.error("[CRAWL] TCAR failed", e);
                     }
                 }, executor),
                 CompletableFuture.runAsync(() -> {
-                    log.info("[CRAWL] CHARANCHA 시작");
+                    log.info("[CRAWL] CHARANCHA start");
                     try {
                         charancha.runOnceFull();
-                        log.info("[CRAWL] CHARANCHA 완료");
+                        log.info("[CRAWL] CHARANCHA done");
                     } catch (Exception e) {
-                        log.error("[CRAWL] CHARANCHA 실패", e);
+                        log.error("[CRAWL] CHARANCHA failed", e);
                     }
                 }, executor),
                 CompletableFuture.runAsync(() -> {
-                    log.info("[CRAWL] CHUTCHA 시작");
+                    log.info("[CRAWL] CHUTCHA start");
                     try {
                         chutcha.runOnceFull();
-                        log.info("[CRAWL] CHUTCHA 완료");
+                        log.info("[CRAWL] CHUTCHA done");
                     } catch (Exception e) {
-                        log.error("[CRAWL] CHUTCHA 실패", e);
+                        log.error("[CRAWL] CHUTCHA failed", e);
                     }
                 }, executor),
                 CompletableFuture.runAsync(() -> {
-                    log.info("[CRAWL] ENCAR 시작");
+                    log.info("[CRAWL] ENCAR start");
                     try {
                         encar.runOnce();
-                        log.info("[CRAWL] ENCAR 완료");
+                        log.info("[CRAWL] ENCAR done");
                     } catch (Exception e) {
-                        log.error("[CRAWL] ENCAR 실패", e);
+                        log.error("[CRAWL] ENCAR failed", e);
                     }
                 }, executor)
             ).join(); // 모든 크롤링 완료 대기
             
             long elapsed = System.currentTimeMillis() - startTime;
-            log.info("[CRAWL] daily schedule end (비동기 실행, 소요시간: {}초)", elapsed / 1000);
+            log.info("[CRAWL] daily schedule end (async, elapsed: {}s)", elapsed / 1000);
         } finally {
             executor.shutdown();
             try {

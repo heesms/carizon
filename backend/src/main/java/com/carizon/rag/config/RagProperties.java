@@ -16,12 +16,17 @@ public class RagProperties {
     private Llm llm = new Llm();
     private Recommendation recommendation = new Recommendation();
     
+    /** 모델 임베딩 소스 TSV 파일 경로. 설정 시 앱 기동 시 해당 파일을 읽어 cz_model_embedding_source에 INSERT. (비어 있으면 스킵) */
+    private String modelEmbeddingSourceFile = "";
+
     @Data
     public static class Chroma {
         private String baseUrl = "http://localhost:8000";
         private String tenant = "default_tenant";
         private String database = "default_database";
         private String collectionName = "car_listings";
+        /** 모델코드별 설명 임베딩용 컬렉션 (AI 추천 시 활용) */
+        private String modelCollectionName = "model_descriptions";
     }
     
     @Data
@@ -52,7 +57,7 @@ public class RagProperties {
         @Data
         public static class Ollama {
             private String baseUrl = "http://localhost:11434";
-            private String model = "llama3.1:8b";
+            private String model = "qwen2.5:14b-instruct";
         }
         
         @Data
@@ -64,13 +69,15 @@ public class RagProperties {
     
     @Data
     public static class Recommendation {
+        /** 평가 사유를 Ollama 등 LLM으로 자연스럽게 다듬을지 여부 (false면 조합 문구 그대로 반환) */
+        private boolean reasonPolishEnabled = true;
         private Reason reason = new Reason();
         private Prompt prompt = new Prompt();
         
         @Data
         public static class Reason {
             private Double highSimilarityThreshold = 0.7;
-            private String highSimilarityMessage = "요구사항과 높은 유사도(${score}%)를 보입니다. ";
+            private String highSimilarityMessage = "Carizon 점수 ${score}점으로 요구사항과 잘 맞습니다. ";
             private String withinBudgetMessage = "예산 범위 내의 가격입니다. ";
             private Integer lowMileageThreshold = 50000;
             private String lowMileageMessage = "주행거리가 적어 상태가 양호할 가능성이 높습니다. ";

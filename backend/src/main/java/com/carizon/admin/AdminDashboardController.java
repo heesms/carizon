@@ -2,7 +2,7 @@ package com.carizon.admin;
 
 import com.carizon.common.dto.ApiResponse;
 import com.carizon.rag.service.ChromaVectorStoreService;
-import com.carizon.search.service.MeilisearchService;
+import com.carizon.search.service.ElasticsearchCarSearchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +27,7 @@ public class AdminDashboardController {
 
     private final JdbcTemplate jdbc;
     private final ChromaVectorStoreService vectorStoreService;
-    private final MeilisearchService meilisearchService;
+    private final ElasticsearchCarSearchService elasticsearchCarSearchService;
 
     @GetMapping("/stats")
     @Operation(summary = "시스템 통계", description = "전체 시스템 현황 통계 조회")
@@ -66,14 +66,14 @@ public class AdminDashboardController {
                 """);
             stats.put("recentCrawls", recentCrawls);
             
-            // Meilisearch 인덱스 개수
+            // Elasticsearch 인덱스 개수
             try {
-                // Meilisearch는 검색으로 개수 확인 (간접적)
-                Map<String, Object> searchResult = meilisearchService.search(new HashMap<>());
-                Object totalElements = searchResult.get("totalElements");
-                stats.put("meilisearchCount", totalElements != null ? totalElements : 0);
+                long count = elasticsearchCarSearchService.count();
+                stats.put("elasticsearchCount", count);
+                stats.put("meilisearchCount", count); // admin UI 호환
             } catch (Exception e) {
-                log.warn("Meilisearch 통계 조회 실패", e);
+                log.warn("Elasticsearch stats fetch failed", e);
+                stats.put("elasticsearchCount", 0);
                 stats.put("meilisearchCount", 0);
             }
             
@@ -84,13 +84,13 @@ public class AdminDashboardController {
                 stats.put("embeddingCount", count);
             } catch (Exception e) {
                 // Chroma 서비스가 없거나 컬렉션이 없는 경우 정상적으로 처리
-                log.debug("Chroma 통계 조회 실패 (무시 가능): {}", e.getMessage());
+                log.debug("Chroma stats fetch failed (ignorable): {}", e.getMessage());
                 stats.put("embeddingCount", 0);
             }
             
             return ApiResponse.success(stats);
         } catch (Exception e) {
-            log.error("[대시보드] 통계 조회 실패", e);
+            log.error("[dashboard] stats fetch failed", e);
             return ApiResponse.error("통계 조회 실패: " + e.getMessage());
         }
     }

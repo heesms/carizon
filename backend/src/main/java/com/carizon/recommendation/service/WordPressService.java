@@ -85,12 +85,12 @@ public class WordPressService {
                 .addHeader("Authorization", authHeader)
                 .build();
 
-        log.info("[WordPress] 포스팅 생성 요청: {}", title);
+        log.info("[WordPress] post create request: {}", title);
         
         try (Response response = httpClientService.getClient().newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 String errorBody = response.body() != null ? response.body().string() : "Unknown error";
-                log.error("[WordPress] 포스팅 생성 실패: {} - {}", response.code(), errorBody);
+                log.error("[WordPress] post create failed: {} - {}", response.code(), errorBody);
                 throw new IOException("WordPress API 오류: " + response.code() + " - " + errorBody);
             }
 
@@ -105,7 +105,7 @@ public class WordPressService {
                     ? Long.valueOf(result.get("id").toString()) 
                     : null;
 
-            log.info("[WordPress] 포스팅 생성 성공: postId={}, title={}", postId, title);
+            log.info("[WordPress] post create success: postId={}, title={}", postId, title);
             return postId;
         }
     }

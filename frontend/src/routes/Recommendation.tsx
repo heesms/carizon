@@ -1,9 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
-import { getRecommendations, extractImageFromUrl, type RecommendationResponse, type RecommendedCar } from '@/api/recommendations'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { getRecommendations, type RecommendationResponse, type RecommendedCar } from '@/api/recommendations'
 import { getLikeInfo, toggleLike, type LikeInfo } from '@/api/likes'
 
-export default function Recommendation() {
+const MOBILE_MEDIA = '(max-width: 767px)'
+const RECOMMENDATION_CACHE_KEY = 'carizon_recommendation'
+const CACHE_MAX_AGE_MS = 10 * 60 * 1000 // 10분
+
+function useIsMobile() {
+    const [isMobile, setIsMobile] = useState(false)
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        const mq = window.matchMedia(MOBILE_MEDIA)
+        const update = () => setIsMobile(mq.matches)
+        update()
+        mq.addEventListener('change', update)
+        return () => mq.removeEventListener('change', update)
+    }, [])
+    return isMobile
+}
+
+type RecommendationProps = { simplified?: boolean }
+
+export default function Recommendation({ simplified = false }: RecommendationProps) {
+    const [searchParams, setSearchParams] = useSearchParams()
+    const navigate = useNavigate()
     const [query, setQuery] = useState('')
     const [maxPrice, setMaxPrice] = useState<string>('')
     const [minPrice, setMinPrice] = useState<string>('')
@@ -11,6 +32,70 @@ export default function Recommendation() {
     const [result, setResult] = useState<RecommendationResponse | null>(null)
     const [error, setError] = useState<string | null>(null)
     const resultRef = useRef<HTMLDivElement>(null)
+    const hasFetchedFromParams = useRef(false)
+
+    // 메인에서 넘어온 경우 URL 쿼리로 폼 채우고, 캐시 있으면 복원 / 없으면 자동 요청 (뒤로가기 시 재조회 방지)
+    useEffect(() => {
+        if (simplified) return
+        const q = searchParams.get('query')?.trim()
+        if (!q || hasFetchedFromParams.current) return
+        hasFetchedFromParams.current = true
+        setQuery(q)
+        const min = searchParams.get('minPrice')
+        const max = searchParams.get('maxPrice')
+        if (min != null) setMinPrice(min)
+        if (max != null) setMaxPrice(max)
+        const minNum = min ? parseInt(min) : undefined
+        const maxNum = max ? parseInt(max) : undefined
+
+        try {
+            const raw = sessionStorage.getItem(RECOMMENDATION_CACHE_KEY)
+            if (raw) {
+                const cached = JSON.parse(raw) as { query: string; minPrice?: number; maxPrice?: number; result: RecommendationResponse; timestamp: number }
+                const sameParams = cached.query === q && cached.minPrice === minNum && cached.maxPrice === maxNum
+                const notStale = Date.now() - cached.timestamp < CACHE_MAX_AGE_MS
+                if (sameParams && notStale && cached.result) {
+                    setResult(cached.result)
+                    return
+                }
+            }
+        } catch (_) { /* ignore */ }
+        runRecommendation(q, minNum, maxNum)
+    }, [simplified, searchParams])
+
+    async function runRecommendation(q: string, min?: number, max?: number) {
+        if (!q) return
+        setLoading(true)
+        setError(null)
+        setResult(null)
+        try {
+            const response = await getRecommendations({
+                query: q,
+                maxResults: 5,
+                minPrice: min,
+                maxPrice: max,
+            })
+            setResult(response)
+            try {
+                sessionStorage.setItem(RECOMMENDATION_CACHE_KEY, JSON.stringify({
+                    query: q,
+                    minPrice: min,
+                    maxPrice: max,
+                    result: response,
+                    timestamp: Date.now(),
+                }))
+            } catch (_) { /* ignore */ }
+            setTimeout(() => {
+                if (resultRef.current) {
+                    resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
+            }, 100)
+        } catch (err) {
+            setError(err instanceof Error ? err.message : '추천 요청 중 오류가 발생했습니다.')
+        } finally {
+            setLoading(false)
+        }
+    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -19,10 +104,18 @@ export default function Recommendation() {
             return
         }
 
+        if (simplified) {
+            const params = new URLSearchParams()
+            params.set('query', query.trim())
+            if (minPrice) params.set('minPrice', minPrice)
+            if (maxPrice) params.set('maxPrice', maxPrice)
+            navigate(`/recommendation?${params.toString()}`)
+            return
+        }
+
         setLoading(true)
         setError(null)
         setResult(null)
-
         try {
             const response = await getRecommendations({
                 query: query.trim(),
@@ -31,14 +124,9 @@ export default function Recommendation() {
                 maxPrice: maxPrice ? parseInt(maxPrice) : undefined,
             })
             setResult(response)
-            
-            // 결과가 나오면 스크롤 다운
             setTimeout(() => {
                 if (resultRef.current) {
-                    resultRef.current.scrollIntoView({ 
-                        behavior: 'smooth', 
-                        block: 'start' 
-                    })
+                    resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
                 }
             }, 100)
         } catch (err) {
@@ -245,54 +333,39 @@ export default function Recommendation() {
         '스웨덴차 브랜드',
     ]
     
-    // 새로고침 시 랜덤 시작 인덱스 (한 번만 생성, 세션 동안 유지)
-    const [startIndex, setStartIndex] = useState(() => {
-        const saved = sessionStorage.getItem('exampleStartIndex')
-        if (saved) return parseInt(saved)
-        const random = Math.floor(Math.random() * allExampleQueries.length)
-        sessionStorage.setItem('exampleStartIndex', random.toString())
-        return random
-    })
+    // 예시 문구를 랜덤 순서로 셔플 (페이지 로드 시 한 번만)
+    const shuffledExamples = React.useMemo(() => {
+        const arr = [...allExampleQueries]
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]]
+        }
+        return arr
+    }, [])
     
     const [currentOffset, setCurrentOffset] = useState(0)
     const examplesPerPage = 4
-    const totalPages = Math.ceil(allExampleQueries.length / examplesPerPage)
+    const totalPages = Math.ceil(shuffledExamples.length / examplesPerPage)
     
-    // 현재 페이지의 예시들
+    // 현재 페이지의 예시들 (셔플된 배열에서 슬라이스)
     const displayedExamples = React.useMemo(() => {
-        const examples = []
-        for (let i = 0; i < examplesPerPage; i++) {
-            const idx = (startIndex + currentOffset + i) % allExampleQueries.length
-            examples.push(allExampleQueries[idx])
-        }
-        return examples
-    }, [startIndex, currentOffset])
+        const start = currentOffset % shuffledExamples.length
+        return shuffledExamples.slice(start, start + examplesPerPage)
+    }, [shuffledExamples, currentOffset])
     
-    // 현재 페이지 번호 계산 (0부터 시작)
-    const currentPageNumber = React.useMemo(() => {
-        const totalOffset = startIndex + currentOffset
-        return Math.floor(totalOffset / examplesPerPage) % totalPages
-    }, [startIndex, currentOffset, totalPages])
+    const currentPageNumber = Math.min(Math.floor(currentOffset / examplesPerPage), Math.max(0, totalPages - 1))
     
     const handlePrevPage = () => {
         setCurrentOffset((prev) => {
-            const newOffset = prev - examplesPerPage
-            // 순환: 음수가 되면 마지막 페이지로
-            if (newOffset < 0) {
-                return (totalPages - 1) * examplesPerPage
-            }
-            return newOffset
+            const next = prev - examplesPerPage
+            return next < 0 ? (totalPages - 1) * examplesPerPage : next
         })
     }
     
     const handleNextPage = () => {
         setCurrentOffset((prev) => {
-            const newOffset = prev + examplesPerPage
-            // 순환: 전체를 넘어가면 처음으로
-            if (newOffset >= allExampleQueries.length) {
-                return 0
-            }
-            return newOffset
+            const next = prev + examplesPerPage
+            return next >= shuffledExamples.length ? 0 : next
         })
     }
 
@@ -379,36 +452,38 @@ export default function Recommendation() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                            <label htmlFor="minPrice" className="block text-sm font-semibold text-gray-700 mb-2">
-                                최소 가격 (만원)
-                            </label>
-                            <input
-                                id="minPrice"
-                                type="number"
-                                value={minPrice}
-                                onChange={(e) => setMinPrice(e.target.value)}
-                                placeholder="예: 1000"
-                                className="input-modern"
-                                disabled={loading}
-                            />
+                    {!simplified && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label htmlFor="minPrice" className="block text-sm font-semibold text-gray-700 mb-2">
+                                    최소 가격 (만원)
+                                </label>
+                                <input
+                                    id="minPrice"
+                                    type="number"
+                                    value={minPrice}
+                                    onChange={(e) => setMinPrice(e.target.value)}
+                                    placeholder="예: 1000"
+                                    className="input-modern"
+                                    disabled={loading}
+                                />
+                            </div>
+                            <div>
+                                <label htmlFor="maxPrice" className="block text-sm font-semibold text-gray-700 mb-2">
+                                    최대 가격 (만원)
+                                </label>
+                                <input
+                                    id="maxPrice"
+                                    type="number"
+                                    value={maxPrice}
+                                    onChange={(e) => setMaxPrice(e.target.value)}
+                                    placeholder="예: 5000"
+                                    className="input-modern"
+                                    disabled={loading}
+                                />
+                            </div>
                         </div>
-                        <div>
-                            <label htmlFor="maxPrice" className="block text-sm font-semibold text-gray-700 mb-2">
-                                최대 가격 (만원)
-                            </label>
-                            <input
-                                id="maxPrice"
-                                type="number"
-                                value={maxPrice}
-                                onChange={(e) => setMaxPrice(e.target.value)}
-                                placeholder="예: 5000"
-                                className="input-modern"
-                                disabled={loading}
-                            />
-                        </div>
-                    </div>
+                    )}
 
                     <button
                         type="submit"
@@ -431,6 +506,28 @@ export default function Recommendation() {
                     </button>
                 </form>
             </section>
+
+            {/* 로딩 중: 딤 처리 + 상단 오버레이 (버튼 누르면 바로 위에 표시) */}
+            {loading && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+                    <section className="modern-card p-8 lg:p-12 text-center mx-4 shadow-2xl max-w-md">
+                        <div className="relative inline-flex items-center justify-center w-24 h-24 mb-6">
+                            <div className="absolute inset-0 rounded-full bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 opacity-20 animate-pulse" />
+                            <div className="absolute inset-0 rounded-full border-4 border-indigo-200 border-t-indigo-500 animate-spin" style={{ animationDuration: '1.2s' }} />
+                            <svg className="relative w-12 h-12 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                            </svg>
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-800 mb-2">AI가 추천 매물을 준비하고 있어요</h3>
+                        <p className="text-sm text-gray-500 mb-6">조건에 맞는 차량을 찾고 있어요. 잠시만 기다려 주세요.</p>
+                        <div className="flex justify-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '0ms', animationDuration: '0.6s' }} />
+                            <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '150ms', animationDuration: '0.6s' }} />
+                            <span className="w-2 h-2 rounded-full bg-pink-500 animate-bounce" style={{ animationDelay: '300ms', animationDuration: '0.6s' }} />
+                        </div>
+                    </section>
+                </div>
+            )}
 
             {/* 에러 메시지 */}
             {error && (
@@ -498,7 +595,7 @@ export default function Recommendation() {
                             <div className="space-y-4">
                                 {result.cars.map((car, idx) => (
                                     <div key={car.carId} style={{ animationDelay: `${idx * 0.1}s` }} className="animate-fade-in">
-                                        <RecommendedCarCard car={car} />
+                                        <RecommendedCarCard car={car} rank={idx + 1} />
                                     </div>
                                 ))}
                             </div>
@@ -520,8 +617,11 @@ export default function Recommendation() {
     )
 }
 
-function RecommendedCarCard({ car }: { car: RecommendedCar }) {
-    const imageUrl = (car as any).imageUrl as string | undefined
+function RecommendedCarCard({ car, rank }: { car: RecommendedCar; rank: number }) {
+    const isMobile = useIsMobile()
+    // 모바일이면 m_url, PC면 pc_url 우선
+    const effectiveUrl = (isMobile ? (car.mUrl || car.pcUrl || car.url) : (car.pcUrl || car.mUrl || car.url)) || ''
+    const imageUrl = (car.imageUrl ?? car.car_image_url ?? '') || ''
     const modelCode = (car as any).modelCode as string | undefined
     
     // 좋아요 상태
@@ -541,7 +641,6 @@ function RecommendedCarCard({ car }: { car: RecommendedCar }) {
     const [imgSrc, setImgSrc] = useState<string>(getInitialImage())
     const [imgLoaded, setImgLoaded] = useState(false)
     const [imgError, setImgError] = useState(false)
-    const [isExtracting, setIsExtracting] = useState(false)
     const [isCrawledImage, setIsCrawledImage] = useState(() => {
         if (imageUrl) {
             return imageUrl.startsWith('http://') || 
@@ -574,34 +673,18 @@ function RecommendedCarCard({ car }: { car: RecommendedCar }) {
             })
     }, [car.carId])
     
-    // 좋아요 토글 핸들러
-    const handleLikeToggle = async (e: React.MouseEvent) => {
+    // 좋아요 추가 (한 번만, 이미 눌렀으면 요청 안 함)
+    const handleLike = async (e: React.MouseEvent) => {
         e.preventDefault()
         e.stopPropagation()
-        
-        if (isLiking) return
-        
+        if (isLiking || likeInfo.liked) return
         setIsLiking(true)
         try {
             const response = await toggleLike(car.carId)
-            // 서버에서 반환한 값 그대로 사용 (서버가 단일 소스)
-            setLikeInfo({
-                count: response.count, // 서버에서 받은 개수
-                liked: response.liked, // 서버에서 받은 개인 좋아요 여부
-            })
+            setLikeInfo({ count: response.count, liked: response.liked })
         } catch (err) {
-            console.warn('Failed to toggle like:', err)
-            // 에러 발생 시 서버에서 다시 조회
-            getLikeInfo(car.carId)
-                .then((info) => {
-                    setLikeInfo({
-                        count: info.count,
-                        liked: info.liked,
-                    })
-                })
-                .catch(() => {
-                    // 에러 무시
-                })
+            console.warn('Failed to add like:', err)
+            getLikeInfo(car.carId).then((info) => setLikeInfo({ count: info.count, liked: info.liked })).catch(() => {})
         } finally {
             setIsLiking(false)
         }
@@ -610,10 +693,10 @@ function RecommendedCarCard({ car }: { car: RecommendedCar }) {
     // 가격은 만원 단위
     const price = car.price ? `${car.price.toLocaleString()}만원` : '가격정보 없음'
     
-    // URL이 있으면 외부 링크, 없으면 내부 링크
-    const hasExternalUrl = car.url && car.url.trim() !== ''
-    const isInternalUrl = car.url && (car.url.startsWith('/') || !car.url.startsWith('http'))
-    const internalPath = isInternalUrl ? car.url : `/cars/${car.carId}`
+    // URL이 있으면 외부 링크, 없으면 내부 링크 (effectiveUrl = 모바일→mUrl, PC→pcUrl)
+    const hasExternalUrl = effectiveUrl && effectiveUrl.trim() !== ''
+    const isInternalUrl = effectiveUrl && (effectiveUrl.startsWith('/') || !effectiveUrl.startsWith('http'))
+    const internalPath = isInternalUrl ? effectiveUrl : `/cars/${car.carId}`
 
     // 이미지가 크롤링 이미지인지 확인하는 함수
     const checkIfCrawledImage = (url: string): boolean => {
@@ -628,75 +711,41 @@ function RecommendedCarCard({ car }: { car: RecommendedCar }) {
                url.includes('charancha')
     }
     
-    // 이미지 로드 - mUrl이나 pcUrl에서 이미지 추출 (no image 피하기)
+    // 이미지: car_image_url(imageUrl) 우선, 없으면 modelCode 또는 기본 이미지
     useEffect(() => {
         setImgLoaded(false)
         setImgError(false)
-        
-        // 1. 백엔드에서 받은 이미지 URL이 있으면 사용
         if (imageUrl && imageUrl.trim() !== '') {
             setIsCrawledImage(checkIfCrawledImage(imageUrl))
             setImgSrc(imageUrl)
             return
         }
-        
-        // 2. 플랫폼 URL(mUrl 또는 pcUrl)에서 이미지 추출 - 반드시 이미지를 찾아야 함
-        if (car.url && (car.url.startsWith('http://') || car.url.startsWith('https://'))) {
-            setIsExtracting(true)
-            extractImageFromUrl(car.url)
-                .then((extractedUrl) => {
-                    // 추출된 URL이 있고, 로딩/placeholder/spinner가 아닌 경우 사용
-                    if (extractedUrl && 
-                        extractedUrl.trim() !== '' &&
-                        !extractedUrl.toLowerCase().includes('loading') && 
-                        !extractedUrl.toLowerCase().includes('placeholder') &&
-                        !extractedUrl.toLowerCase().includes('spinner') &&
-                        !extractedUrl.toLowerCase().includes('data:image/svg')) {
-                        setIsCrawledImage(true) // 추출한 이미지는 크롤링 이미지
-                        setImgSrc(extractedUrl)
-                    } else {
-                        // 추출 실패 시 modelCode 사용
-                        console.warn('Image extraction returned invalid URL:', extractedUrl)
-                        if (modelCode) {
-                            setIsCrawledImage(false)
-                            setImgSrc(`/image/car/model/${modelCode}.webp`)
-                        } else {
-                            setIsCrawledImage(false)
-                            setImgSrc('/image/car/noimage/no_image.png')
-                        }
-                    }
-                })
-                .catch((err) => {
-                    console.warn('Failed to extract image from URL:', car.url, err)
-                    // 에러 발생 시 modelCode 사용
-                    if (modelCode) {
-                        setIsCrawledImage(false)
-                        setImgSrc(`/image/car/model/${modelCode}.webp`)
-                    } else {
-                        setIsCrawledImage(false)
-                        setImgSrc('/image/car/noimage/no_image.png')
-                    }
-                })
-                .finally(() => {
-                    setIsExtracting(false)
-                })
-            return
-        }
-        
-        // 3. modelCode로 로컬 이미지 사용
         if (modelCode) {
             setIsCrawledImage(false)
             setImgSrc(`/image/car/model/${modelCode}.webp`)
             return
         }
-        
-        // 4. 기본 이미지 (최후의 수단)
         setIsCrawledImage(false)
         setImgSrc('/image/car/noimage/no_image.png')
-    }, [imageUrl, car.url, modelCode])
+    }, [imageUrl, modelCode])
 
     const cardContent = (
-        <div className="block modern-card p-5 hover-lift group">
+        <div className="block modern-card p-5 hover-lift group relative">
+            {/* 1위: 좌측 상단 노란 별 안에 1 */}
+            {rank === 1 && (
+                <div className="absolute top-3 left-3 z-10 flex items-center justify-center w-10 h-10">
+                    <svg className="absolute inset-0 w-full h-full text-amber-400 drop-shadow-sm" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                    </svg>
+                    <span className="relative text-lg font-black text-amber-900 drop-shadow-sm">1</span>
+                </div>
+            )}
+            {/* 2~5위: 숫자만 */}
+            {rank >= 2 && rank <= 5 && (
+                <div className="absolute top-3 left-3 z-10">
+                    <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-gray-200/90 text-gray-700 font-bold text-sm">{rank}</span>
+                </div>
+            )}
             <div className="flex flex-col sm:flex-row gap-5">
                 {/* 이미지 */}
                 <div className="w-full sm:w-40 h-32 sm:h-32 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden rounded-xl flex-shrink-0 shadow-inner relative">
@@ -705,6 +754,7 @@ function RecommendedCarCard({ car }: { car: RecommendedCar }) {
                         <img
                             src={imgSrc}
                             alt=""
+                            referrerPolicy="no-referrer"
                             className={`absolute inset-0 w-full h-full object-cover blur-md scale-110 transition-opacity duration-300 ${
                                 imgLoaded ? 'opacity-30' : 'opacity-0'
                             }`}
@@ -719,11 +769,12 @@ function RecommendedCarCard({ car }: { car: RecommendedCar }) {
                             }}
                         />
                     )}
-                    {/* 메인 이미지 - 크롤링한 이미지는 약간 흐릿하게 (법적 이슈 방지) */}
+                    {/* 메인 이미지 - platform_car.car_image_url 또는 imageUrl (크롤링 이미지는 약간 흐릿) */}
                     {imgSrc && (
                         <img
                             src={imgSrc}
                             alt={`${car.maker} ${car.model}`}
+                            referrerPolicy="no-referrer"
                             className="relative w-full h-full object-cover group-hover:scale-110 transition-all duration-300"
                             style={isCrawledImage ? { filter: 'blur(2px)' } : {}}
                             onLoad={() => {
@@ -753,25 +804,75 @@ function RecommendedCarCard({ car }: { car: RecommendedCar }) {
                             <h3 className="font-bold text-xl leading-tight mb-2 group-hover:text-blue-600 transition">
                                 {car.maker} {car.model} {car.trim || ''}
                             </h3>
-                            <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 mb-3">
-                                {car.year && <span>{car.year}년식</span>}
-                                {car.mileage && <span>{car.mileage.toLocaleString()}km</span>}
-                                {car.fuel && <span>{car.fuel}</span>}
-                                {car.transmission && <span>{car.transmission}</span>}
+                            {/* 1줄: 연식, 주행거리 / 2줄: 연료~지역 (검색 CarCard와 동일 아이콘, 칸 짧으면 줄바꿈) */}
+                            <div className="flex flex-col gap-y-1.5 text-sm text-gray-600 mb-3">
+                                <div className="flex items-center gap-x-4 flex-nowrap">
+                                    {car.year != null && (
+                                        <span className="flex items-center gap-1 whitespace-nowrap">
+                                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                            </svg>
+                                            {car.year}년식
+                                        </span>
+                                    )}
+                                    {car.mileage != null && (
+                                        <span className="flex items-center gap-1 whitespace-nowrap">
+                                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                            </svg>
+                                            {car.mileage.toLocaleString()}km
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {car.fuel && (
+                                        <span className="flex items-center gap-1 whitespace-nowrap">
+                                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7v1a2 2 0 01-2 2h-1V6a2 2 0 00-2-2H6a2 2 0 00-2 2v4H5a2 2 0 01-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 01-2-2h-1V7a2 2 0 012-2z" />
+                                            </svg>
+                                            {car.fuel}
+                                        </span>
+                                    )}
+                                    {car.transmission && (
+                                        <span className="flex items-center gap-1 whitespace-nowrap">
+                                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                            </svg>
+                                            {car.transmission}
+                                        </span>
+                                    )}
+                                    {car.color && (
+                                        <span className="flex items-center gap-1 whitespace-nowrap">
+                                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                                            </svg>
+                                            {car.color}
+                                        </span>
+                                    )}
+                                    {car.region && (
+                                        <span className="flex items-center gap-1 whitespace-nowrap">
+                                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L12 21.314l-5.657-4.657a8 8 0 1111.314 0z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
+                                            </svg>
+                                            {car.region}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                             <div className="flex items-center justify-between mb-3">
-                                <div className="text-2xl font-bold text-blue-600">{price}</div>
+                                <div className="text-2xl font-bold text-blue-600 whitespace-nowrap">{price}</div>
                                 <div className="flex items-center gap-3">
                                     {/* 개인 좋아요 버튼 (하트만) */}
                                     <button
-                                        onClick={handleLikeToggle}
-                                        disabled={isLiking}
+                                        onClick={handleLike}
+                                        disabled={isLiking || likeInfo.liked}
                                         className={`flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200 ${
                                             likeInfo.liked
-                                                ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                        } ${isLiking ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                                        title={likeInfo.liked ? '좋아요 취소' : '좋아요'}
+                                                ? 'bg-red-50 text-red-600 cursor-default'
+                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 cursor-pointer'
+                                        } ${isLiking ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        title={likeInfo.liked ? '좋아요됨' : '좋아요'}
                                     >
                                         <svg 
                                             className={`w-5 h-5 transition-transform ${isLiking ? 'animate-pulse' : ''}`}
@@ -792,10 +893,10 @@ function RecommendedCarCard({ car }: { car: RecommendedCar }) {
                                 </div>
                             </div>
                         </div>
-                        {car.relevanceScore !== undefined && car.relevanceScore !== null && (
+                        {car.relevanceScore != null && car.relevanceScore > 0 && (
                             <div className="flex-shrink-0">
                                 <div className="px-3 py-1.5 bg-gradient-to-br from-blue-500 to-purple-500 text-white text-xs font-semibold rounded-lg">
-                                    유사도 {Math.round(car.relevanceScore * 100)}%
+                                    Carizon 점수 {Math.round((car.relevanceScore ?? 0) * 100)}점
                                 </div>
                             </div>
                         )}
@@ -814,11 +915,10 @@ function RecommendedCarCard({ car }: { car: RecommendedCar }) {
         </div>
     )
 
-    // 외부 URL이 있으면 외부 링크, 없으면 내부 링크
     if (hasExternalUrl && !isInternalUrl) {
         return (
             <a
-                href={car.url}
+                href={effectiveUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block"

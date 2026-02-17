@@ -23,32 +23,23 @@ public class LikeService {
     private static final long LIKE_EXPIRE_DAYS = 365; // 1년 후 만료
     
     /**
-     * 차량에 좋아요 추가/제거 (토글)
+     * 차량에 좋아요 추가 (한 번만, 취소 없음). 이미 눌렀으면 그대로 유지.
      * @param carId 차량 ID
      * @param userId 사용자 ID (IP 주소 또는 세션 ID)
-     * @return 좋아요 상태 (true: 좋아요 추가됨, false: 좋아요 제거됨)
+     * @return 항상 true (좋아요 상태)
      */
-    public boolean toggleLike(Long carId, String userId) {
+    public boolean addLikeOnce(Long carId, String userId) {
         String likeKey = LIKE_KEY_PREFIX + carId;
         String userLikeKey = USER_LIKE_KEY_PREFIX + userId + ":" + carId;
-        
-        // 사용자가 이미 좋아요를 눌렀는지 확인
-        Boolean hasLiked = redisTemplate.hasKey(userLikeKey);
-        
-        if (Boolean.TRUE.equals(hasLiked)) {
-            // 좋아요 제거
-            redisTemplate.delete(userLikeKey);
-            redisTemplate.opsForSet().remove(likeKey, userId);
-            log.debug("Like removed: carId={}, userId={}", carId, userId);
-            return false;
-        } else {
-            // 좋아요 추가
-            redisTemplate.opsForSet().add(likeKey, userId);
-            redisTemplate.opsForValue().set(userLikeKey, "1", LIKE_EXPIRE_DAYS, TimeUnit.DAYS);
-            redisTemplate.expire(likeKey, LIKE_EXPIRE_DAYS, TimeUnit.DAYS);
-            log.debug("Like added: carId={}, userId={}", carId, userId);
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(userLikeKey))) {
+            log.debug("Like already exists: carId={}, userId={}", carId, userId);
             return true;
         }
+        redisTemplate.opsForSet().add(likeKey, userId);
+        redisTemplate.opsForValue().set(userLikeKey, "1", LIKE_EXPIRE_DAYS, TimeUnit.DAYS);
+        redisTemplate.expire(likeKey, LIKE_EXPIRE_DAYS, TimeUnit.DAYS);
+        log.debug("Like added: carId={}, userId={}", carId, userId);
+        return true;
     }
     
     /**

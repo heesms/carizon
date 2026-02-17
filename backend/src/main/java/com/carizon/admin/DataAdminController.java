@@ -99,7 +99,7 @@ public class DataAdminController {
             
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.error("[데이터 조회] car_master 조회 실패", e);
+            log.error("[data] car_master fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
@@ -180,7 +180,7 @@ public class DataAdminController {
             
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.error("[데이터 조회] platform_car 조회 실패", e);
+            log.error("[data] platform_car fetch failed", e);
             return ApiResponse.error("조회 실패: " + e.getMessage());
         }
     }
