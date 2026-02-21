@@ -90,6 +90,7 @@ public class BatchJobService {
             String platform = jobId.replace("crawl_", "");
             switch (platform) {
                 case "encar" -> crawlJobService.runNowEncar();
+                case "encar_truck", "encar-truck" -> crawlJobService.runNowEncarTruck();
                 case "kcar" -> crawlJobService.runNowKcar();
                 case "cha" -> crawlJobService.runNowCha();
                 case "chutcha" -> crawlJobService.runNowChutcha();

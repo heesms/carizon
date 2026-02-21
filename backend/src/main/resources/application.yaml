@@ -37,17 +37,33 @@ app:
     enabled: ${KAFKA_ENABLED:false}  # true로 켜야 Consumer/Producer 동작, 단건·배치 sync API 사용 시에만 필요
     car-sync-topic: ${KAFKA_CAR_SYNC_TOPIC:car-index-sync}
 
+# 크롤러별 헤더 주입 (브라우저 DevTools 값으로 오버라이드 가능)
+crawler:
+  encar:
+    headers:
+      origin: ${ENCAR_ORIGIN:https://car.encar.com}
+      list-referer: ${ENCAR_LIST_REFERER:https://car.encar.com/}
+      readside-referer: ${ENCAR_READSIDE_REFERER:https://car.encar.com/}
+      # 필요 시 DevTools에서 복사한 Cookie 전체 문자열 주입
+      cookie: ${ENCAR_COOKIE:}
+    truck:
+      list-url-template: ${ENCAR_TRUCK_LIST_URL_TEMPLATE:https://api.encar.com/search/car/list/truck?count=true&q=(And.Hidden.N._)&sr=%7CModifiedDate%7C{offset}%7C{size}&inav=%7CMetadata%7CSort}
+
 mybatis:
   mapper-locations: classpath:/mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
 logging:
   level:
-    org.springframework.jdbc: INFO   # DEBUG 시 INSERT/연결 로그 과다 → 청크 단위 로그만 사용
-    org.springframework.jdbc.core.StatementCreatorUtils: WARN  # 파라미터 메타데이터 fallback 로그 억제
+    org.springframework.jdbc: INFO
+    org.springframework.jdbc.core.StatementCreatorUtils: WARN
     org.mybatis: DEBUG
-    com.zaxxer.hikari: DEBUG
+    org.apache.ibatis: DEBUG
+    org.mybatis.spring: DEBUG
+    com.carizon.domain.mapper.CarMapper: TRACE
+    com.zaxxer.hikari: INFO
     com.carizon: DEBUG
     # Kafka 클라이언트 재연결/연결 실패 로그 억제 (메시지 수신·처리 시에는 com.carizon 로그만 출력)
     org.apache.kafka: ERROR

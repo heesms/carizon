@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 public class CrawlJobService {
     private final ChachachaCrawler chachacha;
     private final EncarCrawler encar;
+    private final EncarTruckCrawler encarTruck;
     private final KcarCrawler kcar;
     private final ChutchaCrawler chutcha;
     private final CharanchaCrawler charancha;
@@ -129,6 +130,12 @@ public class CrawlJobService {
         log.info("[CRAWL] manual runNowEncar run start");
         encar.runOnce();
         log.info("[CRAWL] manual runNowEncar run end");
+    }
+
+    public void runNowEncarTruck() {
+        log.info("[CRAWL] manual runNowEncarTruck run start");
+        encarTruck.runOnce();
+        log.info("[CRAWL] manual runNowEncarTruck run end");
     }
 
     public void runNowCha() {

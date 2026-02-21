@@ -35,6 +35,7 @@ public class CrawlAdminController {
         return Map.of("ok", true, "message", "비동기 크롤링 시작");
     }
     @PostMapping("/encar")   public Map<String, Object> runNowEncar() { job.runNowEncar(); return Map.of("ok", true); }
+    @PostMapping("/encar-truck") public Map<String, Object> runNowEncarTruck() { job.runNowEncarTruck(); return Map.of("ok", true); }
     @PostMapping("/kcar")    public Map<String, Object> runNowKcar()  { job.runNowKcar(); return Map.of("ok", true); }
     @PostMapping("/cha")    public Map<String, Object> runNowCha()  { job.runNowCha(); return Map.of("ok", true); }
     @PostMapping("/chutcha") public Map<String,Object> runChutcha(){ job.runNowChutcha(); return Map.of("ok", true); }
