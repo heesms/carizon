@@ -95,7 +95,7 @@ services:
         condition: service_healthy
     restart: "no"
     command: |
-      sh -c "for ((i=0; i<60; i++)); do
+      sh -c "for _ in `seq 1 60`; do
         if curl -sf http://elasticsearch:9200/_cluster/health | grep -q '\"status\":\"yellow\\|\"status\":\"green\"'; then
           break
         fi
