@@ -1,0 +1,199 @@
+version: '3.9'
+
+# MVP one-server stack (backend + frontend + MySQL + 필수 인프라)
+# 운영 초기 (유저 거의 없음) 기준: 최소 리소스 우선 구성
+# 추후 사용자 증가 시 Kafka/모니터링/캐시 정책 분리 권장
+services:
+  # ── MySQL ─────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: carizon-mysql
+    restart: unless-stopped
+    mem_limit: 1536m
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=Asia/Seoul
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-carizon_pass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-carizon}
+      MYSQL_USER: ${MYSQL_USER:-carizon}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-carizon}
+      TZ: Asia/Seoul
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-carizon}", "-p${MYSQL_PASSWORD:-carizon}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis ───────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: carizon-redis
+    restart: unless-stopped
+    mem_limit: 256m
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Elasticsearch (차량 검색/필터 정합성) ───────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: carizon-elasticsearch
+    restart: unless-stopped
+    mem_limit: 2048m
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - TZ=Asia/Seoul
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -f http://localhost:9200/_cluster/health | grep -q '\"status\":\"yellow\\|\"status\":\"green\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  elasticsearch-bootstrap:
+    image: curlimages/curl:8.9.1
+    container_name: carizon-elasticsearch-bootstrap
+    mem_limit: 64m
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: "no"
+    command: >
+      sh -c "set -e
+      until curl -fs http://elasticsearch:9200/_cluster/health >/dev/null; do sleep 2; done
+      curl -fs -X PUT 'http://elasticsearch:9200/_index_template/carizon-cars' -H 'Content-Type: application/json' -d '{\"index_patterns\":[\"cars\"],\"priority\":500,\"template\":{\"settings\":{\"number_of_replicas\":0}}}'
+      curl -fs -X PUT 'http://elasticsearch:9200/cars/_settings' -H 'Content-Type: application/json' -d '{\"index\":{\"number_of_replicas\":0}}' || true
+      echo 'elasticsearch bootstrap done'"
+
+  # ── Chroma (RAG 벡터) ─────────────────────────
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: carizon-chroma
+    mem_limit: 1024m
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+      - TZ=Asia/Seoul
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Ollama (LLM + 임베딩) ──────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: carizon-ollama
+    mem_limit: 2048m
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      TZ: Asia/Seoul
+    volumes:
+      - ollama_data:/root/.ollama
+    command: >
+      sh -c "ollama serve &
+      sleep 3 &&
+      ollama pull ${OLLAMA_LLM_MODEL:-qwen2.5:1.5b} &&
+      ollama pull ${OLLAMA_EMBED_MODEL:-nomic-embed-text} &&
+      wait"
+
+  # ── Backend ─────────────────────────────────────
+  app:
+    image: ghcr.io/REPLACE_GH_USER/carizon-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: carizon-app
+    mem_limit: 1536m
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://${MYSQL_HOST:-mysql}:3306/${MYSQL_DATABASE:-carizon}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&useSSL=false
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-carizon}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-carizon}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      ELASTICSEARCH_URIS: http://elasticsearch:9200
+      KAFKA_ENABLED: "false"
+      RAG_CHROMA_BASE_URL: http://chroma:8000
+      RAG_LLM_PROVIDER: ollama
+      RAG_EMBEDDING_PROVIDER: ollama
+      RAG_LLM_OLLAMA_BASE_URL: http://ollama:11434
+      RAG_EMBEDDING_OLLAMA_BASE_URL: http://ollama:11434
+      RAG_LLM_OLLAMA_MODEL: ${OLLAMA_LLM_MODEL:-qwen2.5:1.5b}
+      RAG_EMBEDDING_OLLAMA_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      TZ: Asia/Seoul
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      elasticsearch-bootstrap:
+        condition: service_completed_successfully
+      chroma:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # ── Frontend (React + Nginx) ───────────────────
+  frontend:
+    image: ghcr.io/REPLACE_GH_USER/carizon-frontend:latest
+    build:
+      context: ./carizon-frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_GA_MEASUREMENT_ID: ${VITE_GA_MEASUREMENT_ID:-}
+    container_name: carizon-frontend
+    mem_limit: 256m
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+  redis_data:
+  es_data:
+  chroma_data:
+  ollama_data:

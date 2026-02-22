@@ -57,7 +57,7 @@ public class RagProperties {
         @Data
         public static class Ollama {
             private String baseUrl = "http://localhost:11434";
-            private String model = "qwen2.5:14b-instruct";
+            private String model = "qwen2.5:1.5b";
         }
         
         @Data
