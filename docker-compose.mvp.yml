@@ -96,8 +96,8 @@ services:
     restart: "no"
     command: >
       sh -c "i=0
-      while [ \"$i\" -lt 60 ] && ! curl -sf http://elasticsearch:9200/_cluster/health | grep -q '\"status\":\"yellow\\|\"status\":\"green\"'; do
-        i=$((i+1))
+      while [ \"$$i\" -lt 60 ] && ! curl -sf http://elasticsearch:9200/_cluster/health | grep -q '\"status\":\"yellow\\|\"status\":\"green\"'; do
+        i=$$((i+1))
         sleep 2
       done
       if ! curl -sf http://elasticsearch:9200/_cluster/health >/dev/null; then
