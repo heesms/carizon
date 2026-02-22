@@ -41,11 +41,12 @@ export default function CarCard({ item, likesCount }: Props) {
     : location.pathname.startsWith('/search')
       ? 'search'
       : 'other'
+  const state = { from, source, backgroundLocation: location }
 
   return (
     <Link
       to={`/cars/${item.carId}`}
-      state={{ from, source }}
+      state={state}
       className="card-hover flex flex-col group overflow-hidden"
     >
       {/* 이미지 */}

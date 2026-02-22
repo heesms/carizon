@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams, useLocation, type Location } from 'react-router-dom'
 import { getRecommendations, type RecommendationResponse, type RecommendedCar } from '@/api/recommendations'
 import { toggleLike, getLike } from '@/api/likes'
 import AdSlot from '@/components/AdSlot'
@@ -40,6 +40,7 @@ function useIsMobile() {
 
 export default function Recommendation() {
   const [sp] = useSearchParams()
+  const fromLocation = useLocation()
   const queryParam = (sp.get('query') ?? '').trim()
   const isMobile = useIsMobile()
   const [messages, setMessages] = useState<Message[]>([
@@ -167,7 +168,13 @@ export default function Recommendation() {
                       {msg.cars
                         .filter((car, i, arr) => arr.findIndex(c => c.carId === car.carId) === i)
                         .map((car, ci) => (
-                          <RecommendedCarCard key={car.carId ?? ci} car={car} isMobile={isMobile} rank={ci + 1} />
+                          <RecommendedCarCard
+                            key={car.carId ?? ci}
+                            car={car}
+                            isMobile={isMobile}
+                            rank={ci + 1}
+                            fromLocation={fromLocation}
+                          />
                         ))}
                     </div>
                   )}
@@ -254,7 +261,17 @@ const RANK_STYLES: Record<number, RankStyle> = {
   },
 }
 
-function RecommendedCarCard({ car, isMobile, rank }: { car: RecommendedCar; isMobile: boolean; rank: number }) {
+function RecommendedCarCard({
+  car,
+  isMobile,
+  rank,
+  fromLocation,
+}: {
+  car: RecommendedCar
+  isMobile: boolean
+  rank: number
+  fromLocation: Location
+}) {
   const [liked, setLiked]     = useState(false)
   const [likeCount, setCount] = useState(0)
   const [imgSrc, setImgSrc]   = useState(car.imageUrl || NO_IMAGE)
@@ -321,6 +338,11 @@ function RecommendedCarCard({ car, isMobile, rank }: { car: RecommendedCar; isMo
           <div className="flex flex-col items-end gap-1.5 shrink-0">
             {car.carId && (
               <Link to={`/cars/${car.carId}`}
+                state={{
+                  from: `${fromLocation.pathname}${fromLocation.search}${fromLocation.hash}`,
+                  source: 'ai',
+                  backgroundLocation: fromLocation,
+                }}
                 className={`text-[10px] sm:text-xs px-2 py-1 rounded-lg font-bold transition-colors ${cfg.btnClass}`}>
                 상세보기
               </Link>
@@ -386,6 +408,11 @@ function RecommendedCarCard({ car, isMobile, rank }: { car: RecommendedCar; isMo
       <div className="flex flex-col items-end gap-1 shrink-0">
         {car.carId && (
           <Link to={`/cars/${car.carId}`}
+            state={{
+              from: `${fromLocation.pathname}${fromLocation.search}${fromLocation.hash}`,
+              source: 'ai',
+              backgroundLocation: fromLocation,
+            }}
             className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-lg bg-brand-50 text-brand-600 hover:bg-brand-100 font-semibold transition-colors">
             상세보기
           </Link>

@@ -70,8 +70,9 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
     : routeState.source === 'search'
       ? 'search'
       : 'other'
+  const isModal = typeof onClose === 'function'
 
-  const handleBack = () => {
+  const handleClose = () => {
     if (onClose) { onClose(); return }
     const from = typeof routeState.from === 'string' ? routeState.from : ''
     if (source === 'ai') {
@@ -88,6 +89,24 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
     : source === 'search'
       ? '검색 결과로'
       : '이전 화면으로'
+  const closeButton = (
+    <button
+      type="button"
+      onClick={handleClose}
+      aria-label="상세 닫기"
+      className="h-10 w-10 inline-flex items-center justify-center rounded-full border border-gray-200 hover:bg-gray-50"
+    >
+      <span className="sr-only">닫기</span>
+      <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  )
+  const modalHeader = isModal ? (
+    <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-4 sm:px-6 py-3 flex justify-end">
+      {closeButton}
+    </div>
+  ) : null
 
   useEffect(() => {
     if (!id) return
@@ -112,15 +131,25 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
   }, [id])
 
   if (loading) return (
-    <div className="flex items-center justify-center py-32">
-      <div className="spinner w-8 h-8" />
+    <div className={`animate-fade-in ${isModal ? 'pb-4' : ''}`}>
+      {modalHeader}
+      <div className="flex items-center justify-center py-32">
+        <div className="spinner w-8 h-8" />
+      </div>
     </div>
   )
   if (error || !detail) return (
     <div className="card p-8 sm:p-12 text-center">
+      {modalHeader}
       <div className="text-4xl mb-3">😢</div>
       <p className="text-gray-600">{error ?? '데이터가 없습니다.'}</p>
-      <Link to="/search" className="btn-primary mt-4 inline-flex">← 검색으로 돌아가기</Link>
+      {isModal ? (
+        <button type="button" onClick={handleClose} className="btn-primary mt-4">
+          닫기
+        </button>
+      ) : (
+        <Link to="/search" className="btn-primary mt-4 inline-flex">← 검색으로 돌아가기</Link>
+      )}
     </div>
   )
 
@@ -146,10 +175,11 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
   ].filter(s => s.value)
 
   return (
-    <div className="space-y-4 sm:space-y-6 animate-fade-in">
+    <div className={`space-y-4 sm:space-y-6 animate-fade-in ${isModal ? 'pb-6' : ''}`}>
       {/* 뒤로 (페이지 모드에서만 표시) */}
+      {modalHeader}
       {!onClose && (
-        <button type="button" onClick={handleBack} className="btn-ghost text-gray-500 inline-flex">
+        <button type="button" onClick={handleClose} className="btn-ghost text-gray-500 inline-flex">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>

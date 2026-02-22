@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import AdSlot from '@/components/AdSlot'
 import { getWeeklyBest } from '@/api/likes'
 
@@ -59,6 +59,7 @@ export default function Home() {
   const [showHistory, setShowHistory] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const historyRef = useRef<HTMLFormElement>(null)
+  const location = useLocation()
 
   useEffect(() => {
     getWeeklyBest()
@@ -297,6 +298,11 @@ export default function Home() {
                 <Link
                   key={w.carId ?? i}
                   to={w.carId ? `/cars/${w.carId}` : '/search'}
+                  state={w.carId ? {
+                    from: `${location.pathname}${location.search}${location.hash}`,
+                    source: 'other',
+                    backgroundLocation: location,
+                  } : undefined}
                   className="card-hover overflow-hidden group"
                 >
                   {/* 이미지 */}
