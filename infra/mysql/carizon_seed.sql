@@ -1,0 +1,1 @@
+-- Seed file placeholder. Replace this file with your C:\tmp\carizon_seed.sql content to enable seed inserts.

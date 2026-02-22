@@ -53,4 +53,13 @@ docker cp carizon-redis:/data/dump.rdb ./redis-backup.rdb
 
 ## MySQL 초기 스크립트
 
-`docker/mysql/init/` 디렉토리에 `.sql` 파일을 넣으면 컨테이너 최초 실행 시 자동으로 실행됩니다.
+`infra/mysql/init/` 디렉토리의 초기화 스크립트는 컨테이너 최초 실행 시 자동으로 실행됩니다.
+`schema`/`seed` SQL은 `docker-compose` 환경변수로 지정된 경로로 전달할 수 있습니다.
+
+```bash
+# 예시(Windows 경로 변환)
+set MYSQL_BOOTSTRAP_SCHEMA_SQL=/docker-init/carizon_schema.sql
+set MYSQL_BOOTSTRAP_SEED_SQL=/docker-init/carizon_seed.sql
+```
+
+테이블이 이미 존재하면(`MYSQL_BOOTSTRAP_GUARD_TABLE` 기본값 `car_master`) 스키마/마이그레이션/시드가 스킵됩니다.

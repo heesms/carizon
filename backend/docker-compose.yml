@@ -12,10 +12,19 @@ services:
       MYSQL_DATABASE: carizon
       MYSQL_USER: carizon
       MYSQL_PASSWORD: carizon!1
+      MYSQL_BOOTSTRAP_SCHEMA: ${MYSQL_BOOTSTRAP_SCHEMA:-true}
+      MYSQL_BOOTSTRAP_MIGRATIONS: ${MYSQL_BOOTSTRAP_MIGRATIONS:-true}
+      MYSQL_BOOTSTRAP_SCHEMA_SQL: ${MYSQL_BOOTSTRAP_SCHEMA_SQL:-/docker-init/schema_from_excel.sql}
+      MYSQL_BOOTSTRAP_SEED_SQL: ${MYSQL_BOOTSTRAP_SEED_SQL:-/docker-init/carizon_seed.sql}
+      MYSQL_BOOTSTRAP_SEED: ${MYSQL_BOOTSTRAP_SEED:-true}
+      MYSQL_BOOTSTRAP_SKIP_IF_EXISTS: ${MYSQL_BOOTSTRAP_SKIP_IF_EXISTS:-true}
+      MYSQL_BOOTSTRAP_GUARD_TABLE: ${MYSQL_BOOTSTRAP_GUARD_TABLE:-car_master}
       TZ: Asia/Seoul
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./docker/mysql/init:/docker-entrypoint-initdb.d  # 초기 스크립트 (선택사항)
+      - ${MYSQL_BOOTSTRAP_SCHEMA_SQL_HOST:-../schema_from_excel.sql}:/docker-init/schema_from_excel.sql:ro
+      - ${MYSQL_BOOTSTRAP_SEED_SQL_HOST:-../infra/mysql/carizon_seed.sql}:/docker-init/carizon_seed.sql:ro
+      - ../infra/mysql/init:/docker-entrypoint-initdb.d  # 초기 스크립트 (선택사항)
     command: 
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
