@@ -1,2 +1,9 @@
 # Log files
 logs/
+
+node_modules/
+carizon-frontend/node_modules/
+carizon-frontend/dist/
+carizon-frontend/.vite/
+*.log
+*.tmp
