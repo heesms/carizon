@@ -105,7 +105,6 @@ export const getCarDetail     = (id: string | number): Promise<CarDetail> =>
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     const body = await r.json()
     const raw = body?.data || body
-    // CarDetailRow[] → CarDetail 변환 (기존 CarDetail.tsx 로직 재사용)
     if (raw?.content && Array.isArray(raw.content) && raw.content.length > 0) {
       const first = raw.content[0]
       const specs: CarSpecs = {

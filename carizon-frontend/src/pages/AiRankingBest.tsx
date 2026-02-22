@@ -175,27 +175,30 @@ export default function AiRankingBest() {
     setPickerStep('model')
   }
 
-  const chooseModel = (maker: CodeItem, groupCode: string, model: CodeItem) => {
-    setSelectedMaker(maker)
-    setSelectedModel(model)
-    setSelectedModelGroupCode(groupCode)
-    setResult(null)
-    setRunStep('idle')
-    setPickerOpen(false)
-  }
-
-  const handleRun = async () => {
-    if (!selectedModel) return
+  const runWithModel = async (code: string) => {
     setRunStep('loading')
     setResult(null)
     setErrorMsg('')
     try {
-      const data = await getAiRankingBest(selectedModel.code)
+      const data = await getAiRankingBest(code)
       setResult(data)
       setRunStep('done')
     } catch (e: unknown) {
       setErrorMsg(e instanceof Error ? e.message : '알 수 없는 오류')
       setRunStep('error')
+    }
+  }
+
+  const chooseModel = (maker: CodeItem, groupCode: string, model: CodeItem) => {
+    setSelectedMaker(maker)
+    setSelectedModel(model)
+    setSelectedModelGroupCode(groupCode)
+    setResult(null)
+    setPickerOpen(false)
+    if (countOf(model) >= MIN_CAR_COUNT_FOR_RANKING) {
+      runWithModel(model.code)
+    } else {
+      setRunStep('idle')
     }
   }
 
@@ -264,29 +267,11 @@ export default function AiRankingBest() {
           )}
         </button>
 
-        {selectedModel && (
-          <div className="mt-4">
-            <button
-              onClick={handleRun}
-              disabled={runStep === 'loading'}
-              className="btn-primary px-6 py-2.5 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {runStep === 'loading' ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                  </svg>
-                  AI 분석 중...
-                </>
-              ) : (
-                <>
-                  <span>🏆</span>
-                  AI 랭킹 BEST 분석
-                </>
-              )}
-            </button>
-          </div>
+        {selectedModel && countOf(selectedModel) > 0 && countOf(selectedModel) < MIN_CAR_COUNT_FOR_RANKING && (
+          <p className="mt-2.5 text-xs text-amber-600 flex items-center gap-1.5">
+            <span>⚠</span>
+            매물이 {MIN_CAR_COUNT_FOR_RANKING}개 미만({countOf(selectedModel).toLocaleString()}개)이어서 AI 랭킹 분석이 불가합니다.
+          </p>
         )}
       </div>
 
@@ -306,68 +291,108 @@ export default function AiRankingBest() {
       {/* 오류 */}
       {runStep === 'error' && (
         <div className="card p-5 border-red-100 bg-red-50">
-          <p className="text-sm font-semibold text-red-600 mb-1">분석 실패</p>
-          <p className="text-xs text-red-500">{errorMsg}</p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-red-600 mb-1">분석 실패</p>
+              <p className="text-xs text-red-500">{errorMsg}</p>
+            </div>
+            {selectedModel && (
+              <button
+                onClick={() => runWithModel(selectedModel.code)}
+                className="shrink-0 text-xs font-semibold text-red-600 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-100 transition"
+              >
+                재시도
+              </button>
+            )}
+          </div>
         </div>
       )}
 
       {/* 결과 */}
       {runStep === 'done' && result && (
-        <div className="card overflow-hidden shadow-lg">
-          {/* 헤더 */}
-          <div className="bg-gradient-to-r from-brand-600 to-brand-700 px-5 py-4 flex items-center gap-3 justify-between">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-xl shrink-0">🏆</div>
-              <div className="min-w-0">
-                <p className="text-white font-black text-sm truncate">{result.title}</p>
-                {result.carCount != null && (
-                  <p className="text-blue-100 text-[11px] mt-0.5">분석 완료 · 매물 {result.carCount}개 선별</p>
-                )}
-              </div>
+        <>
+          {(!result.content || (result.carCount != null && result.carCount === 0)) ? (
+            /* 결과 없음 */
+            <div className="card p-8 text-center">
+              <div className="text-4xl mb-3">🔍</div>
+              <p className="text-base font-semibold text-gray-700 mb-1">분석 결과가 없습니다</p>
+              <p className="text-sm text-gray-400 mb-4">선택한 모델의 매물이 충분하지 않아 랭킹을 생성하지 못했습니다.</p>
+              {selectedModel && (
+                <button onClick={() => runWithModel(selectedModel.code)} className="btn-primary text-sm px-4 py-2">
+                  🔄 다시 시도
+                </button>
+              )}
             </div>
-            <button
-              onClick={() => { setResult(null); setRunStep('idle') }}
-              className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/25 flex items-center justify-center text-white/70 hover:text-white transition shrink-0"
-              aria-label="닫기"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+          ) : (
+            /* 결과 카드 */
+            <div className="card overflow-hidden shadow-lg">
+              {/* 헤더 */}
+              <div className="bg-gradient-to-r from-brand-600 to-brand-700 px-5 py-4 flex items-center gap-3 justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-xl shrink-0">🏆</div>
+                  <div className="min-w-0">
+                    <p className="text-white font-black text-sm truncate">{result.title}</p>
+                    {result.carCount != null && (
+                      <p className="text-blue-100 text-[11px] mt-0.5">분석 완료 · 매물 {result.carCount}개 선별</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {selectedModel && (
+                    <button
+                      onClick={() => runWithModel(selectedModel.code)}
+                      className="h-7 px-2.5 rounded-lg bg-white/10 hover:bg-white/25 flex items-center gap-1 text-white/80 hover:text-white transition text-[11px] font-semibold"
+                      aria-label="재분석"
+                    >
+                      🔄 재분석
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { setResult(null); setRunStep('idle') }}
+                    className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/25 flex items-center justify-center text-white/70 hover:text-white transition"
+                    aria-label="닫기"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
 
-          {/* 순위 HTML 스타일 */}
-          <style>{`
-            .ranking-content h2 { font-size:1rem; font-weight:700; color:#1e293b; margin-top:1.25rem; margin-bottom:0.75rem; }
-            .ranking-content h3 { font-size:0.95rem; font-weight:700; color:#2563eb; margin:1.25rem 0 1rem; padding-bottom:0.5rem; border-bottom:2px solid #dbeafe; }
-            .ranking-content h4 { font-size:0.875rem; font-weight:700; margin-bottom:12px; border-radius:8px; padding:6px 10px; background:#f1f5f9; color:#334155; }
-            .ranking-content h4 a { color:inherit; text-decoration:none; }
-            .ranking-content h4 a:hover { text-decoration:underline; }
-            .ranking-content ul { list-style:none !important; padding-left:0 !important; margin:0; }
-            .ranking-content ul > li { border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:16px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.05); transition:box-shadow 0.15s; }
-            .ranking-content ul > li:hover { box-shadow:0 4px 12px rgba(0,0,0,0.1); }
-            .ranking-content ul > li:nth-child(1) { background:linear-gradient(150deg,#fef3c7 0%,#fffbeb 70%); border:2px solid #fbbf24 !important; }
-            .ranking-content ul > li:nth-child(1) h4 { background:linear-gradient(135deg,#fbbf24,#f59e0b); color:#fff; font-weight:900; font-size:1rem; }
-            .ranking-content ul > li:nth-child(1) h4 a { color:#fff !important; }
-            .ranking-content ul > li:nth-child(2) { background:linear-gradient(150deg,#f1f5f9 0%,#f8fafc 70%); border:2px solid #94a3b8 !important; }
-            .ranking-content ul > li:nth-child(2) h4 { background:linear-gradient(135deg,#94a3b8,#64748b); color:#fff; font-weight:800; }
-            .ranking-content ul > li:nth-child(2) h4 a { color:#fff !important; }
-            .ranking-content ul > li:nth-child(3) { background:linear-gradient(150deg,#fff7ed 0%,#fffbf5 70%); border:1.5px solid #fb923c !important; }
-            .ranking-content ul > li:nth-child(3) h4 { background:linear-gradient(135deg,#fb923c,#f97316); color:#fff; font-weight:800; }
-            .ranking-content ul > li:nth-child(3) h4 a { color:#fff !important; }
-            .ranking-content table { font-size:0.8rem; }
-            .ranking-content table td { padding:6px 8px !important; }
-            .ranking-content table tr:nth-child(even) td { background-color:#f9fafb; }
-            .ranking-content p a { color:#2563eb; font-weight:600; }
-            .ranking-content p a:hover { text-decoration:underline; }
-          `}</style>
+              {/* 순위 HTML 스타일 */}
+              <style>{`
+                .ranking-content h2 { font-size:1rem; font-weight:700; color:#1e293b; margin-top:1.25rem; margin-bottom:0.75rem; }
+                .ranking-content h3 { font-size:0.95rem; font-weight:700; color:#2563eb; margin:1.25rem 0 1rem; padding-bottom:0.5rem; border-bottom:2px solid #dbeafe; }
+                .ranking-content h4 { font-size:0.875rem; font-weight:700; margin-bottom:12px; border-radius:8px; padding:6px 10px; background:#f1f5f9; color:#334155; }
+                .ranking-content h4 a { color:inherit; text-decoration:none; }
+                .ranking-content h4 a:hover { text-decoration:underline; }
+                .ranking-content ul { list-style:none !important; padding-left:0 !important; margin:0; }
+                .ranking-content ul > li { border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:16px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.05); transition:box-shadow 0.15s; }
+                .ranking-content ul > li:hover { box-shadow:0 4px 12px rgba(0,0,0,0.1); }
+                .ranking-content ul > li:nth-child(1) { background:linear-gradient(150deg,#fef3c7 0%,#fffbeb 70%); border:2px solid #fbbf24 !important; }
+                .ranking-content ul > li:nth-child(1) h4 { background:linear-gradient(135deg,#fbbf24,#f59e0b); color:#fff; font-weight:900; font-size:1rem; }
+                .ranking-content ul > li:nth-child(1) h4 a { color:#fff !important; }
+                .ranking-content ul > li:nth-child(2) { background:linear-gradient(150deg,#f1f5f9 0%,#f8fafc 70%); border:2px solid #94a3b8 !important; }
+                .ranking-content ul > li:nth-child(2) h4 { background:linear-gradient(135deg,#94a3b8,#64748b); color:#fff; font-weight:800; }
+                .ranking-content ul > li:nth-child(2) h4 a { color:#fff !important; }
+                .ranking-content ul > li:nth-child(3) { background:linear-gradient(150deg,#fff7ed 0%,#fffbf5 70%); border:1.5px solid #fb923c !important; }
+                .ranking-content ul > li:nth-child(3) h4 { background:linear-gradient(135deg,#fb923c,#f97316); color:#fff; font-weight:800; }
+                .ranking-content ul > li:nth-child(3) h4 a { color:#fff !important; }
+                .ranking-content table { font-size:0.8rem; }
+                .ranking-content table td { padding:6px 8px !important; }
+                .ranking-content table tr:nth-child(even) td { background-color:#f9fafb; }
+                .ranking-content p a { color:#2563eb; font-weight:600; }
+                .ranking-content p a:hover { text-decoration:underline; }
+              `}</style>
 
-          {/* 랭킹 HTML 콘텐츠 */}
-          <div
-            className="ranking-content p-5 prose prose-sm max-w-none"
-            dangerouslySetInnerHTML={{ __html: result.content }}
-          />
-        </div>
+              {/* 랭킹 HTML 콘텐츠 */}
+              <div
+                className="ranking-content p-5 prose prose-sm max-w-none"
+                dangerouslySetInnerHTML={{ __html: result.content }}
+              />
+            </div>
+          )}
+        </>
       )}
 
       {/* ── 모달 ── */}
@@ -490,6 +515,7 @@ export default function AiRankingBest() {
                               selectedModelCode={selectedModel?.code}
                               onSelectModel={(groupCode, model) => activeMaker && chooseModel(activeMaker, groupCode, model)}
                               prefix="popular"
+                              minCarCount={MIN_CAR_COUNT_FOR_RANKING}
                             />
                           </div>
 
@@ -509,6 +535,7 @@ export default function AiRankingBest() {
                               selectedModelCode={selectedModel?.code}
                               onSelectModel={(groupCode, model) => activeMaker && chooseModel(activeMaker, groupCode, model)}
                               prefix="name"
+                              minCarCount={MIN_CAR_COUNT_FOR_RANKING}
                             />
                           </div>
                         </>
@@ -535,6 +562,7 @@ function GroupList({
   selectedModelCode,
   onSelectModel,
   prefix,
+  minCarCount,
 }: {
   groups: CodeItem[]
   openGroupCodes: string[]
@@ -544,6 +572,7 @@ function GroupList({
   selectedModelCode?: string
   onSelectModel: (groupCode: string, model: CodeItem) => void
   prefix: string
+  minCarCount?: number
 }) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
@@ -574,23 +603,34 @@ function GroupList({
                 {loading && (
                   <div className="px-4 py-6 text-center text-xs text-gray-400">모델 목록 불러오는 중...</div>
                 )}
-                {!loading && models.map(m => (
-                  <button
-                    key={`${prefix}-model-${m.code}`}
-                    className={`w-full px-4 py-2.5 border-b border-gray-100 last:border-b-0 flex items-center gap-2 transition
-                      ${selectedModelCode === m.code ? 'bg-brand-50 text-brand-700' : 'bg-white text-gray-800 hover:bg-gray-50'}`}
-                    onClick={() => onSelectModel(g.code, m)}
-                  >
-                    {/* 단일 선택 라디오 */}
-                    <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
-                      ${selectedModelCode === m.code ? 'border-brand-600 bg-brand-600' : 'border-gray-300 bg-white'}`}>
-                      {selectedModelCode === m.code && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-                    </span>
-                    <ModelLogo code={m.code} name={m.name} />
-                    <span className="text-sm font-medium text-left flex-1">{m.name}</span>
-                    <span className="text-xs text-gray-400">{countOf(m).toLocaleString()}</span>
-                  </button>
-                ))}
+                {!loading && models.map(m => {
+                  const cnt = countOf(m)
+                  const tooFew = minCarCount != null && cnt < minCarCount
+                  const isDisabled = cnt <= 0 || tooFew
+                  return (
+                    <button
+                      key={`${prefix}-model-${m.code}`}
+                      disabled={isDisabled}
+                      className={`w-full px-4 py-2.5 border-b border-gray-100 last:border-b-0 flex items-center gap-2 transition
+                        ${selectedModelCode === m.code ? 'bg-brand-50 text-brand-700' : 'bg-white text-gray-800'}
+                        ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                      onClick={() => onSelectModel(g.code, m)}
+                    >
+                      {/* 단일 선택 라디오 */}
+                      <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
+                        ${selectedModelCode === m.code ? 'border-brand-600 bg-brand-600' : 'border-gray-300 bg-white'}`}>
+                        {selectedModelCode === m.code && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                      </span>
+                      <ModelLogo code={m.code} name={m.name} />
+                      <span className="text-sm font-medium text-left flex-1">{m.name}</span>
+                      {tooFew ? (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 shrink-0">매물 부족</span>
+                      ) : (
+                        <span className="text-xs text-gray-400 shrink-0">{cnt.toLocaleString()}</span>
+                      )}
+                    </button>
+                  )
+                })}
                 {!loading && models.length === 0 && (
                   <div className="px-4 py-6 text-center text-xs text-gray-400">모델이 없습니다.</div>
                 )}

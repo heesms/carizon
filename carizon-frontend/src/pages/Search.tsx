@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import FiltersPanel from '@/components/FiltersPanel'
 import CarCard from '@/components/CarCard'
@@ -26,7 +26,7 @@ export default function Search() {
   const [aiFallbackList, setAiFallbackList] = useState<CarListItem[]>([])
   const [aiFallbackMessage, setAiFallbackMessage] = useState('')
   const [aiFallbackLoading, setAiFallbackLoading] = useState(false)
-  const [aiRequestedQuery, setAiRequestedQuery] = useState('')
+  const aiRequestedQueryRef = useRef('')
 
   const params = useMemo(() => Object.fromEntries(sp.entries()), [sp])
   const textQuery = useMemo(() => String(sp.get('q') ?? '').trim(), [sp])
@@ -60,20 +60,20 @@ export default function Search() {
     setAiFallbackList([])
     setAiFallbackMessage('')
     setAiFallbackLoading(false)
-    setAiRequestedQuery('')
+    aiRequestedQueryRef.current = ''
   }, [textQuery])
 
   useEffect(() => {
     if (loading) return
     if (!textQuery) return
     if (list.length > 0) return
-    if (aiRequestedQuery === textQuery) return
+    if (aiRequestedQueryRef.current === textQuery) return
 
     let cancelled = false
-    setAiRequestedQuery(textQuery)
+    aiRequestedQueryRef.current = textQuery
     setAiFallbackLoading(true)
 
-    getRecommendations({ query: textQuery, maxResults: 12 })
+    getRecommendations({ query: textQuery, maxResults: 12, useLlm: false })
       .then(res => {
         if (cancelled) return
         const mapped = (res?.cars ?? []).reduce<CarListItem[]>((acc, car) => {
@@ -111,7 +111,7 @@ export default function Search() {
     return () => {
       cancelled = true
     }
-  }, [loading, textQuery, list.length, aiRequestedQuery])
+  }, [loading, textQuery, list.length])
 
   useEffect(() => {
     let cancelled = false

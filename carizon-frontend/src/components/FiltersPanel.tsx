@@ -1,15 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  getBodyTypes,
-  getFuels,
-  getMakers,
-  getModelGroups,
-  getModels,
-  getTrims,
-  type CodeItem,
-  type CodeQueryContext,
-} from '@/api/codes'
+import { getBodyTypes, getMakers, getModelGroups, getModels, getTrims, type CodeItem } from '@/api/codes'
 
 type Filters = Record<string, string | number | undefined>
 
@@ -423,9 +414,6 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   const [bodyTypeError, setBodyTypeError] = useState('')
   const [fuelPickerOpen, setFuelPickerOpen] = useState(false)
   const [fuelDraftCodes, setFuelDraftCodes] = useState<string[]>(parseCsvTokens(value.fuel))
-  const [fuelItems, setFuelItems] = useState<CodeItem[]>([])
-  const [fuelLoading, setFuelLoading] = useState(false)
-  const [fuelError, setFuelError] = useState('')
   const [textQueryDraft, setTextQueryDraft] = useState(String(value.q ?? ''))
   const [searchMode, setSearchMode] = useState<SearchMode>(
     String(value.q ?? '').trim() ? 'text' : 'structured'
@@ -449,56 +437,6 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     .map(v => v.trim())
     .filter(Boolean)
   const hasStructuredSelection = Boolean(makerCode || modelGroupCode || modelCode || trimCode)
-
-  const buildFacetContext = (...excludeKeys: string[]): CodeQueryContext => {
-    const exclude = new Set(excludeKeys)
-    const keys = [
-      'q', 'makerCode', 'modelGroupCode', 'modelCode', 'trimCode',
-      'yearMin', 'yearMax', 'kmMin', 'kmMax', 'priceMin', 'priceMax',
-      'fuel', 'bodyType', 'region', 'transmission', 'carNo',
-    ]
-    const context: CodeQueryContext = {}
-    keys.forEach((key) => {
-      if (exclude.has(key)) return
-      const raw = value[key]
-      if (raw === undefined || raw === null) return
-      const str = String(raw).trim()
-      if (!str) return
-      context[key as keyof CodeQueryContext] = str
-    })
-    return context
-  }
-
-  const facetContextVersion = useMemo(
-    () => [
-      value.q,
-      value.fuel,
-      value.bodyType,
-      value.priceMin,
-      value.priceMax,
-      value.yearMin,
-      value.yearMax,
-      value.kmMin,
-      value.kmMax,
-      value.region,
-      value.transmission,
-      value.carNo,
-    ].map(v => String(v ?? '')).join('|'),
-    [
-      value.q,
-      value.fuel,
-      value.bodyType,
-      value.priceMin,
-      value.priceMax,
-      value.yearMin,
-      value.yearMax,
-      value.kmMin,
-      value.kmMax,
-      value.region,
-      value.transmission,
-      value.carNo,
-    ]
-  )
 
   const priceMinValue = clamp(toNum(value.priceMin, PRICE_MIN_BOUND), PRICE_MIN_BOUND, PRICE_MAX_BOUND)
   const priceMaxValue = value.priceMax == null || value.priceMax === ''
@@ -543,7 +481,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     setMakersLoading(true)
     setMakersError('')
     try {
-      const data = await getMakers(buildFacetContext('makerCode', 'makerCodes'))
+      const data = await getMakers()
       setMakers(data)
     } catch {
       setMakers([])
@@ -555,8 +493,8 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
   useEffect(() => {
     if (!makerCode) { setModelGroups([]); return }
-    getModelGroups(makerCode, buildFacetContext('makerCode', 'makerCodes', 'modelGroupCode')).then(setModelGroups).catch(() => setModelGroups([]))
-  }, [makerCode, facetContextVersion])
+    getModelGroups(makerCode).then(setModelGroups).catch(() => setModelGroups([]))
+  }, [makerCode])
   useEffect(() => {
     if (!makerCode) return
     if (makers.length > 0 || makersLoading) return
@@ -564,17 +502,12 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   }, [makerCode, makers.length, makersLoading])
   useEffect(() => {
     if (!makerCode || !modelGroupCode) { setModels([]); return }
-    getModels(makerCode, modelGroupCode, buildFacetContext('makerCode', 'makerCodes', 'modelGroupCode', 'modelCode')).then(setModels).catch(() => setModels([]))
-  }, [makerCode, modelGroupCode, facetContextVersion])
+    getModels(makerCode, modelGroupCode).then(setModels).catch(() => setModels([]))
+  }, [makerCode, modelGroupCode])
   useEffect(() => {
     if (!makerCode || !singleModelGroupCode || !singleModelCode) { setTrims([]); return }
-    getTrims(
-      makerCode,
-      singleModelGroupCode,
-      singleModelCode,
-      buildFacetContext('makerCode', 'makerCodes', 'modelGroupCode', 'modelCode', 'trimCode')
-    ).then(setTrims).catch(() => setTrims([]))
-  }, [makerCode, singleModelGroupCode, singleModelCode, facetContextVersion])
+    getTrims(makerCode, singleModelGroupCode, singleModelCode).then(setTrims).catch(() => setTrims([]))
+  }, [makerCode, singleModelGroupCode, singleModelCode])
 
   useEffect(() => {
     if (!makerCode) setSelectedModelGroupByCode({})
@@ -685,21 +618,14 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     }
     setPickerModelGroupsLoading(true)
     setPickerModelGroupsError('')
-    getModelGroups(pickerMakerCode, buildFacetContext('makerCode', 'makerCodes', 'modelGroupCode'))
+    getModelGroups(pickerMakerCode)
       .then(setPickerModelGroups)
       .catch(() => {
         setPickerModelGroups([])
         setPickerModelGroupsError('모델그룹을 불러오지 못했습니다.')
       })
       .finally(() => setPickerModelGroupsLoading(false))
-  }, [modelPickerOpen, pickerMakerCode, facetContextVersion])
-
-  useEffect(() => {
-    if (!modelPickerOpen) return
-    setPickerModelsByGroup({})
-    setPickerModelsLoadingByGroup({})
-    setPickerModelsErrorByGroup({})
-  }, [modelPickerOpen, facetContextVersion])
+  }, [modelPickerOpen, pickerMakerCode])
 
   const ensurePickerGroupModels = (groupCode: string) => {
     if (!pickerMakerCode || (!makerPickerOpen && !modelPickerOpen) || !groupCode) return
@@ -707,7 +633,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
     setPickerModelsLoadingByGroup(prev => ({ ...prev, [groupCode]: true }))
     setPickerModelsErrorByGroup(prev => ({ ...prev, [groupCode]: '' }))
-    getModels(pickerMakerCode, groupCode, buildFacetContext('makerCode', 'makerCodes', 'modelGroupCode', 'modelCode'))
+    getModels(pickerMakerCode, groupCode)
       .then(data => {
         setPickerModelsByGroup(prev => ({ ...prev, [groupCode]: data }))
       })
@@ -751,29 +677,22 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
   const openBodyTypePicker = () => {
     setBodyTypeDraftCodes(selectedBodyTypes)
-    setBodyTypeLoading(true)
-    setBodyTypeError('')
-    getBodyTypes(buildFacetContext('bodyType'))
-      .then(setBodyTypeItems)
-      .catch(() => {
-        setBodyTypeItems([])
-        setBodyTypeError('차종 목록을 불러오지 못했습니다.')
-      })
-      .finally(() => setBodyTypeLoading(false))
+    if (bodyTypeItems.length === 0 && !bodyTypeLoading) {
+      setBodyTypeLoading(true)
+      setBodyTypeError('')
+      getBodyTypes()
+        .then(setBodyTypeItems)
+        .catch(() => {
+          setBodyTypeItems([])
+          setBodyTypeError('차종 목록을 불러오지 못했습니다.')
+        })
+        .finally(() => setBodyTypeLoading(false))
+    }
     setBodyTypePickerOpen(true)
   }
 
   const openFuelPicker = () => {
     setFuelDraftCodes(selectedFuels)
-    setFuelLoading(true)
-    setFuelError('')
-    getFuels(buildFacetContext('fuel'))
-      .then(setFuelItems)
-      .catch(() => {
-        setFuelItems([])
-        setFuelError('연료 목록을 불러오지 못했습니다.')
-      })
-      .finally(() => setFuelLoading(false))
     setFuelPickerOpen(true)
   }
 
@@ -974,7 +893,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   }
 
   const openMakerPicker = () => {
-    if (!makersLoading) loadMakers()
+    if (makers.length === 0 && !makersLoading) loadMakers()
     setMakerPickerOpen(true)
     setPickerSearch('')
     setPickerMakerCode(makerCode)
@@ -1188,7 +1107,6 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     setPickerSearch('')
     applyMaker(maker.code)
     setMakerPickerOpen(false)
-    setModelPickerOpen(true)
   }
 
   const visibleTrims = trims
@@ -1203,14 +1121,6 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     bodyTypeItems.forEach(it => m.set(it.code, countOf(it)))
     return m
   }, [bodyTypeItems])
-  const canSelectModel = !!makerCode
-  const canSelectTrim = selectedModelCodes.length === 1 && !!singleModelGroupCode && trims.length > 0
-  const selectedModelSummary = selectedModelCodes.length > 1
-    ? selectedModelCodes.map(code => selectedModelNameByCode[code] ?? code).join(' · ')
-    : '\u00A0'
-  const structuredGridCols = !canSelectModel
-    ? 'grid-cols-1'
-    : (canSelectTrim ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2')
 
   return (
     <>
@@ -1258,7 +1168,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
           </div>
 
           {searchMode === 'structured' ? (
-            <div className={`grid ${structuredGridCols} gap-3`}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="text-xs font-semibold text-gray-500 block mb-1">제조사</label>
                 <div className="flex items-center gap-1.5">
@@ -1290,67 +1200,69 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                 </div>
               </div>
 
-              {canSelectModel && (
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">모델</label>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      className="flex-1 min-w-0 text-left px-3.5 py-2.5 rounded-xl border text-sm flex items-center justify-between transition border-gray-200 bg-white hover:border-gray-300"
-                      onClick={openModelPicker}
-                    >
-                      <span className="flex items-center gap-2 min-w-0">
-                        {selectedModelCodes.length === 1 ? (
-                          <>
-                            <ModelLogo modelCode={singleModelCode} modelName={selectedModelNameByCode[singleModelCode] ?? selectedModel?.name ?? ''} className="w-6 h-6 rounded-md object-contain bg-white border border-gray-200 p-0.5 shrink-0" />
-                            <span className="font-semibold text-gray-800 truncate">
-                              {selectedModelNameByCode[singleModelCode] ?? selectedModel?.name ?? singleModelCode}
-                            </span>
-                          </>
-                        ) : selectedModelCodes.length > 1 ? (
-                          <span className="font-semibold text-gray-800 truncate">{selectedModelCodes.length}개 선택</span>
-                        ) : (
-                          <span>선택</span>
-                        )}
-                      </span>
-                      <span className="text-xs text-gray-400">▼</span>
-                    </button>
-                    {modelCode && (
-                      <ClearIconButton
-                        onClick={e => {
-                          e.stopPropagation()
-                          clearModelFilters()
-                        }}
-                        label="모델 조건 해제"
-                      />
-                    )}
-                  </div>
-                  <p className="mt-1 h-[14px] text-[11px] text-gray-400 leading-tight truncate">{selectedModelSummary}</p>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">모델</label>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    disabled={!makerCode}
+                    className={`flex-1 min-w-0 text-left px-3.5 py-2.5 rounded-xl border text-sm flex items-center justify-between transition ${makerCode ? 'border-gray-200 bg-white hover:border-gray-300' : 'border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed'}`}
+                    onClick={openModelPicker}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      {selectedModelCodes.length === 1 ? (
+                        <>
+                          <ModelLogo modelCode={singleModelCode} modelName={selectedModelNameByCode[singleModelCode] ?? selectedModel?.name ?? ''} className="w-6 h-6 rounded-md object-contain bg-white border border-gray-200 p-0.5 shrink-0" />
+                          <span className="font-semibold text-gray-800 truncate">
+                            {selectedModelNameByCode[singleModelCode] ?? selectedModel?.name ?? singleModelCode}
+                          </span>
+                        </>
+                      ) : selectedModelCodes.length > 1 ? (
+                        <span className="font-semibold text-gray-800 truncate">{selectedModelCodes.length}개 선택</span>
+                      ) : (
+                        <span>{makerCode ? '선택' : '제조사 먼저 선택'}</span>
+                      )}
+                    </span>
+                    <span className="text-xs text-gray-400">▼</span>
+                  </button>
+                  {modelCode && (
+                    <ClearIconButton
+                      onClick={e => {
+                        e.stopPropagation()
+                        clearModelFilters()
+                      }}
+                      label="모델 조건 해제"
+                    />
+                  )}
                 </div>
-              )}
+                {selectedModelCodes.length > 1 && (
+                  <p className="mt-1 text-[11px] text-gray-400 leading-tight truncate">
+                    {selectedModelCodes.map(code => selectedModelNameByCode[code] ?? code).join(' · ')}
+                  </p>
+                )}
+              </div>
 
-              {canSelectTrim && (
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">트림</label>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      className="flex-1 min-w-0 text-left px-3.5 py-2.5 rounded-xl border text-sm flex items-center justify-between transition border-gray-200 bg-white hover:border-gray-300"
-                      onClick={() => setTrimPickerOpen(true)}
-                    >
-                      <span className="truncate">{selectedTrim?.name ?? '선택'}</span>
-                      <span className="text-xs text-gray-400">▼</span>
-                    </button>
-                    {trimCode && (
-                      <ClearIconButton
-                        onClick={e => {
-                          e.stopPropagation()
-                          setTrim(undefined)
-                        }}
-                        label="트림 조건 해제"
-                      />
-                    )}
-                  </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 block mb-1">트림</label>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    disabled={selectedModelCodes.length !== 1 || !singleModelGroupCode}
+                    className={`flex-1 min-w-0 text-left px-3.5 py-2.5 rounded-xl border text-sm flex items-center justify-between transition ${selectedModelCodes.length === 1 && !!singleModelGroupCode ? 'border-gray-200 bg-white hover:border-gray-300' : 'border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed'}`}
+                    onClick={() => setTrimPickerOpen(true)}
+                  >
+                    <span className="truncate">{selectedTrim?.name ?? (selectedModelCodes.length === 1 && !!singleModelGroupCode ? '선택' : '모델 1개 선택 후 가능')}</span>
+                    <span className="text-xs text-gray-400">▼</span>
+                  </button>
+                  {trimCode && (
+                    <ClearIconButton
+                      onClick={e => {
+                        e.stopPropagation()
+                        setTrim(undefined)
+                      }}
+                      label="트림 조건 해제"
+                    />
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           ) : (
             <div>
@@ -1840,7 +1752,6 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
               <div className="flex-1 overflow-y-auto bg-gray-50">
                 {visibleTrims.map(t => {
                   const selected = trimCode === t.code
-                  const trimCount = countOf(t)
                   return (
                     <button
                       key={t.code}
@@ -1850,10 +1761,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                         setTrimPickerOpen(false)
                       }}
                     >
-                      <span className="flex items-center justify-between gap-3">
-                        <span className="font-medium text-sm truncate">{t.name}</span>
-                        <span className="text-xs text-gray-400 shrink-0">{trimCount.toLocaleString()}</span>
-                      </span>
+                      <span className="font-medium text-sm">{t.name}</span>
                     </button>
                   )
                 })}
@@ -1918,7 +1826,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                       >
                         <span className={`w-4 h-4 rounded border flex items-center justify-center text-[11px] font-bold ${selected ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}>✓</span>
                         <p className="text-sm font-semibold flex-1">{bt}</p>
-                        <span className="text-xs text-gray-400">{count.toLocaleString()}</span>
+                        <span className="text-xs text-gray-400">{count.toLocaleString()}대</span>
                       </button>
                     )
                   })}
@@ -1968,39 +1876,25 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
               />
 
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-gray-50">
-                {fuelLoading && (
-                  <div className="text-center text-sm text-gray-500 py-10">연료 목록 불러오는 중...</div>
-                )}
-                {!fuelLoading && fuelError && (
-                  <div className="text-center text-sm text-gray-500 py-10">{fuelError}</div>
-                )}
-                {!fuelLoading && !fuelError && (
                 <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                  {(fuelItems.length > 0 ? fuelItems : FUEL_OPTIONS.map(v => ({ code: v, name: v, carCount: 0 } as CodeItem))).map(item => {
-                    const code = item.code || item.name
-                    const label = item.name || item.code
-                    const selected = fuelDraftSet.has(code)
-                    const count = countOf(item)
-                    const disabled = !selected && count <= 0
+                  {FUEL_OPTIONS.map(f => {
+                    const selected = fuelDraftSet.has(f)
                     return (
                       <button
-                        key={`fuel-${code}`}
-                        disabled={disabled}
-                        className={`w-full px-4 py-3 text-left border-b border-gray-100 last:border-b-0 flex items-center gap-3 transition ${disabled ? 'opacity-35 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                        key={`fuel-${f}`}
+                        className="w-full px-4 py-3 text-left border-b border-gray-100 last:border-b-0 flex items-center gap-3 transition hover:bg-gray-50"
                         onClick={() => {
                           setFuelDraftCodes(prev =>
-                            prev.includes(code) ? prev.filter(v => v !== code) : [...prev, code]
+                            prev.includes(f) ? prev.filter(v => v !== f) : [...prev, f]
                           )
                         }}
                       >
                         <span className={`w-4 h-4 rounded border flex items-center justify-center text-[11px] font-bold ${selected ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}>✓</span>
-                        <p className={`text-sm font-semibold flex-1 ${selected ? 'text-brand-700' : 'text-gray-800'}`}>{label}</p>
-                        <span className="text-xs text-gray-400">{count.toLocaleString()}</span>
+                        <p className={`text-sm font-semibold flex-1 ${selected ? 'text-brand-700' : 'text-gray-800'}`}>{f}</p>
                       </button>
                     )
                   })}
                 </div>
-                )}
               </div>
 
               <div className="px-4 sm:px-5 py-3 border-t border-gray-100 bg-white flex items-center justify-between gap-3">

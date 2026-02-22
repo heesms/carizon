@@ -130,8 +130,6 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
   const soldPlatforms = platforms.filter(p => p.status === 'SOLD')
   const minPrice = activePlatforms.length > 0 ? Math.min(...activePlatforms.map(p => p.price!)) : null
   const maxPrice = activePlatforms.length > 0 ? Math.max(...activePlatforms.map(p => p.price!)) : null
-  const hasPriceGap = minPrice != null && maxPrice != null && minPrice !== maxPrice
-  const canShowLowestBadge = activePlatforms.length === 1 || hasPriceGap
 
   const specs = [
     { label: '연식',     value: car.year ? `${car.year}년식` : undefined },
@@ -261,11 +259,12 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                   .map((p, i) => {
                     const url = platformUrl(p, isMobile)
                     const colors = barColor(p.platformName)
-                    // 바 너비: 최고가 대비 상대값(예: 500 vs 1350 -> 약 37%)
-                    const maxForBar = maxPrice ?? 0
-                    const rawBarWidth = maxForBar > 0 ? ((p.price ?? 0) / maxForBar) * 100 : 100
-                    const barWidth = Math.max(8, Math.min(100, rawBarWidth))
-                    const isLowest = i === 0 && canShowLowestBadge
+                    const priceRange = (maxPrice ?? 0) - (minPrice ?? 0)
+                    // 바 너비: 최저가 70% ~ 최고가 100%
+                    const barWidth = priceRange > 0 && minPrice
+                      ? 70 + ((p.price! - minPrice) / priceRange) * 30
+                      : 100
+                    const isLowest = i === 0 && activePlatforms.length > 1
 
                     return (
                       <a

@@ -39,15 +39,8 @@ export type RecommendationRequest = {
 }
 
 export const getRecommendations = (body: RecommendationRequest): Promise<RecommendationResponse> =>
-  fetch('/api/v2/recommendations', {
+  fetch('/api/recommendations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ maxResults: 5, ...body }),
-  }).then(j)
-
-export const getSearchFallbackRecommendations = (body: RecommendationRequest): Promise<RecommendationResponse> =>
-  fetch('/api/recommendations/search-fallback', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ maxResults: 12, ...body }),
   }).then(j)
