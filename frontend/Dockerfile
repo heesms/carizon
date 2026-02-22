@@ -5,7 +5,14 @@ ARG VITE_GA_MEASUREMENT_ID
 ENV VITE_GA_MEASUREMENT_ID=${VITE_GA_MEASUREMENT_ID}
 COPY frontend/package*.json ./
 RUN npm ci
-COPY frontend/. ./
+COPY frontend/index.html ./
+COPY frontend/tsconfig.json ./
+COPY frontend/vite.config.ts ./
+COPY frontend/postcss.config.js ./
+COPY frontend/tailwind.config.js ./
+COPY frontend/.env ./
+COPY frontend/public ./public
+COPY frontend/src ./src
 RUN npm run build
 
 # Stage 2: Serve
