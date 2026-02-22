@@ -95,10 +95,17 @@ services:
         condition: service_healthy
     restart: "no"
     command: >
-      sh -c "set -e
-      until curl -fs http://elasticsearch:9200/_cluster/health >/dev/null; do sleep 2; done
-      curl -fs -X PUT 'http://elasticsearch:9200/_index_template/carizon-cars' -H 'Content-Type: application/json' -d '{\"index_patterns\":[\"cars\"],\"priority\":500,\"template\":{\"settings\":{\"number_of_replicas\":0}}}'
-      curl -fs -X PUT 'http://elasticsearch:9200/cars/_settings' -H 'Content-Type: application/json' -d '{\"index\":{\"number_of_replicas\":0}}' || true
+      sh -c "i=0
+      while [ \"$i\" -lt 60 ] && ! curl -sf http://elasticsearch:9200/_cluster/health | grep -q '\"status\":\"yellow\\|\"status\":\"green\"'; do
+        i=$((i+1))
+        sleep 2
+      done
+      if ! curl -sf http://elasticsearch:9200/_cluster/health >/dev/null; then
+        echo 'elasticsearch bootstrap skipped: health check timeout'
+        exit 0
+      fi
+      curl -s -X PUT 'http://elasticsearch:9200/_index_template/carizon-cars' -H 'Content-Type: application/json' -d '{\"index_patterns\":[\"cars\"],\"priority\":500,\"template\":{\"settings\":{\"number_of_replicas\":0}}}' || true
+      curl -s -X PUT 'http://elasticsearch:9200/cars/_settings' -H 'Content-Type: application/json' -d '{\"index\":{\"number_of_replicas\":0}}' || true
       echo 'elasticsearch bootstrap done'"
 
   # ── Chroma (RAG 벡터) ─────────────────────────
