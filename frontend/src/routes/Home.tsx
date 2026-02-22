@@ -1,10 +1,20 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import Recommendation from '@/routes/Recommendation'
+import SeoMeta from '@/components/SeoMeta'
 
 export default function Home() {
     return (
-        <div className="animate-fade-in grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-3 gap-6 lg:gap-8">
+        <>
+            <SeoMeta
+                title="중고차 통합 검색 플랫폼 Carizon - 차량 매물 추천과 빠른 검색"
+                description="중고차 매물 검색부터 플랫폼 가격 비교까지 한 번에 확인하세요. 제조사·모델별 중고차 추천, 조건별 필터 검색으로 나에게 맞는 차량을 빠르게 찾을 수 있습니다."
+                keywords="중고차, 중고차 검색, 중고차 매물, 중고차 추천, Carizon, 제조사별 중고차, 가격비교"
+                canonicalPath="/"
+                ogImage="/favicon.png"
+            />
+
+            <div className="animate-fade-in grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-3 gap-6 lg:gap-8">
             {/* 왼쪽 절반 · 세로 3칸: AI 차량 추천 (입력 유지, 추천받기 누르면 AI 추천 페이지로 이동) */}
             <div className="lg:row-span-3 min-h-0 flex flex-col">
                 <Recommendation simplified />
@@ -85,7 +95,8 @@ export default function Home() {
                         </Link>
                     </div>
                 </FeatureCard>
-        </div>
+            </div>
+        </>
     )
 }
 

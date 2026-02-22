@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 
 // 상대경로로 고정 (별칭 @ 안 씀)
 import FiltersPanel from '../components/FiltersPanel'
 import CarCard from '../components/CarCard'
 // API 타입/함수 (경로는 실제 위치에 맞게 조정: services가 src 바로 아래면 ../services/api)
 import { searchCars } from '../services/api'
+import SeoMeta from '@/components/SeoMeta'
 
 // 리스트 항목 타입 – 불확실하면 여기서 다시 선언(프론트만 씀)
 export type CarListItem = {
@@ -34,6 +35,7 @@ export type CarListResponse = {
 
 export default function Search() {
     const [sp, setSp] = useSearchParams()
+    const location = useLocation()
     const [list, setList] = useState<CarListItem[]>([])
     const [page, setPage] = useState(0)
     const [totalPages, setTotalPages] = useState(0)
@@ -65,6 +67,17 @@ export default function Search() {
     // URL의 page 동기화
     useEffect(() => { setPage(Number(params.page || 0)) }, [params.page])
 
+    const canonicalPath = `${location.pathname}${sp.toString() ? `?${sp.toString()}` : ''}`
+    const queryText = params.query?.trim()
+    const makerText = params.makerCode || params.maker
+    const sortText = params.sort || '최신'
+    const seoTitle = queryText
+        ? `"${queryText}" 중고차 매물 검색 - Carizon`
+        : '중고차 매물 검색 - Carizon'
+    const seoDescription = queryText || makerText
+        ? `조건 검색으로 맞춤형 중고차 매물을 빠르게 찾으세요. ${queryText ? `"${queryText}" ` : ''}${makerText ? `${makerText} ` : ''}${sortText ? `(${sortText}) ` : ''}실시간 매물 목록과 가격을 제공합니다.`
+        : '제조사, 모델, 연식, 지역, 가격, 연료 조건으로 중고차 매물을 검색하고 합리적인 가격의 차량을 빠르게 찾을 수 있습니다.'
+
     // 필터 변경 → URL 업데이트
     const setFilters = (v: Record<string, any>) => {
         const usp = new URLSearchParams()
@@ -76,7 +89,16 @@ export default function Search() {
     }
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 animate-fade-in">
+        <>
+            <SeoMeta
+                title={seoTitle}
+                description={seoDescription}
+                canonicalPath={canonicalPath}
+                keywords="중고차 검색, 중고차 매물, 제조사 검색, 차량 가격 비교, Carizon 검색"
+                ogImage="/favicon.png"
+            />
+
+            <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 animate-fade-in">
             <FiltersPanel value={params} onChange={setFilters} onSearch={() => fetchPage(0)} />
 
             <section className="space-y-6">
@@ -208,6 +230,7 @@ export default function Search() {
                     )
                 })()}
             </section>
-        </div>
+            </div>
+        </>
     )
 }

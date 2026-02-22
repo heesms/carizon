@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { getRecommendations, type RecommendationResponse, type RecommendedCar } from '@/api/recommendations'
 import { getLikeInfo, toggleLike, type LikeInfo } from '@/api/likes'
+import SeoMeta from '@/components/SeoMeta'
 
 const MOBILE_MEDIA = '(max-width: 767px)'
 const RECOMMENDATION_CACHE_KEY = 'carizon_recommendation'
@@ -33,6 +34,12 @@ export default function Recommendation({ simplified = false }: RecommendationPro
     const [error, setError] = useState<string | null>(null)
     const resultRef = useRef<HTMLDivElement>(null)
     const hasFetchedFromParams = useRef(false)
+    const seoTitle = simplified
+        ? '중고차 AI 추천 - Carizon'
+        : 'AI 기반 중고차 추천 결과 - Carizon'
+    const seoDescription = simplified
+        ? '한 줄 검색으로 중고차를 추천받고, 조건별로 가격과 매물을 비교해보세요.'
+        : '입력한 조건(예산, 연식, 연료, 차종) 기반으로 중고차를 AI 추천해줍니다.'
 
     // 메인에서 넘어온 경우 URL 쿼리로 폼 채우고, 캐시 있으면 복원 / 없으면 자동 요청 (뒤로가기 시 재조회 방지)
     useEffect(() => {
@@ -370,7 +377,16 @@ export default function Recommendation({ simplified = false }: RecommendationPro
     }
 
     return (
-        <div className="space-y-8 animate-fade-in">
+        <>
+            <SeoMeta
+                title={seoTitle}
+                description={seoDescription}
+                canonicalPath={simplified ? undefined : '/recommendation'}
+                keywords="중고차 AI추천, 차량 추천, 중고차 추천, AI 차량 매칭"
+                ogImage="/favicon.png"
+            />
+
+            <div className="space-y-8 animate-fade-in">
             {/* 헤더 섹션 */}
             <section className="relative overflow-hidden bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-700 rounded-2xl lg:rounded-3xl p-8 lg:p-12 text-white">
                 <div className="absolute inset-0 bg-black/10"></div>
@@ -613,7 +629,8 @@ export default function Recommendation({ simplified = false }: RecommendationPro
                     )}
                 </div>
             )}
-        </div>
+            </div>
+        </>
     )
 }
 

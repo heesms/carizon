@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { getCarDetail, type CarDetail as CarDetailType } from '@/services/api'
+import SeoMeta from '@/components/SeoMeta'
 
 const MOBILE_MEDIA = '(max-width: 767px)'
 function useIsMobile() {
@@ -42,6 +43,13 @@ export default function CarDetail(){
     const [detail, setDetail] = useState<CarDetailType | null>(null)
     const [bigSrc, setBigSrc] = useState<string>('/image/car/noimage/noimage.png')
     const [loading, setLoading] = useState(true)
+    const carTitle = detail
+        ? `${detail.specs?.maker || ''} ${detail.specs?.model || ''} ${detail.specs?.trim || ''} 중고차 매물 상세`
+        : '중고차 매물 상세 페이지'
+    const carDescription = detail
+        ? `${detail.specs?.maker || ''} ${detail.specs?.model || ''} ${detail.specs?.trim || ''}의 연식, 주행거리, 연료, 지역, 변속기 정보를 포함한 차량 가격 비교 페이지입니다.`
+        : '중고차 상세 스펙, 연식, 주행거리, 연료 정보와 플랫폼별 가격을 비교할 수 있습니다.'
+    const carCanonicalPath = `/cars/${id || ''}`
 
     useEffect(()=>{
         if(!id) return
@@ -111,28 +119,56 @@ export default function CarDetail(){
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                    <div className="spinner w-12 h-12 mx-auto mb-4"></div>
-                    <p className="text-gray-600">로딩 중...</p>
+            <>
+                <SeoMeta
+                    title={carTitle}
+                    description={carDescription}
+                    canonicalPath={carCanonicalPath}
+                    keywords="중고차 상세, 차량 스펙, 가격 비교, 플랫폼별 가격"
+                    ogImage="/favicon.png"
+                />
+
+                <div className="flex items-center justify-center min-h-[400px]">
+                    <div className="text-center">
+                        <div className="spinner w-12 h-12 mx-auto mb-4"></div>
+                        <p className="text-gray-600">로딩 중...</p>
+                    </div>
                 </div>
-            </div>
+            </>
         )
     }
 
     if (!detail) {
         return (
-            <div className="modern-card p-12 text-center">
-                <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-gray-600 text-lg">차량 정보를 찾을 수 없습니다</p>
-            </div>
+            <>
+                <SeoMeta
+                    title={carTitle}
+                    description={carDescription}
+                    canonicalPath={carCanonicalPath}
+                    keywords="중고차 상세, 차량 스펙, 가격 비교, 차량 플랫폼 비교"
+                    ogImage="/favicon.png"
+                />
+                <div className="modern-card p-12 text-center">
+                    <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-gray-600 text-lg">차량 정보를 찾을 수 없습니다</p>
+                </div>
+            </>
         )
     }
 
     return (
-        <div className="space-y-6 lg:space-y-8 animate-fade-in">
+        <>
+            <SeoMeta
+                title={carTitle}
+                description={carDescription}
+                canonicalPath={carCanonicalPath}
+                keywords="중고차 상세, 차량 스펙, 가격 비교, 플랫폼별 가격"
+                ogImage="/favicon.png"
+            />
+
+            <div className="space-y-6 lg:space-y-8 animate-fade-in">
             {/* 상단 히어로 영역 */}
             <section className="modern-card p-6 lg:p-8">
                 <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
@@ -301,6 +337,7 @@ export default function CarDetail(){
                 </div>
             </section>
         </div>
+        </>
     )
 }
 
