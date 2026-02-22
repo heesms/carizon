@@ -1,0 +1,9 @@
+services:
+  carizon-frontend:
+    image: ghcr.io/heesms/carizon-frontend:latest
+    build:
+      context: .
+    container_name: carizon-frontend
+    ports:
+      - "3000:80"
+    restart: unless-stopped
