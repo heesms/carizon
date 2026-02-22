@@ -1,16 +1,18 @@
-import React from 'react'
+import { useEffect } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, useLocation, useNavigate, type Location } from 'react-router-dom'
 import './main.css'
 
-import Layout    from './components/Layout'
-import Home      from './pages/Home'
-import Search    from './pages/Search'
+import Layout from './components/Layout'
+import Home from './pages/Home'
+import Search from './pages/Search'
 import CarDetail from './pages/CarDetail'
 import Recommendation from './pages/Recommendation'
 import MyLikes from './pages/MyLikes'
 import AiRankingBest from './pages/AiRankingBest'
 import Info from './pages/Info'
+import { applyRouteSeo } from './utils/seo'
+import { initGoogleAnalytics, trackPageView } from './utils/analytics'
 
 type AppLocationState = { backgroundLocation?: Location }
 
@@ -18,6 +20,16 @@ function AppRoutes() {
   const location = useLocation()
   const state = (location.state ?? {}) as AppLocationState
   const backgroundLocation = state.backgroundLocation
+
+  useEffect(() => {
+    initGoogleAnalytics()
+  }, [])
+
+  useEffect(() => {
+    const fullPath = `${location.pathname}${location.search}`
+    const seoMeta = applyRouteSeo(location.pathname, location.search)
+    trackPageView(fullPath, seoMeta.title)
+  }, [location.pathname, location.search])
 
   return (
     <>
