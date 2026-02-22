@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { getBodyTypes, getMakers, getModelGroups, getModels, getTrims, type CodeItem } from '@/api/codes'
+import { getBodyTypes, getFuels, getMakers, getModelGroups, getModels, getTrims, type CodeItem } from '@/api/codes'
 
 type Filters = Record<string, string | number | undefined>
 
@@ -12,11 +12,6 @@ type Props = {
 
 type SearchMode = 'structured' | 'text'
 
-const BODY_TYPE_OPTIONS = [
-  '', '경차', '소형', '준중형', '중형', '대형', 'SUV', 'RV', '승합', '스포츠카', '트럭', '화물', '상용', '기타',
-]
-
-const FUEL_OPTIONS = ['가솔린', '디젤', '하이브리드', '전기', 'LPG']
 const CURRENT_YEAR = new Date().getFullYear()
 const YEAR_MIN_BOUND = 1990
 const YEAR_MAX_BOUND = Math.max(2027, CURRENT_YEAR + 1)
@@ -54,13 +49,42 @@ const makeFallbackSvg = (label: string) => {
 }
 
 const isDomesticMaker = (maker: CodeItem) => {
-  if (maker.domestic === 1 || maker.domestic === true) return true
-  const raw = String(maker.countryCode ?? '').trim()
-  const up = raw.toUpperCase()
-  return raw === '국산' || up === 'KR' || up === 'KOR' || up === 'KO'
+  const domesticFlag = maker.domestic
+  if (domesticFlag === true || domesticFlag === 1) return true
+  if (domesticFlag === false || domesticFlag === 0) return false
+  if (typeof domesticFlag === 'string') {
+    const normalizedFlag = domesticFlag.trim().toUpperCase()
+    if (['1', 'Y', 'YES', 'TRUE', 'DOMESTIC', 'KOREA', 'KR', '국산', '국내'].includes(normalizedFlag)) return true
+    if (['0', 'N', 'NO', 'FALSE', 'NON'].includes(normalizedFlag)) return false
+  }
+
+  const rawCode = String(maker.countryCode ?? '').trim().toUpperCase().replace(/\s/g, '')
+  const rawName = String(maker.countryName ?? '').trim()
+  const rawNameUp = rawName.toUpperCase()
+  if (rawCode === 'KR' || rawCode === 'KOR' || rawCode === 'KOREA') return true
+  if (rawCode === 'KO') return true
+  if (/^82$|^082$|^SK$|^KOREA$|^KOREAN$|^DOMESTIC$/.test(rawCode)) return true
+  if (rawName.includes('국산') || rawName.includes('국내') || rawName.includes('대한민국') || rawName.includes('한국')) return true
+  if (rawNameUp.includes('DOMESTIC') || rawNameUp.includes('KOREA')) return true
+  if (['101', '102', '103', '104', '105', '189'].includes(String(maker.code).trim())) return true
+  return false
 }
 
-const countOf = (item: CodeItem) => Number(item.carCount ?? 0)
+const parseCountValue = (item: CodeItem) => {
+  const raw = item.carCount
+  if (raw == null) return null
+  const n = Number(String(raw).replace(/,/g, ''))
+  return Number.isFinite(n) ? n : null
+}
+
+const countOf = (item: CodeItem) => parseCountValue(item) ?? 0
+const hasCount = (item: CodeItem) => parseCountValue(item) !== null
+
+const parseCount = (item: CodeItem) => {
+  if (!hasCount(item)) return null
+  const value = countOf(item)
+  return Number.isFinite(value) ? value : null
+}
 
 const sortByCountThenName = (a: CodeItem, b: CodeItem) => {
   const ac = countOf(a)
@@ -134,7 +158,8 @@ function ModelLogo({ modelCode, modelName, className }: { modelCode: string; mod
 }
 
 function MakerCard({ maker, selected, onSelect }: { maker: CodeItem; selected: boolean; onSelect: () => void }) {
-  const disabled = countOf(maker) <= 0
+  const disabled = hasCount(maker) && countOf(maker) <= 0
+  const makerCount = parseCount(maker)
   return (
     <button
       disabled={disabled}
@@ -145,7 +170,14 @@ function MakerCard({ maker, selected, onSelect }: { maker: CodeItem; selected: b
       title={maker.name}
     >
       <MakerLogo makerCode={maker.code} makerName={maker.name} />
-      <span className="min-w-0 text-xs font-semibold truncate block">{maker.name}</span>
+      <span className="min-w-0 flex-1">
+        <span className="text-xs font-semibold truncate block">{maker.name}</span>
+        {hasCount(maker) && (
+          <span className="text-[10px] text-gray-400">
+            {makerCount ?? 0} {makerCount && makerCount > 0 ? '대' : '건'}
+          </span>
+        )}
+      </span>
     </button>
   )
 }
@@ -414,6 +446,9 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   const [bodyTypeError, setBodyTypeError] = useState('')
   const [fuelPickerOpen, setFuelPickerOpen] = useState(false)
   const [fuelDraftCodes, setFuelDraftCodes] = useState<string[]>(parseCsvTokens(value.fuel))
+  const [fuelItems, setFuelItems] = useState<CodeItem[]>([])
+  const [fuelLoading, setFuelLoading] = useState(false)
+  const [fuelError, setFuelError] = useState('')
   const [textQueryDraft, setTextQueryDraft] = useState(String(value.q ?? ''))
   const [searchMode, setSearchMode] = useState<SearchMode>(
     String(value.q ?? '').trim() ? 'text' : 'structured'
@@ -436,6 +471,30 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     .split(',')
     .map(v => v.trim())
     .filter(Boolean)
+  const countFilters = useMemo(() => ({
+    yearMin: value.yearMin,
+    yearMax: value.yearMax,
+    kmMin: value.kmMin,
+    kmMax: value.kmMax,
+    region: value.region,
+    priceMin: value.priceMin,
+    priceMax: value.priceMax,
+    fuel: value.fuel,
+    bodyType: value.bodyType,
+    carNo: value.carNo,
+  }), [
+    value.yearMin,
+    value.yearMax,
+    value.kmMin,
+    value.kmMax,
+    value.region,
+    value.priceMin,
+    value.priceMax,
+    value.fuel,
+    value.bodyType,
+    value.carNo,
+  ])
+  const countFilterKey = useMemo(() => JSON.stringify(countFilters), [countFilters])
   const hasStructuredSelection = Boolean(makerCode || modelGroupCode || modelCode || trimCode)
 
   const priceMinValue = clamp(toNum(value.priceMin, PRICE_MIN_BOUND), PRICE_MIN_BOUND, PRICE_MAX_BOUND)
@@ -481,7 +540,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     setMakersLoading(true)
     setMakersError('')
     try {
-      const data = await getMakers()
+      const data = await getMakers(countFilters)
       setMakers(data)
     } catch {
       setMakers([])
@@ -493,21 +552,20 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
   useEffect(() => {
     if (!makerCode) { setModelGroups([]); return }
-    getModelGroups(makerCode).then(setModelGroups).catch(() => setModelGroups([]))
-  }, [makerCode])
+    getModelGroups(makerCode, countFilters).then(setModelGroups).catch(() => setModelGroups([]))
+  }, [makerCode, countFilterKey])
   useEffect(() => {
-    if (!makerCode) return
-    if (makers.length > 0 || makersLoading) return
+    if (makersLoading) return
     loadMakers()
-  }, [makerCode, makers.length, makersLoading])
+  }, [countFilterKey])
   useEffect(() => {
     if (!makerCode || !modelGroupCode) { setModels([]); return }
-    getModels(makerCode, modelGroupCode).then(setModels).catch(() => setModels([]))
-  }, [makerCode, modelGroupCode])
+    getModels(makerCode, modelGroupCode, countFilters).then(setModels).catch(() => setModels([]))
+  }, [makerCode, modelGroupCode, countFilterKey])
   useEffect(() => {
     if (!makerCode || !singleModelGroupCode || !singleModelCode) { setTrims([]); return }
-    getTrims(makerCode, singleModelGroupCode, singleModelCode).then(setTrims).catch(() => setTrims([]))
-  }, [makerCode, singleModelGroupCode, singleModelCode])
+    getTrims(makerCode, singleModelGroupCode, singleModelCode, countFilters).then(setTrims).catch(() => setTrims([]))
+  }, [makerCode, singleModelGroupCode, singleModelCode, countFilterKey])
 
   useEffect(() => {
     if (!makerCode) setSelectedModelGroupByCode({})
@@ -575,11 +633,20 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setBodyTypePickerOpen(false) }
     document.body.style.overflow = 'hidden'
     window.addEventListener('keydown', onEsc)
+    setBodyTypeLoading(true)
+    setBodyTypeError('')
+    getBodyTypes(countFilters)
+      .then(setBodyTypeItems)
+      .catch(() => {
+        setBodyTypeItems([])
+        setBodyTypeError('차종 목록을 불러오지 못했습니다.')
+      })
+      .finally(() => setBodyTypeLoading(false))
     return () => {
       document.body.style.overflow = prevOverflow
       window.removeEventListener('keydown', onEsc)
     }
-  }, [bodyTypePickerOpen])
+  }, [bodyTypePickerOpen, countFilterKey])
 
   useEffect(() => {
     if (!fuelPickerOpen) return
@@ -587,11 +654,20 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setFuelPickerOpen(false) }
     document.body.style.overflow = 'hidden'
     window.addEventListener('keydown', onEsc)
+    setFuelLoading(true)
+    setFuelError('')
+    getFuels(countFilters)
+      .then(setFuelItems)
+      .catch(() => {
+        setFuelItems([])
+        setFuelError('연료 목록을 불러오지 못했습니다.')
+      })
+      .finally(() => setFuelLoading(false))
     return () => {
       document.body.style.overflow = prevOverflow
       window.removeEventListener('keydown', onEsc)
     }
-  }, [fuelPickerOpen])
+  }, [fuelPickerOpen, countFilterKey])
 
   useEffect(() => {
     if (!modelPickerOpen) return
@@ -618,14 +694,14 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     }
     setPickerModelGroupsLoading(true)
     setPickerModelGroupsError('')
-    getModelGroups(pickerMakerCode)
+    getModelGroups(pickerMakerCode, countFilters)
       .then(setPickerModelGroups)
       .catch(() => {
         setPickerModelGroups([])
         setPickerModelGroupsError('모델그룹을 불러오지 못했습니다.')
       })
       .finally(() => setPickerModelGroupsLoading(false))
-  }, [modelPickerOpen, pickerMakerCode])
+  }, [modelPickerOpen, pickerMakerCode, countFilterKey])
 
   const ensurePickerGroupModels = (groupCode: string) => {
     if (!pickerMakerCode || (!makerPickerOpen && !modelPickerOpen) || !groupCode) return
@@ -633,7 +709,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
     setPickerModelsLoadingByGroup(prev => ({ ...prev, [groupCode]: true }))
     setPickerModelsErrorByGroup(prev => ({ ...prev, [groupCode]: '' }))
-    getModels(pickerMakerCode, groupCode)
+    getModels(pickerMakerCode, groupCode, countFilters)
       .then(data => {
         setPickerModelsByGroup(prev => ({ ...prev, [groupCode]: data }))
       })
@@ -656,6 +732,12 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     pickerModelsByGroup,
     pickerModelsLoadingByGroup,
   ])
+  useEffect(() => {
+    if (!modelPickerOpen || !pickerMakerCode) return
+    setPickerModelsByGroup({})
+    setPickerModelsLoadingByGroup({})
+    setPickerModelsErrorByGroup({})
+  }, [modelPickerOpen, pickerMakerCode, countFilterKey])
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
     const v = e.target.value
@@ -677,17 +759,6 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
   const openBodyTypePicker = () => {
     setBodyTypeDraftCodes(selectedBodyTypes)
-    if (bodyTypeItems.length === 0 && !bodyTypeLoading) {
-      setBodyTypeLoading(true)
-      setBodyTypeError('')
-      getBodyTypes()
-        .then(setBodyTypeItems)
-        .catch(() => {
-          setBodyTypeItems([])
-          setBodyTypeError('차종 목록을 불러오지 못했습니다.')
-        })
-        .finally(() => setBodyTypeLoading(false))
-    }
     setBodyTypePickerOpen(true)
   }
 
@@ -1079,7 +1150,11 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   const activePickerMaker = makers.find(m => m.code === pickerMakerCode)
 
   const popularGroups = useMemo(
-    () => pickerModelGroups.filter(g => countOf(g) > 0).slice().sort(sortByCountThenName).slice(0, 10),
+    () => pickerModelGroups
+      .filter(g => !hasCount(g) || countOf(g) > 0)
+      .slice()
+      .sort(sortByCountThenName)
+      .slice(0, 10),
     [pickerModelGroups]
   )
 
@@ -1098,21 +1173,22 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   }
 
   const chooseMakerFromPicker = (maker: CodeItem) => {
-    if (countOf(maker) <= 0) return
+    if (hasCount(maker) && countOf(maker) <= 0) return
+    applyMaker(maker.code)
     setPickerMakerCode(maker.code)
     setPickerOpenGroupCodes([])
     setPickerModelsByGroup({})
     setPickerModelsLoadingByGroup({})
     setPickerModelsErrorByGroup({})
     setPickerSearch('')
-    applyMaker(maker.code)
     setMakerPickerOpen(false)
+    setModelPickerOpen(true)
   }
 
   const visibleTrims = trims
     .filter(t => !trimSearch.trim() || t.name.toLowerCase().includes(trimSearch.trim().toLowerCase()))
     .slice()
-    .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+    .sort(sortByCountThenName)
 
   const bodyTypeDraftSet = useMemo(() => new Set(bodyTypeDraftCodes), [bodyTypeDraftCodes])
   const fuelDraftSet = useMemo(() => new Set(fuelDraftCodes), [fuelDraftCodes])
@@ -1121,6 +1197,13 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     bodyTypeItems.forEach(it => m.set(it.code, countOf(it)))
     return m
   }, [bodyTypeItems])
+  const visibleBodyTypes = useMemo(() => bodyTypeItems.slice().sort(sortByCountThenName), [bodyTypeItems])
+  const fuelCountMap = useMemo(() => {
+    const m = new Map<string, number>()
+    fuelItems.forEach(it => m.set(it.code, countOf(it)))
+    return m
+  }, [fuelItems])
+  const visibleFuels = useMemo(() => fuelItems.slice().sort(sortByCountThenName), [fuelItems])
 
   return (
     <>
@@ -1168,7 +1251,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
           </div>
 
           {searchMode === 'structured' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className={`grid grid-cols-1 gap-3 ${!makerCode ? 'sm:grid-cols-1' : !modelCode ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
               <div>
                 <label className="text-xs font-semibold text-gray-500 block mb-1">제조사</label>
                 <div className="flex items-center gap-1.5">
@@ -1200,7 +1283,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                 </div>
               </div>
 
-              <div>
+              {makerCode && <div>
                 <label className="text-xs font-semibold text-gray-500 block mb-1">모델</label>
                 <div className="flex items-center gap-1.5">
                   <button
@@ -1239,9 +1322,9 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                     {selectedModelCodes.map(code => selectedModelNameByCode[code] ?? code).join(' · ')}
                   </p>
                 )}
-              </div>
+              </div>}
 
-              <div>
+              {makerCode && modelCode && <div>
                 <label className="text-xs font-semibold text-gray-500 block mb-1">트림</label>
                 <div className="flex items-center gap-1.5">
                   <button
@@ -1262,7 +1345,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                     />
                   )}
                 </div>
-              </div>
+              </div>}
             </div>
           ) : (
             <div>
@@ -1571,7 +1654,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                   <p className="text-xs font-semibold text-gray-500 mb-2">인기모델</p>
                   <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                     {visiblePopularGroups.map(g => {
-                      const groupDisabled = countOf(g) <= 0
+                      const groupDisabled = hasCount(g) && countOf(g) <= 0
                       const expanded = pickerOpenGroupCodes.includes(g.code)
                       const pinned = selectedPickerGroupCodeSet.has(g.code)
                       const visibleModels = visibleModelsByGroup(g.code)
@@ -1585,7 +1668,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                             onClick={() => togglePickerGroup(g.code)}
                           >
                             <span className={`font-semibold text-sm ${expanded ? 'text-brand-700' : 'text-gray-800'}`}>{g.name}</span>
-                            <span className="text-xs text-gray-400">{countOf(g).toLocaleString()}</span>
+                            <span className="text-xs text-gray-400">{hasCount(g) ? countOf(g).toLocaleString() : '정보 없음'}</span>
                           </button>
 
                           {expanded && (
@@ -1599,7 +1682,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                               {!modelsLoading && !modelsError && (
                               <>
                               {visibleModels.map(m => {
-                                const modelDisabled = countOf(m) <= 0
+                                const modelDisabled = hasCount(m) && countOf(m) <= 0
                                 const modelSelected = selectedModelCodeSet.has(m.code)
                                 return (
                                   <button
@@ -1611,7 +1694,9 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                                     <span className={`w-4 h-4 rounded border flex items-center justify-center text-[11px] font-bold ${modelSelected ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}>✓</span>
                                     <ModelLogo modelCode={m.code} modelName={m.name} />
                                     <span className="text-sm font-medium text-gray-800 text-left flex-1">{m.name}</span>
-                                    <span className="text-xs text-gray-400">{countOf(m).toLocaleString()}</span>
+                                    <span className="text-xs text-gray-400">
+                                      {hasCount(m) ? countOf(m).toLocaleString() : '-'}
+                                    </span>
                                   </button>
                                 )
                               })}
@@ -1634,7 +1719,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                   <p className="text-xs font-semibold text-gray-500 mb-2">이름순</p>
                   <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                     {visibleNameGroups.map(g => {
-                      const groupDisabled = countOf(g) <= 0
+                      const groupDisabled = hasCount(g) && countOf(g) <= 0
                       const expanded = pickerOpenGroupCodes.includes(g.code)
                       const pinned = selectedPickerGroupCodeSet.has(g.code)
                       const visibleModels = visibleModelsByGroup(g.code)
@@ -1648,7 +1733,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                             onClick={() => togglePickerGroup(g.code)}
                           >
                             <span className={`font-semibold text-sm ${expanded ? 'text-brand-700' : 'text-gray-800'}`}>{g.name}</span>
-                            <span className="text-xs text-gray-400">{countOf(g).toLocaleString()}</span>
+                            <span className="text-xs text-gray-400">{hasCount(g) ? countOf(g).toLocaleString() : '정보 없음'}</span>
                           </button>
 
                           {expanded && (
@@ -1662,7 +1747,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                               {!modelsLoading && !modelsError && (
                               <>
                               {visibleModels.map(m => {
-                                const modelDisabled = countOf(m) <= 0
+                                const modelDisabled = hasCount(m) && countOf(m) <= 0
                                 const modelSelected = selectedModelCodeSet.has(m.code)
                                 return (
                                   <button
@@ -1674,7 +1759,9 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                                     <span className={`w-4 h-4 rounded border flex items-center justify-center text-[11px] font-bold ${modelSelected ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}>✓</span>
                                     <ModelLogo modelCode={m.code} modelName={m.name} />
                                     <span className="text-sm font-medium text-gray-800 text-left flex-1">{m.name}</span>
-                                    <span className="text-xs text-gray-400">{countOf(m).toLocaleString()}</span>
+                                    <span className="text-xs text-gray-400">
+                                      {hasCount(m) ? countOf(m).toLocaleString() : '-'}
+                                    </span>
                                   </button>
                                 )
                               })}
@@ -1761,7 +1848,8 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                         setTrimPickerOpen(false)
                       }}
                     >
-                      <span className="font-medium text-sm">{t.name}</span>
+                      <span className="font-medium text-sm flex-1">{t.name}</span>
+                      {hasCount(t) && <span className="text-xs text-gray-400 ml-2">{countOf(t).toLocaleString()}</span>}
                     </button>
                   )
                 })}
@@ -1809,24 +1897,28 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                 )}
                 {!bodyTypeLoading && !bodyTypeError && (
                 <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                  {BODY_TYPE_OPTIONS.filter(Boolean).map(bt => {
-                    const selected = bodyTypeDraftSet.has(bt)
-                    const count = bodyTypeCountMap.get(bt) ?? 0
-                    const disabled = !selected && count <= 0
+                  {visibleBodyTypes.length === 0 && (
+                    <div className="px-4 py-10 text-center text-sm text-gray-500">선택 가능한 차종이 없습니다.</div>
+                  )}
+                  {visibleBodyTypes.map(bt => {
+                    const selected = bodyTypeDraftSet.has(bt.code)
+                    const hasBtCount = hasCount(bt)
+                    const count = bodyTypeCountMap.get(bt.code) ?? 0
+                    const disabled = !selected && hasBtCount && count <= 0
                     return (
                       <button
-                        key={bt}
+                        key={`body-type-${bt.code}`}
                         disabled={disabled}
                         className={`w-full px-4 py-3 text-left border-b border-gray-100 last:border-b-0 flex items-center gap-3 transition ${selected ? 'bg-brand-50 text-brand-700' : 'bg-white text-gray-800'} ${disabled ? 'opacity-35 cursor-not-allowed' : 'hover:bg-gray-50'}`}
                         onClick={() => {
                           setBodyTypeDraftCodes(prev =>
-                            prev.includes(bt) ? prev.filter(v => v !== bt) : [...prev, bt]
+                            prev.includes(bt.code) ? prev.filter(v => v !== bt.code) : [...prev, bt.code]
                           )
                         }}
                       >
                         <span className={`w-4 h-4 rounded border flex items-center justify-center text-[11px] font-bold ${selected ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}>✓</span>
-                        <p className="text-sm font-semibold flex-1">{bt}</p>
-                        <span className="text-xs text-gray-400">{count.toLocaleString()}대</span>
+                        <p className="text-sm font-semibold flex-1">{bt.name}</p>
+                        {hasBtCount && <span className="text-xs text-gray-400">{count.toLocaleString()}</span>}
                       </button>
                     )
                   })}
@@ -1877,23 +1969,41 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-gray-50">
                 <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                  {FUEL_OPTIONS.map(f => {
-                    const selected = fuelDraftSet.has(f)
-                    return (
-                      <button
-                        key={`fuel-${f}`}
-                        className="w-full px-4 py-3 text-left border-b border-gray-100 last:border-b-0 flex items-center gap-3 transition hover:bg-gray-50"
-                        onClick={() => {
-                          setFuelDraftCodes(prev =>
-                            prev.includes(f) ? prev.filter(v => v !== f) : [...prev, f]
-                          )
-                        }}
-                      >
-                        <span className={`w-4 h-4 rounded border flex items-center justify-center text-[11px] font-bold ${selected ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}>✓</span>
-                        <p className={`text-sm font-semibold flex-1 ${selected ? 'text-brand-700' : 'text-gray-800'}`}>{f}</p>
-                      </button>
-                    )
-                  })}
+                  {fuelLoading && (
+                    <div className="px-4 py-10 text-center text-sm text-gray-500">연료 목록 불러오는 중...</div>
+                  )}
+                  {!fuelLoading && fuelError && (
+                    <div className="px-4 py-10 text-center text-sm text-gray-500">{fuelError}</div>
+                  )}
+                  {!fuelLoading && !fuelError && (
+                    <>
+                      {visibleFuels.length === 0 && (
+                        <div className="px-4 py-10 text-center text-sm text-gray-500">선택 가능한 연료가 없습니다.</div>
+                      )}
+                      {visibleFuels.map(f => {
+                        const selected = fuelDraftSet.has(f.code)
+                        const hasFCount = hasCount(f)
+                        const count = fuelCountMap.get(f.code) ?? 0
+                        const disabled = !selected && hasFCount && count <= 0
+                        return (
+                          <button
+                            key={`fuel-${f.code}`}
+                            disabled={disabled}
+                            className={`w-full px-4 py-3 text-left border-b border-gray-100 last:border-b-0 flex items-center gap-3 transition ${selected ? 'bg-brand-50 text-brand-700' : 'bg-white text-gray-800'} ${disabled ? 'opacity-35 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                            onClick={() => {
+                              setFuelDraftCodes(prev =>
+                                prev.includes(f.code) ? prev.filter(v => v !== f.code) : [...prev, f.code]
+                              )
+                            }}
+                          >
+                            <span className={`w-4 h-4 rounded border flex items-center justify-center text-[11px] font-bold ${selected ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}>✓</span>
+                            <p className={`text-sm font-semibold flex-1 ${selected ? 'text-brand-700' : 'text-gray-800'}`}>{f.name}</p>
+                            {hasFCount && <span className="text-xs text-gray-400">{count.toLocaleString()}</span>}
+                          </button>
+                        )
+                      })}
+                    </>
+                  )}
                 </div>
               </div>
 
