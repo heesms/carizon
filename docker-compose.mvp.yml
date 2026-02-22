@@ -1,5 +1,3 @@
-version: '3.9'
-
 # MVP one-server stack (backend + frontend + MySQL + 필수 인프라)
 # 운영 초기 (유저 거의 없음) 기준: 최소 리소스 우선 구성
 # 추후 사용자 증가 시 Kafka/모니터링/캐시 정책 분리 권장
@@ -148,7 +146,7 @@ services:
 
   # ── Backend ─────────────────────────────────────
   app:
-    image: ghcr.io/REPLACE_GH_USER/carizon-backend:latest
+    image: ghcr.io/${GHCR_USER:-heesms}/carizon-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -187,14 +185,11 @@ services:
       ollama:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 10
+      disable: true
 
   # ── Frontend (React + Nginx) ───────────────────
   frontend:
-    image: ghcr.io/REPLACE_GH_USER/carizon-frontend:latest
+    image: ghcr.io/${GHCR_USER:-heesms}/carizon-frontend:latest
     build:
       context: .
       dockerfile: frontend/Dockerfile
@@ -207,7 +202,7 @@ services:
       - "3000:80"
     depends_on:
       app:
-        condition: service_healthy
+        condition: service_started
 
 volumes:
   mysql_data:
