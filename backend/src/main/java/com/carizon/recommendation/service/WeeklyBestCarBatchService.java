@@ -23,10 +23,10 @@ public class WeeklyBestCarBatchService {
     private final JdbcTemplate jdbc;
 
     /**
-     * 주간 Best 매물 선정 및 블로그 포스팅 내용 생성 (매주 월요일 오전 9시 실행)
+     * Best 매물 선정 및 블로그 포스팅 내용 생성 (매일 04:00 실행)
      * TODO: 실제 워드프레스 포스팅은 BlogPostService.postToWordPress() 구현 후 활성화
      */
-    @Scheduled(cron = "0 0 9 * * MON", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 0 4 * * *", zone = "Asia/Seoul")
     public void generateWeeklyBestPosts() {
         log.info("[weekly Best batch] weekly Best selection and blog post gen start");
 

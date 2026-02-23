@@ -63,6 +63,8 @@ public class WeeklyBestCarRankingService {
     private static final double FUEL_BONUS_DIESEL = 14.0;
     /** 원점수 최대값 (base 100 + 가솔린 20) → 100점 만점으로 비율 환산 시 사용 */
     private static final double MAX_RAW_SCORE = 120.0;
+    /** 후보 조회 상한. 전량 로딩으로 인한 OOM 방지용 */
+    private static final int CANDIDATE_FETCH_LIMIT = 20000;
 
     /**
      * 모델 기준 주간 Best 매물 순위 선정
@@ -242,6 +244,8 @@ public class WeeklyBestCarRankingService {
         }
 
         sql.append(" ORDER BY pc.last_seen_date DESC, pc.updated_at DESC");
+        sql.append(" LIMIT ?");
+        params.add(CANDIDATE_FETCH_LIMIT);
 
         return jdbc.query(sql.toString(), params.toArray(), (rs, rowNum) -> {
             LocalDate lastSeenDate = rs.getDate("last_seen_date") != null 
