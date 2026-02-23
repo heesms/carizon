@@ -6,16 +6,16 @@ const j = async (r: Response) => {
 
 type RawCodeItem = Record<string, unknown>
 
-type FilterValue = string | number | boolean | undefined | null
+export type FilterValue = string | number | boolean | undefined | null
 
-type CodeQuery = Record<string, FilterValue>
+export type CodeQuery = Record<string, FilterValue>
 
 export type CodeItem = {
   code: string
   name: string
   countryCode?: string
   countryName?: string
-  domestic?: number | boolean
+  domestic?: number | boolean | string
   carCount?: number
 }
 
@@ -110,36 +110,29 @@ const normalizeQuery = (filters?: CodeQuery) => {
   return usp.toString()
 }
 
-let makersCache: Record<string, CodeItem[]> = {}
-let makersPromise: Map<string, Promise<CodeItem[]>> = new Map()
+// 카운트가 포함된 요청(makers, bodyTypes, fuels)은 지속 캐시 없이 in-flight dedup만 사용
+// → SPA 내비게이션 후에도 항상 최신 카운트를 ES에서 가져옴
+const makersPromise: Map<string, Promise<CodeItem[]>> = new Map()
 const modelGroupsCache: Map<string, CodeItem[]> = new Map()
 const modelGroupsPromise: Map<string, Promise<CodeItem[]>> = new Map()
 const modelsCache: Map<string, CodeItem[]> = new Map()
 const modelsPromise: Map<string, Promise<CodeItem[]>> = new Map()
 const trimsCache: Map<string, CodeItem[]> = new Map()
 const trimsPromise: Map<string, Promise<CodeItem[]>> = new Map()
-const bodyTypesCache: Record<string, CodeItem[]> = {}
 const bodyTypesPromise: Map<string, Promise<CodeItem[]>> = new Map()
-const fuelsCache: Record<string, CodeItem[]> = {}
 const fuelsPromise: Map<string, Promise<CodeItem[]>> = new Map()
+const colorsPromise: Map<string, Promise<CodeItem[]>> = new Map()
 
 const cacheKey = (path: string, filters?: CodeQuery) => `${path}?${normalizeQuery(filters)}`
 
 export const getMakers = (filters?: CodeQuery): Promise<CodeItem[]> => {
   const key = cacheKey('makers', filters)
-  if (makersCache[key]) return Promise.resolve(makersCache[key])
   if (makersPromise.has(key)) return makersPromise.get(key)!
 
   const req = fetch(`/api/codes/makers?${normalizeQuery(filters)}`)
     .then(j)
     .then(normalizeCodeItems)
-    .then((data: CodeItem[]) => {
-      makersCache[key] = data
-      return data
-    })
-    .finally(() => {
-      makersPromise.delete(key)
-    })
+    .finally(() => { makersPromise.delete(key) })
 
   makersPromise.set(key, req)
   return req
@@ -212,19 +205,12 @@ export const getGrades = (makerCode: string, modelGroupCode: string, modelCode: 
 
 export const getBodyTypes = (filters?: CodeQuery): Promise<CodeItem[]> => {
   const key = cacheKey('body-types', filters)
-  if (bodyTypesCache[key]) return Promise.resolve(bodyTypesCache[key])
   if (bodyTypesPromise.has(key)) return bodyTypesPromise.get(key)!
 
   const req = fetch(`/api/codes/body-types?${normalizeQuery(filters)}`)
     .then(j)
     .then(normalizeCodeItems)
-    .then((data: CodeItem[]) => {
-      bodyTypesCache[key] = data
-      return data
-    })
-    .finally(() => {
-      bodyTypesPromise.delete(key)
-    })
+    .finally(() => { bodyTypesPromise.delete(key) })
 
   bodyTypesPromise.set(key, req)
   return req
@@ -232,20 +218,26 @@ export const getBodyTypes = (filters?: CodeQuery): Promise<CodeItem[]> => {
 
 export const getFuels = (filters?: CodeQuery): Promise<CodeItem[]> => {
   const key = cacheKey('fuels', filters)
-  if (fuelsCache[key]) return Promise.resolve(fuelsCache[key])
   if (fuelsPromise.has(key)) return fuelsPromise.get(key)!
 
   const req = fetch(`/api/codes/fuels?${normalizeQuery(filters)}`)
     .then(j)
     .then(normalizeCodeItems)
-    .then((data: CodeItem[]) => {
-      fuelsCache[key] = data
-      return data
-    })
-    .finally(() => {
-      fuelsPromise.delete(key)
-    })
+    .finally(() => { fuelsPromise.delete(key) })
 
   fuelsPromise.set(key, req)
+  return req
+}
+
+export const getColors = (filters?: CodeQuery): Promise<CodeItem[]> => {
+  const key = cacheKey('colors', filters)
+  if (colorsPromise.has(key)) return colorsPromise.get(key)!
+
+  const req = fetch(`/api/codes/colors?${normalizeQuery(filters)}`)
+    .then(j)
+    .then(normalizeCodeItems)
+    .finally(() => { colorsPromise.delete(key) })
+
+  colorsPromise.set(key, req)
   return req
 }

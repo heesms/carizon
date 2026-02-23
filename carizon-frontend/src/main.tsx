@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { StrictMode, useCallback, useEffect, useRef, type MouseEvent, type TouchEvent } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, useLocation, useNavigate, type Location } from 'react-router-dom'
 import './main.css'
@@ -50,22 +50,140 @@ function AppRoutes() {
   )
 }
 
+/** 바텀시트 스타일의 차량 상세 모달 (스와이프 다운으로 닫기 지원) */
 function DetailModal() {
   const navigate = useNavigate()
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const dragStartY = useRef(0)
+  const dragDeltaY = useRef(0)
+  const isDragging = useRef(false)
+  const DISMISS_THRESHOLD = 90
+
+  // 바디 스크롤 잠금
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [])
+
+  const dismiss = useCallback(() => {
+    const el = sheetRef.current
+    const isMobile = window.innerWidth < 640
+    if (el && isMobile) {
+      el.style.transition = 'transform 0.28s cubic-bezier(0.32,0.72,0,1)'
+      el.style.transform = 'translateY(100%)'
+      setTimeout(() => navigate(-1), 260)
+    } else {
+      navigate(-1)
+    }
+  }, [navigate])
+
+  // 터치 이벤트 (모바일)
+  const onTouchStart = useCallback((e: TouchEvent) => {
+    dragStartY.current = e.touches[0].clientY
+    isDragging.current = true
+    dragDeltaY.current = 0
+    if (sheetRef.current) sheetRef.current.style.transition = 'none'
+  }, [])
+
+  const onTouchMove = useCallback((e: TouchEvent) => {
+    if (!isDragging.current) return
+    const delta = Math.max(0, e.touches[0].clientY - dragStartY.current)
+    dragDeltaY.current = delta
+    if (sheetRef.current) sheetRef.current.style.transform = `translateY(${delta}px)`
+  }, [])
+
+  const onTouchEnd = useCallback(() => {
+    isDragging.current = false
+    if (dragDeltaY.current > DISMISS_THRESHOLD) {
+      dismiss()
+    } else {
+      if (sheetRef.current) {
+        sheetRef.current.style.transition = 'transform 0.25s cubic-bezier(0.32,0.72,0,1)'
+        sheetRef.current.style.transform = 'translateY(0)'
+      }
+    }
+    dragDeltaY.current = 0
+  }, [dismiss])
+
+  // 마우스 드래그 (데스크탑 테스트용)
+  const onMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging.current) return
+    const delta = Math.max(0, e.clientY - dragStartY.current)
+    dragDeltaY.current = delta
+    if (sheetRef.current) sheetRef.current.style.transform = `translateY(${delta}px)`
+  }, [])
+
+  const onMouseUp = useCallback((e: MouseEvent) => {
+    if (!isDragging.current) return
+    isDragging.current = false
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+    if (dragDeltaY.current > DISMISS_THRESHOLD) {
+      dismiss()
+    } else {
+      if (sheetRef.current) {
+        sheetRef.current.style.transition = 'transform 0.25s cubic-bezier(0.32,0.72,0,1)'
+        sheetRef.current.style.transform = 'translateY(0)'
+      }
+    }
+    dragDeltaY.current = 0
+  }, [dismiss, onMouseMove])
+
+  const onMouseDown = useCallback((e: MouseEvent) => {
+    dragStartY.current = e.clientY
+    isDragging.current = true
+    dragDeltaY.current = 0
+    if (sheetRef.current) sheetRef.current.style.transition = 'none'
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [onMouseMove, onMouseUp])
+
+  useEffect(() => {
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [onMouseMove, onMouseUp])
 
   return (
     <Routes>
       <Route
         path="/cars/:id"
         element={
-          <div className="fixed inset-0 z-50">
-            <div className="absolute inset-0 bg-black/45 animate-fade-in" onClick={() => navigate(-1)} />
-            <div className="absolute inset-0 overflow-y-auto sm:px-4 sm:py-3">
+          <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-6">
+            {/* 반투명 배경 */}
+            <div
+              className="absolute inset-0 bg-black/50 animate-fade-in"
+              onClick={dismiss}
+            />
+
+            {/* 모바일: 바텀시트 / PC: 중앙 다이얼로그 */}
+            <div
+              ref={sheetRef}
+              className="relative bg-white
+                rounded-t-2xl sm:rounded-2xl
+                shadow-2xl flex flex-col
+                w-full sm:max-w-2xl
+                animate-sheet-up sm:animate-fade-in"
+              style={{ maxHeight: '92dvh' }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* 드래그 핸들 (모바일 전용) */}
               <div
-                className="relative mx-auto w-full h-full sm:max-w-6xl sm:rounded-b-3xl sm:shadow-2xl bg-white animate-slide-down"
-                onClick={(e) => e.stopPropagation()}
+                className="sm:hidden shrink-0 flex flex-col items-center pt-3 pb-2 cursor-grab active:cursor-grabbing touch-none select-none"
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+                onMouseDown={onMouseDown}
               >
-                <CarDetail onClose={() => navigate(-1)} />
+                <div className="w-10 h-1.5 bg-gray-300 rounded-full" />
+                <p className="text-[10px] text-gray-300 mt-1 select-none">아래로 드래그해서 닫기</p>
+              </div>
+
+              {/* 스크롤 콘텐츠 */}
+              <div className="overflow-y-auto flex-1 overscroll-contain">
+                <CarDetail onClose={dismiss} />
               </div>
             </div>
           </div>
@@ -76,9 +194,9 @@ function DetailModal() {
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
+  <StrictMode>
     <BrowserRouter>
       <AppRoutes />
     </BrowserRouter>
-  </React.StrictMode>
+  </StrictMode>
 )

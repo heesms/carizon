@@ -1,6 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { getBodyTypes, getColors, getFuels, getMakers, getModelGroups, getModels, getTrims, type CodeItem } from '@/api/codes'
+import {
+  getBodyTypes,
+  getColors,
+  getFuels,
+  getMakers,
+  getModelGroups,
+  getModels,
+  getTrims,
+  type CodeItem,
+  type CodeQuery,
+} from '@/api/codes'
 
 type Filters = Record<string, string | number | undefined>
 
@@ -11,6 +21,7 @@ type Props = {
 }
 
 type SearchMode = 'structured' | 'text'
+type QueryFilterKey = Extract<keyof CodeQuery, string>
 
 const CURRENT_YEAR = new Date().getFullYear()
 const YEAR_MIN_BOUND = 1990
@@ -492,7 +503,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     .map(v => v.trim())
     .filter(Boolean)
   const selectedColors = parseCsvTokens(value.color)
-  const countFilters = useMemo(() => ({
+  const countFilters = useMemo<CodeQuery>(() => ({
     makerCode,
     modelGroupCode,
     modelCode,
@@ -525,29 +536,29 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     value.bodyType,
     value.carNo,
   ])
-  const countFiltersForMakers = useMemo(() => {
-    const next: Record<string, unknown> = { ...countFilters }
+  const countFiltersForMakers = useMemo<CodeQuery>(() => {
+    const next: CodeQuery = { ...countFilters }
     next.makerCode = undefined
     next.modelGroupCode = undefined
     next.modelCode = undefined
     next.trimCode = undefined
     return next
   }, [countFilters])
-  const countFiltersForModelGroups = useMemo(() => {
-    const next: Record<string, unknown> = { ...countFilters }
+  const countFiltersForModelGroups = useMemo<CodeQuery>(() => {
+    const next: CodeQuery = { ...countFilters }
     next.modelGroupCode = undefined
     next.modelCode = undefined
     next.trimCode = undefined
     return next
   }, [countFilters])
-  const countFiltersForModels = useMemo(() => {
-    const next: Record<string, unknown> = { ...countFilters }
+  const countFiltersForModels = useMemo<CodeQuery>(() => {
+    const next: CodeQuery = { ...countFilters }
     next.modelCode = undefined
     next.trimCode = undefined
     return next
   }, [countFilters])
-  const countFiltersForTrims = useMemo(() => {
-    const next: Record<string, unknown> = { ...countFilters }
+  const countFiltersForTrims = useMemo<CodeQuery>(() => {
+    const next: CodeQuery = { ...countFilters }
     next.trimCode = undefined
     return next
   }, [countFilters])
@@ -556,8 +567,8 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   const countFilterForModelGroupsKey = useMemo(() => JSON.stringify(countFiltersForModelGroups), [countFiltersForModelGroups])
   const countFilterForModelsKey = useMemo(() => JSON.stringify(countFiltersForModels), [countFiltersForModels])
   const countFilterForTrimsKey = useMemo(() => JSON.stringify(countFiltersForTrims), [countFiltersForTrims])
-  const removeCountFilter = (keys: Array<keyof typeof countFilters>) => {
-    const next = { ...countFilters } as Record<string, unknown>
+  const removeCountFilter = (keys: Array<QueryFilterKey>) => {
+    const next: CodeQuery = { ...countFilters }
     keys.forEach(k => {
       next[k] = undefined
     })
