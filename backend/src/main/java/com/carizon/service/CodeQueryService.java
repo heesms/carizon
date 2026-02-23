@@ -158,10 +158,14 @@ public class CodeQueryService {
       long dbCountTotal = dbRows.stream()
           .mapToLong(r -> parseCount(r.get("carCount")))
           .sum();
-      if (esCountTotal == 0 && dbCountTotal > 0) {
+      List<Map<String, Object>> enriched = enrichWithCounts(dbRows, counts);
+      long enrichedTotal = enriched.stream()
+          .mapToLong(r -> parseCount(r.get("carCount")))
+          .sum();
+      if ((esCountTotal == 0 || enrichedTotal == 0) && dbCountTotal > 0) {
         return sortByCountThenName(dbRows);
       }
-      return enrichWithCounts(dbRows, counts);
+      return enriched;
     } catch (Exception e) {
       log.warn("colors count from elasticsearch failed, fallback to db count", e);
       return sortByCountThenName(dbRows);
