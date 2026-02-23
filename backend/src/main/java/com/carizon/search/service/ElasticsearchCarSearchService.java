@@ -16,6 +16,8 @@ import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
 import co.elastic.clients.elasticsearch.core.bulk.IndexOperation;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.elasticsearch._types.aggregations.StringTermsAggregate;
+import co.elastic.clients.elasticsearch._types.aggregations.StringTermsBucket;
 import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -199,6 +201,54 @@ public class ElasticsearchCarSearchService {
         }
     }
 
+    /**
+     * 필드별 terms 집계를 통해 카운트 계산 (필터 조건 포함).
+     */
+    public Map<String, Long> countTermsByField(Map<String, Object> queryParams, String field) {
+        return countTermsByField(queryParams, field, 10000);
+    }
+
+    public Map<String, Long> countTermsByField(Map<String, Object> queryParams, String field, int size) {
+        try {
+            Query query = buildQuery(queryParams);
+            SearchResponse<Map> response = client.search(s -> s
+                    .index(INDEX)
+                    .size(0)
+                    .query(query)
+                    .aggregations("codes", a -> a.terms(t -> t.field(field).size(Math.max(1, size))))
+                    , Map.class);
+
+            if (response.aggregations() == null
+                    || response.aggregations().get("codes") == null
+                    || !response.aggregations().get("codes").isSterms()) {
+                return Map.of();
+            }
+
+            StringTermsAggregate aggregate = response.aggregations().get("codes").sterms();
+            if (aggregate.buckets() == null || aggregate.buckets().array() == null) {
+                return Map.of();
+            }
+
+            Map<String, Long> result = new LinkedHashMap<>();
+            for (StringTermsBucket bucket : aggregate.buckets().array()) {
+                String key = bucket.key();
+                if (key == null || key.trim().isEmpty()) continue;
+                result.put(key, bucket.docCount());
+            }
+            return result;
+        } catch (ElasticsearchException e) {
+            String msg = e.getMessage() != null ? e.getMessage() : "";
+            if (msg.contains("index_not_found") || msg.contains("no such index")) {
+                return Map.of();
+            }
+            log.warn("[Elasticsearch] countTermsByField failed: field={}, queryParams={}", field, queryParams, e);
+            return Map.of();
+        } catch (Exception e) {
+            log.warn("[Elasticsearch] countTermsByField failed: field={}, queryParams={}", field, queryParams, e);
+            return Map.of();
+        }
+    }
+
     private Query buildQuery(Map<String, Object> params) {
         List<Query> must = new ArrayList<>();
         List<Query> filter = new ArrayList<>();
@@ -238,13 +288,15 @@ public class ElasticsearchCarSearchService {
             filter.add(QueryBuilders.range(r -> r.field("priceMax").lte(JsonData.of(parseInt(params.get("priceMax"), Integer.MAX_VALUE)))));
         }
         if (params.get("fuel") != null && !String.valueOf(params.get("fuel")).isEmpty()) {
-            filter.add(QueryBuilders.term(t -> t.field("fuel").value(String.valueOf(params.get("fuel")))));
+            Query query = buildMultiValueFilter("fuel", params.get("fuel"));
+            if (query != null) filter.add(query);
         }
         if (params.get("transmission") != null && !String.valueOf(params.get("transmission")).isEmpty()) {
             filter.add(QueryBuilders.term(t -> t.field("transmission").value(String.valueOf(params.get("transmission")))));
         }
         if (params.get("bodyType") != null && !String.valueOf(params.get("bodyType")).isEmpty()) {
-            filter.add(QueryBuilders.term(t -> t.field("bodyType").value(String.valueOf(params.get("bodyType")))));
+            Query query = buildMultiValueFilter("bodyType", params.get("bodyType"));
+            if (query != null) filter.add(query);
         }
         if (params.get("region") != null && !String.valueOf(params.get("region")).isEmpty()) {
             filter.add(QueryBuilders.term(t -> t.field("region").value(String.valueOf(params.get("region")))));
@@ -279,6 +331,24 @@ public class ElasticsearchCarSearchService {
         if ("LOW_PRICE".equals(sort) || "LOW_KM".equals(sort)) return SortOrder.Asc;
         if ("RECENT".equals(sort)) return SortOrder.Desc;
         return SortOrder.Desc;
+    }
+
+    private Query buildMultiValueFilter(String field, Object value) {
+        List<String> values = splitCsvParams(value);
+        if (values.isEmpty()) return null;
+        if (values.size() == 1) return QueryBuilders.term(t -> t.field(field).value(values.get(0)));
+        List<Query> shoulds = values.stream()
+                .map(v -> QueryBuilders.term(t -> t.field(field).value(v)))
+                .toList();
+        return QueryBuilders.bool(b -> b.should(shoulds).minimumShouldMatch("1"));
+    }
+
+    private List<String> splitCsvParams(Object value) {
+        if (value == null) return List.of();
+        return Arrays.stream(String.valueOf(value).split(","))
+                .map(String::trim)
+                .filter(v -> !v.isEmpty())
+                .toList();
     }
 
     private String buildSearchQuery(Map<String, Object> params) {
@@ -322,9 +392,23 @@ public class ElasticsearchCarSearchService {
         if (params.get("kmMax") != null) filter.add(Map.of("range", Map.of("km", Map.of("lte", parseInt(params.get("kmMax"), Integer.MAX_VALUE)))));
         if (params.get("priceMin") != null) filter.add(Map.of("range", Map.of("priceMin", Map.of("gte", parseInt(params.get("priceMin"), 0)))));
         if (params.get("priceMax") != null) filter.add(Map.of("range", Map.of("priceMax", Map.of("lte", parseInt(params.get("priceMax"), Integer.MAX_VALUE)))));
-        if (params.get("fuel") != null && !String.valueOf(params.get("fuel")).isEmpty()) filter.add(Map.of("term", Map.of("fuel", params.get("fuel"))));
+        if (params.get("fuel") != null && !String.valueOf(params.get("fuel")).isEmpty()) {
+            List<String> fuels = splitCsvParams(params.get("fuel"));
+            if (fuels.size() == 1) {
+                filter.add(Map.of("term", Map.of("fuel", fuels.get(0))));
+            } else if (fuels.size() > 1) {
+                filter.add(buildOrTermFilterForLog("fuel", fuels));
+            }
+        }
         if (params.get("transmission") != null && !String.valueOf(params.get("transmission")).isEmpty()) filter.add(Map.of("term", Map.of("transmission", params.get("transmission"))));
-        if (params.get("bodyType") != null && !String.valueOf(params.get("bodyType")).isEmpty()) filter.add(Map.of("term", Map.of("bodyType", params.get("bodyType"))));
+        if (params.get("bodyType") != null && !String.valueOf(params.get("bodyType")).isEmpty()) {
+            List<String> bodyTypes = splitCsvParams(params.get("bodyType"));
+            if (bodyTypes.size() == 1) {
+                filter.add(Map.of("term", Map.of("bodyType", bodyTypes.get(0))));
+            } else if (bodyTypes.size() > 1) {
+                filter.add(buildOrTermFilterForLog("bodyType", bodyTypes));
+            }
+        }
         if (params.get("region") != null && !String.valueOf(params.get("region")).isEmpty()) filter.add(Map.of("term", Map.of("region", params.get("region"))));
         if (params.get("carNo") != null && !String.valueOf(params.get("carNo")).trim().isEmpty()) filter.add(Map.of("term", Map.of("carNo", String.valueOf(params.get("carNo")).trim())));
 
@@ -335,6 +419,14 @@ public class ElasticsearchCarSearchService {
         if (!must.isEmpty()) bool.put("must", must);
         if (!filter.isEmpty()) bool.put("filter", filter);
         return Map.of("bool", bool);
+    }
+
+    private Map<String, Object> buildOrTermFilterForLog(String field, List<String> values) {
+        List<Map<String, Object>> should = new ArrayList<>();
+        for (String value : values) {
+            should.add(Map.of("term", Map.of(field, value)));
+        }
+        return Map.of("bool", Map.of("should", should, "minimum_should_match", 1));
     }
 
     private Map<String, Object> createEmptyResult(Map<String, Object> queryParams) {
