@@ -533,8 +533,29 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     next.trimCode = undefined
     return next
   }, [countFilters])
+  const countFiltersForModelGroups = useMemo(() => {
+    const next: Record<string, unknown> = { ...countFilters }
+    next.modelGroupCode = undefined
+    next.modelCode = undefined
+    next.trimCode = undefined
+    return next
+  }, [countFilters])
+  const countFiltersForModels = useMemo(() => {
+    const next: Record<string, unknown> = { ...countFilters }
+    next.modelCode = undefined
+    next.trimCode = undefined
+    return next
+  }, [countFilters])
+  const countFiltersForTrims = useMemo(() => {
+    const next: Record<string, unknown> = { ...countFilters }
+    next.trimCode = undefined
+    return next
+  }, [countFilters])
   const countFilterKey = useMemo(() => JSON.stringify(countFilters), [countFilters])
   const countFilterForMakersKey = useMemo(() => JSON.stringify(countFiltersForMakers), [countFiltersForMakers])
+  const countFilterForModelGroupsKey = useMemo(() => JSON.stringify(countFiltersForModelGroups), [countFiltersForModelGroups])
+  const countFilterForModelsKey = useMemo(() => JSON.stringify(countFiltersForModels), [countFiltersForModels])
+  const countFilterForTrimsKey = useMemo(() => JSON.stringify(countFiltersForTrims), [countFiltersForTrims])
   const removeCountFilter = (keys: Array<keyof typeof countFilters>) => {
     const next = { ...countFilters } as Record<string, unknown>
     keys.forEach(k => {
@@ -599,19 +620,19 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
   useEffect(() => {
     if (!makerCode) { setModelGroups([]); return }
-    getModelGroups(makerCode, countFilters).then(setModelGroups).catch(() => setModelGroups([]))
-  }, [makerCode, countFilterKey])
+    getModelGroups(makerCode, countFiltersForModelGroups).then(setModelGroups).catch(() => setModelGroups([]))
+  }, [makerCode, countFilterForModelGroupsKey])
   useEffect(() => {
     loadMakers()
   }, [countFilterForMakersKey])
   useEffect(() => {
     if (!makerCode || !modelGroupCode) { setModels([]); return }
-    getModels(makerCode, modelGroupCode, countFilters).then(setModels).catch(() => setModels([]))
-  }, [makerCode, modelGroupCode, countFilterKey])
+    getModels(makerCode, modelGroupCode, countFiltersForModels).then(setModels).catch(() => setModels([]))
+  }, [makerCode, modelGroupCode, countFilterForModelsKey])
   useEffect(() => {
     if (!makerCode || !singleModelGroupCode || !singleModelCode) { setTrims([]); return }
-    getTrims(makerCode, singleModelGroupCode, singleModelCode, countFilters).then(setTrims).catch(() => setTrims([]))
-  }, [makerCode, singleModelGroupCode, singleModelCode, countFilterKey])
+    getTrims(makerCode, singleModelGroupCode, singleModelCode, countFiltersForTrims).then(setTrims).catch(() => setTrims([]))
+  }, [makerCode, singleModelGroupCode, singleModelCode, countFilterForTrimsKey])
 
   useEffect(() => {
     if (!makerCode) setSelectedModelGroupByCode({})
@@ -761,14 +782,14 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     }
     setPickerModelGroupsLoading(true)
     setPickerModelGroupsError('')
-    getModelGroups(pickerMakerCode, countFilters)
+    getModelGroups(pickerMakerCode, countFiltersForModelGroups)
       .then(setPickerModelGroups)
       .catch(() => {
         setPickerModelGroups([])
         setPickerModelGroupsError('모델그룹을 불러오지 못했습니다.')
       })
       .finally(() => setPickerModelGroupsLoading(false))
-  }, [modelPickerOpen, pickerMakerCode, countFilterKey])
+  }, [modelPickerOpen, pickerMakerCode, countFilterForModelGroupsKey])
 
   const ensurePickerGroupModels = (groupCode: string) => {
     if (!pickerMakerCode || (!makerPickerOpen && !modelPickerOpen) || !groupCode) return
@@ -776,7 +797,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
     setPickerModelsLoadingByGroup(prev => ({ ...prev, [groupCode]: true }))
     setPickerModelsErrorByGroup(prev => ({ ...prev, [groupCode]: '' }))
-    getModels(pickerMakerCode, groupCode, countFilters)
+    getModels(pickerMakerCode, groupCode, countFiltersForModels)
       .then(data => {
         setPickerModelsByGroup(prev => ({ ...prev, [groupCode]: data }))
       })
