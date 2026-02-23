@@ -65,6 +65,34 @@ cat "${DDL_FIXED_TMP}" | docker exec -i "${MYSQL_CONTAINER}" mysql -u"${MYSQL_RO
 
 for file in "${MIGRATIONS_DIR}"/*.sql; do
   [ -f "${file}" ] || continue
+  base="$(basename "${file}")"
+
+  # prefer safe migrations for duplicated versions
+  case "${base}" in
+    005_add_platform_car_indexes.sql)
+      safe_file="${MIGRATIONS_DIR}/005_add_platform_car_indexes_safe.sql"
+      if [ -f "${safe_file}" ]; then
+        echo "[bootstrap] run migration: ${safe_file} (safe replacement)"
+        cat "${safe_file}" | docker exec -i "${MYSQL_CONTAINER}" mysql -u"${MYSQL_ROOT_USER}" -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}"
+      else
+        echo "[bootstrap] run migration: ${file}"
+        cat "${file}" | docker exec -i "${MYSQL_CONTAINER}" mysql -u"${MYSQL_ROOT_USER}" -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}"
+      fi
+      continue
+      ;;
+    006_add_car_master_merge_indexes.sql)
+      safe_file="${MIGRATIONS_DIR}/006_add_car_master_merge_indexes_safe.sql"
+      if [ -f "${safe_file}" ]; then
+        echo "[bootstrap] run migration: ${safe_file} (safe replacement)"
+        cat "${safe_file}" | docker exec -i "${MYSQL_CONTAINER}" mysql -u"${MYSQL_ROOT_USER}" -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}"
+      else
+        echo "[bootstrap] run migration: ${file}"
+        cat "${file}" | docker exec -i "${MYSQL_CONTAINER}" mysql -u"${MYSQL_ROOT_USER}" -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}"
+      fi
+      continue
+      ;;
+  esac
+
   echo "[bootstrap] run migration: ${file}"
   cat "${file}" | docker exec -i "${MYSQL_CONTAINER}" mysql -u"${MYSQL_ROOT_USER}" -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}"
 done
