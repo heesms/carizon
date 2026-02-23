@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { getBodyTypes, getFuels, getMakers, getModelGroups, getModels, getTrims, type CodeItem } from '@/api/codes'
+import { getBodyTypes, getColors, getFuels, getMakers, getModelGroups, getModels, getTrims, type CodeItem } from '@/api/codes'
 
 type Filters = Record<string, string | number | undefined>
 
@@ -93,6 +93,21 @@ const sortByCountThenName = (a: CodeItem, b: CodeItem) => {
   return a.name.localeCompare(b.name, 'ko')
 }
 
+const BODY_TYPE_DISPLAY_ORDER = [
+  '경차',
+  '소형',
+  '준중형',
+  '중형',
+  '대형',
+  '스포츠카',
+  'RV',
+  'SUV',
+  '승합',
+  '버스',
+  '화물',
+  '기타',
+]
+
 const toNum = (v: unknown, fallback: number) => {
   const n = Number(v)
   return Number.isFinite(n) ? n : fallback
@@ -174,7 +189,7 @@ function MakerCard({ maker, selected, onSelect }: { maker: CodeItem; selected: b
         <span className="text-xs font-semibold truncate block">{maker.name}</span>
         {hasCount(maker) && (
           <span className="text-[10px] text-gray-400">
-            {makerCount ?? 0} {makerCount && makerCount > 0 ? '대' : '건'}
+            {makerCount?.toLocaleString() ?? 0}
           </span>
         )}
       </span>
@@ -444,6 +459,11 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   const [bodyTypeItems, setBodyTypeItems] = useState<CodeItem[]>([])
   const [bodyTypeLoading, setBodyTypeLoading] = useState(false)
   const [bodyTypeError, setBodyTypeError] = useState('')
+  const [colorPickerOpen, setColorPickerOpen] = useState(false)
+  const [colorDraftCodes, setColorDraftCodes] = useState<string[]>([])
+  const [colorItems, setColorItems] = useState<CodeItem[]>([])
+  const [colorLoading, setColorLoading] = useState(false)
+  const [colorError, setColorError] = useState('')
   const [fuelPickerOpen, setFuelPickerOpen] = useState(false)
   const [fuelDraftCodes, setFuelDraftCodes] = useState<string[]>(parseCsvTokens(value.fuel))
   const [fuelItems, setFuelItems] = useState<CodeItem[]>([])
@@ -471,7 +491,12 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     .split(',')
     .map(v => v.trim())
     .filter(Boolean)
+  const selectedColors = parseCsvTokens(value.color)
   const countFilters = useMemo(() => ({
+    makerCode,
+    modelGroupCode,
+    modelCode,
+    trimCode,
     yearMin: value.yearMin,
     yearMax: value.yearMax,
     kmMin: value.kmMin,
@@ -479,10 +504,15 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     region: value.region,
     priceMin: value.priceMin,
     priceMax: value.priceMax,
+    color: value.color,
     fuel: value.fuel,
     bodyType: value.bodyType,
     carNo: value.carNo,
   }), [
+    makerCode,
+    modelGroupCode,
+    modelCode,
+    trimCode,
     value.yearMin,
     value.yearMax,
     value.kmMin,
@@ -490,11 +520,19 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     value.region,
     value.priceMin,
     value.priceMax,
+    value.color,
     value.fuel,
     value.bodyType,
     value.carNo,
   ])
   const countFilterKey = useMemo(() => JSON.stringify(countFilters), [countFilters])
+  const removeCountFilter = (keys: Array<keyof typeof countFilters>) => {
+    const next = { ...countFilters } as Record<string, unknown>
+    keys.forEach(k => {
+      next[k] = undefined
+    })
+    return next
+  }
   const hasStructuredSelection = Boolean(makerCode || modelGroupCode || modelCode || trimCode)
 
   const priceMinValue = clamp(toNum(value.priceMin, PRICE_MIN_BOUND), PRICE_MIN_BOUND, PRICE_MAX_BOUND)
@@ -555,7 +593,6 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     getModelGroups(makerCode, countFilters).then(setModelGroups).catch(() => setModelGroups([]))
   }, [makerCode, countFilterKey])
   useEffect(() => {
-    if (makersLoading) return
     loadMakers()
   }, [countFilterKey])
   useEffect(() => {
@@ -635,7 +672,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     window.addEventListener('keydown', onEsc)
     setBodyTypeLoading(true)
     setBodyTypeError('')
-    getBodyTypes(countFilters)
+    getBodyTypes(removeCountFilter(['bodyType']))
       .then(setBodyTypeItems)
       .catch(() => {
         setBodyTypeItems([])
@@ -656,7 +693,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     window.addEventListener('keydown', onEsc)
     setFuelLoading(true)
     setFuelError('')
-    getFuels(countFilters)
+    getFuels(removeCountFilter(['fuel']))
       .then(setFuelItems)
       .catch(() => {
         setFuelItems([])
@@ -668,6 +705,27 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
       window.removeEventListener('keydown', onEsc)
     }
   }, [fuelPickerOpen, countFilterKey])
+
+  useEffect(() => {
+    if (!colorPickerOpen) return
+    const prevOverflow = document.body.style.overflow
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setColorPickerOpen(false) }
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onEsc)
+    setColorLoading(true)
+    setColorError('')
+    getColors(removeCountFilter(['color']))
+      .then(setColorItems)
+      .catch(() => {
+        setColorItems([])
+        setColorError('색상 목록을 불러오지 못했습니다.')
+      })
+      .finally(() => setColorLoading(false))
+    return () => {
+      document.body.style.overflow = prevOverflow
+      window.removeEventListener('keydown', onEsc)
+    }
+  }, [colorPickerOpen, countFilterKey])
 
   useEffect(() => {
     if (!modelPickerOpen) return
@@ -765,6 +823,11 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   const openFuelPicker = () => {
     setFuelDraftCodes(selectedFuels)
     setFuelPickerOpen(true)
+  }
+
+  const openColorPicker = () => {
+    setColorDraftCodes(selectedColors)
+    setColorPickerOpen(true)
   }
 
   const setPriceStart = (n: number) => {
@@ -1054,6 +1117,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
   const detailFilterCount = [
     selectedFuels.length ? 'selected' : undefined,
+    selectedColors.length ? 'selected' : undefined,
     value.carNo,
     selectedBodyTypes.length ? 'selected' : undefined,
   ].filter(v => v !== undefined && v !== '').length
@@ -1074,6 +1138,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     if (selectedBodyTypes.length > 0) chips.push(`차종 ${selectedBodyTypes.length}개`)
     if (selectedFuels.length > 0) chips.push(`연료 ${selectedFuels.length}개`)
     if (value.carNo) chips.push(`차량번호 ${String(value.carNo)}`)
+    if (selectedColors.length > 0) chips.push(`차량 색상 ${selectedColors.length}개`)
     return chips
   }, [
     makerCode,
@@ -1090,6 +1155,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     kmStartLabel,
     kmEndLabel,
     selectedBodyTypes.length,
+    selectedColors.length,
     selectedFuels.length,
     value.carNo,
     value.q,
@@ -1191,19 +1257,36 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     .sort(sortByCountThenName)
 
   const bodyTypeDraftSet = useMemo(() => new Set(bodyTypeDraftCodes), [bodyTypeDraftCodes])
+  const colorDraftSet = useMemo(() => new Set(colorDraftCodes), [colorDraftCodes])
   const fuelDraftSet = useMemo(() => new Set(fuelDraftCodes), [fuelDraftCodes])
   const bodyTypeCountMap = useMemo(() => {
     const m = new Map<string, number>()
     bodyTypeItems.forEach(it => m.set(it.code, countOf(it)))
     return m
   }, [bodyTypeItems])
-  const visibleBodyTypes = useMemo(() => bodyTypeItems.slice().sort(sortByCountThenName), [bodyTypeItems])
+  const colorCountMap = useMemo(() => {
+    const m = new Map<string, number>()
+    colorItems.forEach(it => m.set(it.code, countOf(it)))
+    return m
+  }, [colorItems])
+  const bodyTypeDisplayOrder = useMemo(() => {
+    const map = new Map<string, number>()
+    BODY_TYPE_DISPLAY_ORDER.forEach((value, index) => map.set(value, index))
+    return map
+  }, [])
+  const visibleBodyTypes = useMemo(() => bodyTypeItems.slice().sort((a, b) => {
+    const idxA = bodyTypeDisplayOrder.get(a.code) ?? (BODY_TYPE_DISPLAY_ORDER.length + 1)
+    const idxB = bodyTypeDisplayOrder.get(b.code) ?? (BODY_TYPE_DISPLAY_ORDER.length + 1)
+    if (idxA !== idxB) return idxA - idxB
+    return a.name.localeCompare(b.name, 'ko')
+  }), [bodyTypeItems, bodyTypeDisplayOrder])
   const fuelCountMap = useMemo(() => {
     const m = new Map<string, number>()
     fuelItems.forEach(it => m.set(it.code, countOf(it)))
     return m
   }, [fuelItems])
   const visibleFuels = useMemo(() => fuelItems.slice().sort(sortByCountThenName), [fuelItems])
+  const visibleColors = useMemo(() => colorItems.slice().sort(sortByCountThenName), [colorItems])
 
   return (
     <>
@@ -1494,7 +1577,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
         </div>
 
         {detailOpen && (
-          <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-3 gap-3 animate-slide-up">
+          <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-slide-up">
             <div>
               <label className="text-xs font-semibold text-gray-500 block mb-1">차종</label>
               <button
@@ -1503,6 +1586,19 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
               >
                 <span className="truncate text-gray-800">
                   {selectedBodyTypes.length > 0 ? `${selectedBodyTypes.length}개 선택` : '전체'}
+                </span>
+                <span className="text-xs text-gray-400">▼</span>
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">차량색상</label>
+              <button
+                className="w-full text-left px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white hover:border-gray-300 transition text-sm flex items-center justify-between"
+                onClick={openColorPicker}
+              >
+                <span className="truncate text-gray-800">
+                  {selectedColors.length > 0 ? `${selectedColors.length}개 선택` : '전체'}
                 </span>
                 <span className="text-xs text-gray-400">▼</span>
               </button>
@@ -2021,6 +2117,87 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                     onClick={() => {
                       onChange({ ...value, fuel: fuelDraftCodes.length ? fuelDraftCodes.join(',') : undefined })
                       setFuelPickerOpen(false)
+                    }}
+                  >
+                    선택완료
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
+      )}
+
+      {colorPickerOpen && (
+        <ModalPortal>
+        <div className="fixed inset-0 z-[220]">
+          <button className="absolute inset-0 bg-black/45" onClick={() => setColorPickerOpen(false)} />
+          <div className="absolute inset-0 md:p-6 md:flex md:items-center md:justify-center">
+            <div
+              className="h-[100dvh] md:h-auto md:max-h-[70vh] w-full md:max-w-2xl bg-white md:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+              style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+            >
+              <ModalHeader
+                title="차량색상 선택"
+                onBack={() => setColorPickerOpen(false)}
+                onClose={() => setColorPickerOpen(false)}
+              />
+
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-gray-50">
+                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                  {colorLoading && (
+                    <div className="px-4 py-10 text-center text-sm text-gray-500">색상 목록 불러오는 중...</div>
+                  )}
+                  {!colorLoading && colorError && (
+                    <div className="px-4 py-10 text-center text-sm text-gray-500">{colorError}</div>
+                  )}
+                  {!colorLoading && !colorError && (
+                    <>
+                      {visibleColors.length === 0 && (
+                        <div className="px-4 py-10 text-center text-sm text-gray-500">선택 가능한 색상이 없습니다.</div>
+                      )}
+                      {visibleColors.map(color => {
+                        const selected = colorDraftSet.has(color.code)
+                        const hasColorCount = hasCount(color)
+                        const count = colorCountMap.get(color.code) ?? 0
+                        const disabled = !selected && hasColorCount && count <= 0
+                        return (
+                          <button
+                            key={`color-${color.code}`}
+                            disabled={disabled}
+                            className={`w-full px-4 py-3 text-left border-b border-gray-100 last:border-b-0 flex items-center gap-3 transition ${selected ? 'bg-brand-50 text-brand-700' : 'bg-white text-gray-800'} ${disabled ? 'opacity-35 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                            onClick={() => {
+                              setColorDraftCodes(prev =>
+                                prev.includes(color.code) ? prev.filter(v => v !== color.code) : [...prev, color.code]
+                              )
+                            }}
+                          >
+                            <span className={`w-4 h-4 rounded border flex items-center justify-center text-[11px] font-bold ${selected ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}>✓</span>
+                            <p className={`text-sm font-semibold flex-1 ${selected ? 'text-brand-700' : 'text-gray-800'}`}>{color.name}</p>
+                            {hasColorCount && <span className="text-xs text-gray-400">{count.toLocaleString()}</span>}
+                          </button>
+                        )
+                      })}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="px-4 sm:px-5 py-3 border-t border-gray-100 bg-white flex items-center justify-between gap-3">
+                <p className="text-xs text-gray-500">선택 {colorDraftCodes.length}개</p>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="btn-ghost text-xs text-red-500 hover:text-red-600 hover:bg-red-50"
+                    onClick={() => setColorDraftCodes([])}
+                  >
+                    선택 해제
+                  </button>
+                  <button
+                    className="btn-primary h-[36px] px-4 text-sm"
+                    onClick={() => {
+                      onChange({ ...value, color: colorDraftCodes.length ? colorDraftCodes.join(',') : undefined })
+                      setColorPickerOpen(false)
                     }}
                   >
                     선택완료

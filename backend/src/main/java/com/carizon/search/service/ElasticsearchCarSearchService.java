@@ -16,6 +16,9 @@ import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
 import co.elastic.clients.elasticsearch.core.bulk.IndexOperation;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
+import co.elastic.clients.elasticsearch._types.aggregations.LongTermsAggregate;
+import co.elastic.clients.elasticsearch._types.aggregations.LongTermsBucket;
 import co.elastic.clients.elasticsearch._types.aggregations.StringTermsAggregate;
 import co.elastic.clients.elasticsearch._types.aggregations.StringTermsBucket;
 import co.elastic.clients.elasticsearch._types.ElasticsearchException;
@@ -27,6 +30,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.function.Function;
 
 /**
  * Elasticsearch 기반 차량 검색/인덱싱 서비스.
@@ -40,6 +44,8 @@ public class ElasticsearchCarSearchService {
     private final ElasticsearchClient client;
     private final ObjectMapper objectMapper;
     private static final String INDEX = ElasticsearchConfig.CARS_INDEX;
+    private static final List<String> FUEL_LPG_ALIASES = List.of("LPG(일반인)", "LPG(일반인 구입)");
+    private static final List<String> FUEL_ELECTRIC_ALIASES = List.of("전기", "EV", "전기(EV)", "전기 EV");
 
     /**
      * 차량 검색 (페이징, 필터, 정렬, 전체 건수 포함)
@@ -203,50 +209,76 @@ public class ElasticsearchCarSearchService {
 
     /**
      * 필드별 terms 집계를 통해 카운트 계산 (필터 조건 포함).
+     * text 타입 필드인 경우 자동으로 .keyword 서브필드를 재시도한다.
+     * 집계 실패 시 예외를 throw하여 호출자가 DB fallback을 사용하게 한다.
      */
     public Map<String, Long> countTermsByField(Map<String, Object> queryParams, String field) {
         return countTermsByField(queryParams, field, 10000);
     }
 
     public Map<String, Long> countTermsByField(Map<String, Object> queryParams, String field, int size) {
+        Query query = buildQuery(queryParams);
         try {
-            Query query = buildQuery(queryParams);
-            SearchResponse<Map> response = client.search(s -> s
-                    .index(INDEX)
-                    .size(0)
-                    .query(query)
-                    .aggregations("codes", a -> a.terms(t -> t.field(field).size(Math.max(1, size))))
-                    , Map.class);
-
-            if (response.aggregations() == null
-                    || response.aggregations().get("codes") == null
-                    || !response.aggregations().get("codes").isSterms()) {
-                return Map.of();
-            }
-
-            StringTermsAggregate aggregate = response.aggregations().get("codes").sterms();
-            if (aggregate.buckets() == null || aggregate.buckets().array() == null) {
-                return Map.of();
-            }
-
-            Map<String, Long> result = new LinkedHashMap<>();
-            for (StringTermsBucket bucket : aggregate.buckets().array()) {
-                String key = bucket.key();
-                if (key == null || key.trim().isEmpty()) continue;
-                result.put(key, bucket.docCount());
-            }
-            return result;
+            return doTermsAgg(query, field, size);
         } catch (ElasticsearchException e) {
             String msg = e.getMessage() != null ? e.getMessage() : "";
             if (msg.contains("index_not_found") || msg.contains("no such index")) {
-                return Map.of();
+                return Map.of(); // 인덱스 없음 — 조용히 빈 맵 반환
+            }
+            // text 타입 필드 또는 all shards failed: .keyword 서브필드로 재시도
+            if (!field.endsWith(".keyword")) {
+                try {
+                    Map<String, Long> result = doTermsAgg(query, field + ".keyword", size);
+                    log.debug("[Elasticsearch] countTermsByField using '{}.keyword' succeeded", field);
+                    return result;
+                } catch (Exception e2) {
+                    log.debug("[Elasticsearch] countTermsByField .keyword fallback also failed: field={}, err={}", field, e2.getMessage());
+                }
             }
             log.warn("[Elasticsearch] countTermsByField failed: field={}, queryParams={}", field, queryParams, e);
-            return Map.of();
+            throw new RuntimeException("[ES] countTermsByField failed: " + field, e);
         } catch (Exception e) {
             log.warn("[Elasticsearch] countTermsByField failed: field={}, queryParams={}", field, queryParams, e);
+            throw new RuntimeException("[ES] countTermsByField failed: " + field, e);
+        }
+    }
+
+    private Map<String, Long> doTermsAgg(Query query, String field, int size) throws java.io.IOException {
+        SearchResponse<Map> response = client.search(s -> s
+                .index(INDEX)
+                .size(0)
+                .query(query)
+                .aggregations("codes", a -> a.terms(t -> t.field(field).size(Math.max(1, size))))
+                , Map.class);
+
+        if (response.aggregations() == null || response.aggregations().get("codes") == null) {
             return Map.of();
         }
+
+        Map<String, Long> result = new LinkedHashMap<>();
+        Aggregate agg = response.aggregations().get("codes");
+
+        if (agg.isSterms()) {
+            // 문자열 필드 (keyword / text.keyword)
+            StringTermsAggregate sterms = agg.sterms();
+            if (sterms.buckets() == null || sterms.buckets().array() == null) return Map.of();
+            for (StringTermsBucket bucket : sterms.buckets().array()) {
+                String key = bucket.key().stringValue();
+                if (key == null || key.trim().isEmpty()) continue;
+                result.put(key, bucket.docCount());
+            }
+        } else if (agg.isLterms()) {
+            // 숫자처럼 생긴 코드(101, 102...)가 long으로 dynamic mapping된 경우
+            LongTermsAggregate lterms = agg.lterms();
+            if (lterms.buckets() == null || lterms.buckets().array() == null) return Map.of();
+            for (LongTermsBucket bucket : lterms.buckets().array()) {
+                result.put(String.valueOf(bucket.key()), bucket.docCount());
+            }
+        } else {
+            return Map.of();
+        }
+
+        return result;
     }
 
     private Query buildQuery(Map<String, Object> params) {
@@ -288,14 +320,18 @@ public class ElasticsearchCarSearchService {
             filter.add(QueryBuilders.range(r -> r.field("priceMax").lte(JsonData.of(parseInt(params.get("priceMax"), Integer.MAX_VALUE)))));
         }
         if (params.get("fuel") != null && !String.valueOf(params.get("fuel")).isEmpty()) {
-            Query query = buildMultiValueFilter("fuel", params.get("fuel"));
+            Query query = buildMultiValueFilter("fuel", normalizeQueryListValue(params.get("fuel"), this::normalizeFuelQueryValues));
             if (query != null) filter.add(query);
         }
         if (params.get("transmission") != null && !String.valueOf(params.get("transmission")).isEmpty()) {
             filter.add(QueryBuilders.term(t -> t.field("transmission").value(String.valueOf(params.get("transmission")))));
         }
         if (params.get("bodyType") != null && !String.valueOf(params.get("bodyType")).isEmpty()) {
-            Query query = buildMultiValueFilter("bodyType", params.get("bodyType"));
+            Query query = buildMultiValueFilter("bodyType", normalizeQueryListValue(params.get("bodyType"), this::normalizeBodyTypeQueryValues));
+            if (query != null) filter.add(query);
+        }
+        if (params.get("color") != null && !String.valueOf(params.get("color")).isEmpty()) {
+            Query query = buildMultiValueFilter("color", params.get("color"));
             if (query != null) filter.add(query);
         }
         if (params.get("region") != null && !String.valueOf(params.get("region")).isEmpty()) {
@@ -349,6 +385,48 @@ public class ElasticsearchCarSearchService {
                 .map(String::trim)
                 .filter(v -> !v.isEmpty())
                 .toList();
+    }
+
+    private Object normalizeQueryListValue(Object value, Function<String, List<String>> normalizer) {
+        if (value == null) return null;
+        String raw = String.valueOf(value);
+        List<String> normalized = Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(v -> !v.isBlank())
+                .flatMap(v -> normalizer.apply(v).stream())
+                .filter(v -> v != null && !v.isBlank())
+                .distinct()
+                .toList();
+        if (normalized.isEmpty()) return null;
+        return String.join(",", normalized);
+    }
+
+    private List<String> normalizeFuelQueryValues(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        String normalized = value.trim();
+        String upper = normalized.toUpperCase(Locale.ROOT);
+        if (upper.equals("EV") || upper.contains("전기")) return FUEL_ELECTRIC_ALIASES;
+        if (upper.contains("LPG") && upper.contains("일반인")) return FUEL_LPG_ALIASES;
+        return List.of(normalized);
+    }
+
+    private List<String> normalizeBodyTypeQueryValues(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        String normalized = value.replaceAll("\\s+", "");
+        if (normalized.contains("경차")) return List.of("경차");
+        if (normalized.contains("소형")) return List.of("소형");
+        if (normalized.contains("준중형")) return List.of("준중형");
+        if (normalized.contains("중형")) return List.of("중형");
+        if (normalized.contains("대형")) return List.of("대형");
+        if (normalized.contains("스포츠카")) return List.of("스포츠카");
+        if (normalized.equalsIgnoreCase("RV")) return List.of("RV");
+        if (normalized.equalsIgnoreCase("SUV")) return List.of("SUV");
+        if (normalized.contains("승합")) return List.of("승합");
+        if (normalized.contains("버스")) return List.of("버스");
+        if (normalized.contains("화물") || normalized.contains("트럭") || normalized.contains("상용")) {
+            return List.of("화물", "트럭", "상용", "화물차");
+        }
+        return List.of("기타");
     }
 
     private String buildSearchQuery(Map<String, Object> params) {
