@@ -234,7 +234,7 @@ public class CodeQueryService {
 
     selectedFuels.stream()
         .filter(f -> !normalized.containsKey(f))
-        .filter(f -> rows.stream().noneMatch(r -> f.equals(asString(r.get("code"))))
+        .filter(f -> rows.stream().noneMatch(r -> f.equals(asString(r.get("code")))))
         .forEach(f -> rows.add(buildCodeItem(f, 0L)));
 
     rows = sortByCountThenName(rows);
