@@ -1,4 +1,5 @@
-import { StrictMode, useCallback, useEffect, useRef, type MouseEvent, type TouchEvent } from 'react'
+import type { MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from 'react'
+import { StrictMode, useCallback, useEffect, useRef } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, useLocation, useNavigate, type Location } from 'react-router-dom'
 import './main.css'
@@ -79,14 +80,14 @@ function DetailModal() {
   }, [navigate])
 
   // 터치 이벤트 (모바일)
-  const onTouchStart = useCallback((e: TouchEvent) => {
+  const onTouchStart = useCallback((e: ReactTouchEvent<HTMLDivElement>) => {
     dragStartY.current = e.touches[0].clientY
     isDragging.current = true
     dragDeltaY.current = 0
     if (sheetRef.current) sheetRef.current.style.transition = 'none'
   }, [])
 
-  const onTouchMove = useCallback((e: TouchEvent) => {
+  const onTouchMove = useCallback((e: ReactTouchEvent<HTMLDivElement>) => {
     if (!isDragging.current) return
     const delta = Math.max(0, e.touches[0].clientY - dragStartY.current)
     dragDeltaY.current = delta
@@ -107,14 +108,14 @@ function DetailModal() {
   }, [dismiss])
 
   // 마우스 드래그 (데스크탑 테스트용)
-  const onMouseMove = useCallback((e: MouseEvent) => {
+  const onMouseMove = useCallback((e: globalThis.MouseEvent) => {
     if (!isDragging.current) return
     const delta = Math.max(0, e.clientY - dragStartY.current)
     dragDeltaY.current = delta
     if (sheetRef.current) sheetRef.current.style.transform = `translateY(${delta}px)`
   }, [])
 
-  const onMouseUp = useCallback((e: MouseEvent) => {
+  const onMouseUp = useCallback((e: globalThis.MouseEvent) => {
     if (!isDragging.current) return
     isDragging.current = false
     document.removeEventListener('mousemove', onMouseMove)
@@ -130,7 +131,7 @@ function DetailModal() {
     dragDeltaY.current = 0
   }, [dismiss, onMouseMove])
 
-  const onMouseDown = useCallback((e: MouseEvent) => {
+  const onMouseDown = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {
     dragStartY.current = e.clientY
     isDragging.current = true
     dragDeltaY.current = 0
