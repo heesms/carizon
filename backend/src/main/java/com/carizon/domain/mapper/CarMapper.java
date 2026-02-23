@@ -27,6 +27,13 @@ public interface CarMapper {
   List<Map<String,Object>> selectModels(@Param("makerCode") String makerCode, @Param("modelGroupCode") String modelGroupCode);
   List<Map<String,Object>> selectTrims(@Param("makerCode") String makerCode, @Param("modelGroupCode") String modelGroupCode, @Param("modelCode") String modelCode);
   List<Map<String,Object>> selectGrades(@Param("makerCode") String makerCode, @Param("modelGroupCode") String modelGroupCode, @Param("modelCode") String modelCode, @Param("trimCode") String trimCode);
+  List<Map<String,Object>> selectMakersWithCounts(@Param("filters") Map<String, Object> filters);
+  List<Map<String,Object>> selectModelGroupsWithCounts(@Param("makerCode") String makerCode, @Param("filters") Map<String, Object> filters);
+  List<Map<String,Object>> selectModelsWithCounts(@Param("makerCode") String makerCode, @Param("modelGroupCode") String modelGroupCode, @Param("filters") Map<String, Object> filters);
+  List<Map<String,Object>> selectTrimsWithCounts(@Param("makerCode") String makerCode, @Param("modelGroupCode") String modelGroupCode, @Param("modelCode") String modelCode, @Param("filters") Map<String, Object> filters);
+  List<Map<String,Object>> selectBodyTypesWithCounts(@Param("filters") Map<String, Object> filters);
+  List<Map<String,Object>> selectFuelsWithCounts(@Param("filters") Map<String, Object> filters);
+  List<Map<String,Object>> selectColorsWithCounts(@Param("filters") Map<String, Object> filters);
   List<Map<String,Object>> selectCarsForIndexing(Map<String,Object> params);
   /** Keyset pagination for reindex (faster than OFFSET). lastCarId=null for first page. */
   List<Map<String,Object>> selectCarsForIndexingAfterId(Map<String,Object> params);
