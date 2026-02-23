@@ -34,9 +34,9 @@
 
   <select id="selectCars" parameterType="map" resultType="com.carizon.dto.CarListItemDto">
     SELECT cm.car_id AS carId,
-           (SELECT MAKER_NAME FROM CZ_MAKER Z WHERE CM.MAKER_CODE = Z.MAKER_CODE) MAKER_NAME,
-           (SELECT MODEL_NAME FROM CZ_MODEL Z WHERE CM.MODEL_CODE = Z.MODEL_CODE) MODEL_NAME,
-           (SELECT TRIM_NAME FROM CZ_TRIM Z WHERE CM.TRIM_CODE = Z.TRIM_CODE) TRIM_NAME,
+           (SELECT MAKER_NAME FROM cz_maker Z WHERE CM.MAKER_CODE = Z.MAKER_CODE) MAKER_NAME,
+           (SELECT MODEL_NAME FROM cz_model Z WHERE CM.MODEL_CODE = Z.MODEL_CODE) MODEL_NAME,
+           (SELECT TRIM_NAME FROM cz_trim Z WHERE CM.TRIM_CODE = Z.TRIM_CODE) TRIM_NAME,
            cm.year AS year,
            cm.mileage AS km,
            MIN(pc.price) AS priceMin,
@@ -167,7 +167,7 @@
   </select>
 
   <select id="selectMakers" resultType="map">
-    SELECT MAKER_CODE AS code, MAKER_NAME AS name FROM CZ_MAKER ORDER BY name
+    SELECT MAKER_CODE AS code, MAKER_NAME AS name FROM cz_maker ORDER BY name
   </select>
 
   <sql id="CodeFilterWhere">
@@ -223,7 +223,7 @@
       m.COUNTRY_CODE AS countryCode,
       m.COUNTRY_NAME AS countryName,
       COUNT(DISTINCT cm.CAR_ID) AS carCount
-    FROM CZ_MAKER m
+    FROM cz_maker m
     LEFT JOIN car_master cm
       ON cm.maker_code = m.MAKER_CODE
      AND cm.adv_status = 'ONSALE'
@@ -367,9 +367,9 @@
            cm.model_code AS modelCode,
            cm.trim_code AS trimCode,
            cm.grade_code AS gradeCode,
-           (SELECT MAKER_NAME FROM CZ_MAKER Z WHERE CM.MAKER_CODE = Z.MAKER_CODE) AS makerName,
-           (SELECT MODEL_NAME FROM CZ_MODEL Z WHERE CM.MODEL_CODE = Z.MODEL_CODE) AS modelName,
-           (SELECT TRIM_NAME FROM CZ_TRIM Z WHERE CM.TRIM_CODE = Z.TRIM_CODE) AS trimName,
+           (SELECT MAKER_NAME FROM cz_maker Z WHERE CM.MAKER_CODE = Z.MAKER_CODE) AS makerName,
+           (SELECT MODEL_NAME FROM cz_model Z WHERE CM.MODEL_CODE = Z.MODEL_CODE) AS modelName,
+           (SELECT TRIM_NAME FROM cz_trim Z WHERE CM.TRIM_CODE = Z.TRIM_CODE) AS trimName,
            cm.year AS year,
            cm.mileage AS km,
            MIN(pc.price) AS priceMin,
@@ -447,9 +447,9 @@
            cm.model_code AS modelCode,
            cm.trim_code AS trimCode,
            cm.grade_code AS gradeCode,
-           (SELECT MAKER_NAME FROM CZ_MAKER Z WHERE CM.MAKER_CODE = Z.MAKER_CODE) AS makerName,
-           (SELECT MODEL_NAME FROM CZ_MODEL Z WHERE CM.MODEL_CODE = Z.MODEL_CODE) AS modelName,
-           (SELECT TRIM_NAME FROM CZ_TRIM Z WHERE CM.TRIM_CODE = Z.TRIM_CODE) AS trimName,
+           (SELECT MAKER_NAME FROM cz_maker Z WHERE CM.MAKER_CODE = Z.MAKER_CODE) AS makerName,
+           (SELECT MODEL_NAME FROM cz_model Z WHERE CM.MODEL_CODE = Z.MODEL_CODE) AS modelName,
+           (SELECT TRIM_NAME FROM cz_trim Z WHERE CM.TRIM_CODE = Z.TRIM_CODE) AS trimName,
            cm.year AS year,
            cm.mileage AS km,
            MIN(pc.price) AS priceMin,
@@ -480,9 +480,9 @@
            cm.model_code AS modelCode,
            cm.trim_code AS trimCode,
            cm.grade_code AS gradeCode,
-           (SELECT MAKER_NAME FROM CZ_MAKER Z WHERE CM.MAKER_CODE = Z.MAKER_CODE) AS makerName,
-           (SELECT MODEL_NAME FROM CZ_MODEL Z WHERE CM.MODEL_CODE = Z.MODEL_CODE) AS modelName,
-           (SELECT TRIM_NAME FROM CZ_TRIM Z WHERE CM.TRIM_CODE = Z.TRIM_CODE) AS trimName,
+           (SELECT MAKER_NAME FROM cz_maker Z WHERE CM.MAKER_CODE = Z.MAKER_CODE) AS makerName,
+           (SELECT MODEL_NAME FROM cz_model Z WHERE CM.MODEL_CODE = Z.MODEL_CODE) AS modelName,
+           (SELECT TRIM_NAME FROM cz_trim Z WHERE CM.TRIM_CODE = Z.TRIM_CODE) AS trimName,
            cm.year AS year,
            cm.mileage AS km,
            MIN(pc.price) AS priceMin,

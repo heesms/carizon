@@ -198,7 +198,7 @@ public class MasterMergeService {
 
         String ids = carIds.stream().map(x -> "?").collect(Collectors.joining(","));
 
-        // 서브쿼리로 CZ_CODE_MAP 직접 조회하여 인덱스 활용 최적화
+        // 서브쿼리로 cz_code_map 직접 조회하여 인덱스 활용 최적화
         String sql = """
             UPDATE car_master cm
             /* 우선순위 1건만 뽑은 플랫폼 차량 */

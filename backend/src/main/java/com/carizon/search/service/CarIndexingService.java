@@ -36,7 +36,7 @@ public class CarIndexingService {
         try {
             elasticsearchCarSearchService.deleteAllDocuments();
 
-            int batchSize = 2000;
+            int batchSize = 1000;
             Long lastCarId = null;
             int totalIndexed = 0;
 
