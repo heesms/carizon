@@ -154,6 +154,13 @@ public class CodeQueryService {
     List<Map<String, Object>> dbRows = mapper.selectColorsWithCounts(normalized);
     try {
       Map<String, Long> counts = searchService.countTermsByField(normalized, "color");
+      long esCountTotal = counts.values().stream().mapToLong(v -> v == null ? 0L : v).sum();
+      long dbCountTotal = dbRows.stream()
+          .mapToLong(r -> parseCount(r.get("carCount")))
+          .sum();
+      if (esCountTotal == 0 && dbCountTotal > 0) {
+        return sortByCountThenName(dbRows);
+      }
       return enrichWithCounts(dbRows, counts);
     } catch (Exception e) {
       log.warn("colors count from elasticsearch failed, fallback to db count", e);
@@ -182,11 +189,9 @@ public class CodeQueryService {
     });
 
     List<Map<String, Object>> rows = new ArrayList<>();
-    Set<String> used = new LinkedHashSet<>();
 
     for (String orderedCode : BODY_TYPE_ORDER) {
       Long count = normalized.remove(orderedCode);
-      used.add(orderedCode);
       if ((count != null && count > 0) || selectedBodyTypes.contains(orderedCode)) {
         rows.add(buildCodeItem(orderedCode, count == null ? 0L : count));
       }
@@ -195,11 +200,8 @@ public class CodeQueryService {
     long etc = 0L;
     for (Map.Entry<String, Long> e : normalized.entrySet()) {
       etc += e.getValue() == null ? 0L : e.getValue();
-      used.add(e.getKey());
     }
-    if (etc > 0 || selectedBodyTypes.contains(BODY_ORDER_OTHER)) {
-      rows.add(buildCodeItem(BODY_ORDER_OTHER, etc));
-    }
+    mergeOrAddCodeItem(rows, BODY_ORDER_OTHER, etc);
 
     return rows.stream()
         .sorted(Comparator
@@ -210,6 +212,16 @@ public class CodeQueryService {
             })
             .thenComparingLong(r -> -parseCount(r.get("carCount"))))
         .collect(Collectors.toList());
+  }
+
+  private void mergeOrAddCodeItem(List<Map<String, Object>> rows, String code, long plusCount) {
+    for (Map<String, Object> row : rows) {
+      if (code.equals(asString(row.get("code")))) {
+        row.put("carCount", parseCount(row.get("carCount")) + plusCount);
+        return;
+      }
+    }
+    rows.add(buildCodeItem(code, plusCount));
   }
 
   private List<Map<String, Object>> applyFuelBuckets(Map<String, Long> rawCounts, Set<String> selectedFuels) {
@@ -232,17 +244,29 @@ public class CodeQueryService {
       rows.add(buildCodeItem(code, count));
     }
 
+    final List<Map<String, Object>> rowsSnapshot = rows;
     selectedFuels.stream()
         .filter(f -> !normalized.containsKey(f))
-        .filter(f -> rows.stream().noneMatch(r -> f.equals(asString(r.get("code")))))
-        .forEach(f -> rows.add(buildCodeItem(f, 0L)));
+        .filter(f -> rowsSnapshot.stream().noneMatch(r -> f.equals(asString(r.get("code")))))
+        .forEach(f -> rowsSnapshot.add(buildCodeItem(f, 0L)));
 
-    rows = sortByCountThenName(rows);
-
+    List<Map<String, Object>> sortedRows = sortByCountThenName(rowsSnapshot);
     if (other > 0) {
-      rows.add(buildCodeItem(OTHER_LABEL, other));
+      sortedRows.add(buildCodeItem(OTHER_LABEL, other));
     }
-    return rows;
+    sortedRows.sort((a, b) -> {
+      String codeA = asString(a.get("code"));
+      String codeB = asString(b.get("code"));
+      boolean aIsOther = OTHER_LABEL.equals(codeA);
+      boolean bIsOther = OTHER_LABEL.equals(codeB);
+      if (aIsOther != bIsOther) return aIsOther ? 1 : -1;
+      long countA = parseCount(a.get("carCount"));
+      long countB = parseCount(b.get("carCount"));
+      int countDiff = Long.compare(countB, countA);
+      if (countDiff != 0) return countDiff;
+      return asString(a.get("name")).compareToIgnoreCase(asString(b.get("name")));
+    });
+    return sortedRows;
   }
 
   private Map<String, Object> buildCodeItem(String code, long carCount) {
