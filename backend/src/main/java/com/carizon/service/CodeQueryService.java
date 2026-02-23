@@ -263,9 +263,9 @@ public class CodeQueryService {
               return idx >= 0 ? idx : BODY_TYPE_OTHER_INDEX;
             })
             .thenComparing((Map<String, Object> a, Map<String, Object> b) -> {
-              int ca = parseCount(a.get("carCount"));
-              int cb = parseCount(b.get("carCount"));
-              return Integer.compare(cb, ca);
+              long ca = parseCount(a.get("carCount"));
+              long cb = parseCount(b.get("carCount"));
+              return Long.compare(cb, ca);
             })
             .thenComparing(a -> asString(a.get("name")), String::compareTo))
         .collect(Collectors.toList());
