@@ -153,12 +153,16 @@ public class CodeQueryService {
     Map<String, Object> normalized = normalize(filters);
     List<Map<String, Object>> dbRows = mapper.selectColorsWithCounts(normalized);
     try {
-      Map<String, Long> counts = searchService.countTermsByField(normalized, "color");
+      Map<String, Long> counts = normalizeColorCounts(searchService.countTermsByField(normalized, "color"));
       long esCountTotal = counts.values().stream().mapToLong(v -> v == null ? 0L : v).sum();
       long dbCountTotal = dbRows.stream()
           .mapToLong(r -> parseCount(r.get("carCount")))
           .sum();
       List<Map<String, Object>> enriched = enrichWithCounts(dbRows, counts);
+      if (!containsCode(enriched, OTHER_LABEL) && counts.getOrDefault(OTHER_LABEL, 0L) > 0L) {
+        enriched.add(buildCodeItem(OTHER_LABEL, counts.getOrDefault(OTHER_LABEL, 0L)));
+      }
+      enriched = sortByCountThenName(enriched);
       long enrichedTotal = enriched.stream()
           .mapToLong(r -> parseCount(r.get("carCount")))
           .sum();
@@ -216,6 +220,29 @@ public class CodeQueryService {
             })
             .thenComparingLong(r -> -parseCount(r.get("carCount"))))
         .collect(Collectors.toList());
+  }
+
+  private boolean containsCode(List<Map<String, Object>> rows, String code) {
+    for (Map<String, Object> row : rows) {
+      if (code.equals(asString(row.get("code")))) return true;
+    }
+    return false;
+  }
+
+  private Map<String, Long> normalizeColorCounts(Map<String, Long> rawCounts) {
+    if (rawCounts == null || rawCounts.isEmpty()) return Map.of();
+    Map<String, Long> normalized = new LinkedHashMap<>();
+    rawCounts.forEach((rawCode, count) -> {
+      String normalizedCode = normalizeColorCode(rawCode);
+      normalized.merge(normalizedCode, count == null ? 0L : count, Long::sum);
+    });
+    return normalized;
+  }
+
+  private String normalizeColorCode(Object rawCode) {
+    String value = asString(rawCode).trim();
+    if (value.isBlank() || "null".equalsIgnoreCase(value)) return OTHER_LABEL;
+    return value;
   }
 
   private void mergeOrAddCodeItem(List<Map<String, Object>> rows, String code, long plusCount) {
