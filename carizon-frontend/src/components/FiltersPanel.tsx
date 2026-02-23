@@ -525,7 +525,16 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     value.bodyType,
     value.carNo,
   ])
+  const countFiltersForMakers = useMemo(() => {
+    const next: Record<string, unknown> = { ...countFilters }
+    next.makerCode = undefined
+    next.modelGroupCode = undefined
+    next.modelCode = undefined
+    next.trimCode = undefined
+    return next
+  }, [countFilters])
   const countFilterKey = useMemo(() => JSON.stringify(countFilters), [countFilters])
+  const countFilterForMakersKey = useMemo(() => JSON.stringify(countFiltersForMakers), [countFiltersForMakers])
   const removeCountFilter = (keys: Array<keyof typeof countFilters>) => {
     const next = { ...countFilters } as Record<string, unknown>
     keys.forEach(k => {
@@ -578,7 +587,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     setMakersLoading(true)
     setMakersError('')
     try {
-      const data = await getMakers(countFilters)
+      const data = await getMakers(countFiltersForMakers)
       setMakers(data)
     } catch {
       setMakers([])
@@ -594,7 +603,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   }, [makerCode, countFilterKey])
   useEffect(() => {
     loadMakers()
-  }, [countFilterKey])
+  }, [countFilterForMakersKey])
   useEffect(() => {
     if (!makerCode || !modelGroupCode) { setModels([]); return }
     getModels(makerCode, modelGroupCode, countFilters).then(setModels).catch(() => setModels([]))
