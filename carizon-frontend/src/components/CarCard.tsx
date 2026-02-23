@@ -41,7 +41,10 @@ export default function CarCard({ item, likesCount }: Props) {
     : location.pathname.startsWith('/search')
       ? 'search'
       : 'other'
-  const state = { from, source, backgroundLocation: location }
+  // 검색 결과에서는 페이지 전환, AI 추천에서는 모달
+  const state = source === 'search'
+    ? { from, source }
+    : { from, source, backgroundLocation: location }
 
   return (
     <Link

@@ -1,126 +1,11 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react'
-import { useSearchParams, useLocation, Link, type Location } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import FiltersPanel from '@/components/FiltersPanel'
 import CarCard from '@/components/CarCard'
 import AdSlot from '@/components/AdSlot'
 import { searchCars, type CarListItem } from '@/api/cars'
 import { batchLikes } from '@/api/likes'
-import { getRecommendations, type RecommendedCar } from '@/api/recommendations'
-
-const AI_QUICK_PROMPTS = [
-  '예산 2000만원 이하 SUV',
-  '연비 좋은 출퇴근용 소형차',
-  '첫차로 무사고 국산차',
-  '3000만원 이하 수입차',
-]
-
-function AiChatPanel({ fromLocation }: { fromLocation: Location }) {
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
-  const [cars, setCars] = useState<RecommendedCar[]>([])
-  const [asked, setAsked] = useState(false)
-
-  const handleSend = async (q?: string) => {
-    const query = (q ?? input).trim()
-    if (!query || loading) return
-    setInput('')
-    setAsked(true)
-    setLoading(true)
-    setMessage('')
-    setCars([])
-    try {
-      const res = await getRecommendations({ query, maxResults: 6 })
-      setMessage(res.recommendation ?? '')
-      setCars(res.cars ?? [])
-    } catch {
-      setMessage('AI 추천 서비스에 일시적인 오류가 발생했습니다.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="card p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <div className="w-7 h-7 bg-brand-600 rounded-lg flex items-center justify-center text-sm">🤖</div>
-        <div>
-          <p className="text-sm font-bold text-gray-900">AI 매물 추천</p>
-          <p className="text-[11px] text-gray-400">자연어로 원하는 차를 설명해보세요</p>
-        </div>
-        <Link to="/recommendation" className="ml-auto text-xs text-brand-600 font-medium hover:underline">전체 채팅 →</Link>
-      </div>
-
-      {!asked && (
-        <div className="flex flex-wrap gap-1.5">
-          {AI_QUICK_PROMPTS.map(p => (
-            <button key={p} onClick={() => handleSend(p)}
-              className="px-3 py-1.5 rounded-full bg-gray-100 hover:bg-brand-50 hover:text-brand-700 text-xs font-medium text-gray-600 transition-colors">
-              {p}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <form onSubmit={e => { e.preventDefault(); handleSend() }} className="flex gap-2">
-        <input
-          className="input text-sm flex-1"
-          placeholder="예) 가족용 SUV, 예산 3000만원 이하..."
-          value={input}
-          onChange={e => setInput(e.target.value)}
-        />
-        <button type="submit" disabled={loading || !input.trim()}
-          className="btn-primary px-4 py-2 text-sm disabled:opacity-50">
-          {loading ? <span className="spinner w-4 h-4" /> : '추천'}
-        </button>
-      </form>
-
-      {asked && (
-        <div className="space-y-2">
-          {loading && (
-            <div className="flex items-center gap-2 text-sm text-brand-700 py-2">
-              <div className="spinner" />
-              <span>AI가 매물을 분석하고 있어요...</span>
-            </div>
-          )}
-          {!loading && message && (
-            <p className="text-sm text-gray-700 bg-brand-50 rounded-xl px-4 py-3 whitespace-pre-wrap">{message}</p>
-          )}
-          {!loading && cars.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
-              {cars.map(car => (
-                <Link key={car.carId} to={`/cars/${car.carId}`}
-                  state={{
-                    from: `${fromLocation.pathname}${fromLocation.search}${fromLocation.hash}`,
-                    source: 'search',
-                    backgroundLocation: fromLocation,
-                  }}
-                  className="card-hover p-3 flex items-center gap-3 cursor-pointer">
-                  {car.imageUrl ? (
-                    <img src={car.imageUrl} alt={car.model}
-                      className="w-16 h-12 object-cover rounded-lg shrink-0 bg-gray-100" />
-                  ) : (
-                    <div className="w-16 h-12 bg-gray-100 rounded-lg shrink-0 flex items-center justify-center text-xl">🚗</div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-gray-900 truncate">{car.maker} {car.model}</p>
-                    <p className="text-xs text-gray-500 truncate">{car.trim}</p>
-                    {car.price != null && (
-                      <p className="text-sm font-bold text-brand-600">{(car.price / 10000).toFixed(0)}만원</p>
-                    )}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-          {!loading && cars.length === 0 && message && (
-            <p className="text-sm text-gray-500 text-center py-2">조건에 맞는 매물을 찾지 못했습니다.</p>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
+import { getRecommendations } from '@/api/recommendations'
 
 const SORT_OPTIONS = [
   { value: '', label: '무작위' },
@@ -132,7 +17,6 @@ const SORT_OPTIONS = [
 
 export default function Search() {
   const [sp, setSp] = useSearchParams()
-  const fromLocation = useLocation()
   const [list, setList]               = useState<CarListItem[]>([])
   const [page, setPage]               = useState(0)
   const [totalPages, setTotalPages]   = useState(0)
@@ -318,9 +202,6 @@ export default function Search() {
 
       {/* 광고 */}
       <AdSlot id="search-banner" variant="banner" />
-
-      {/* AI 추천 채팅 */}
-      <AiChatPanel fromLocation={fromLocation} />
 
       {isTextFallbackMode && (
         <div className="card p-4 border border-brand-100 bg-brand-50/50">

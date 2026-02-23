@@ -25,7 +25,7 @@ export default function Layout() {
           <div className="flex items-center h-14 sm:h-16 gap-3 sm:gap-4">
             {/* 로고 */}
             <Link to="/" className="flex items-center shrink-0">
-              <img src="/logo.png" alt="Carizon" className="h-7 sm:h-8" />
+              <img src="/carizon_logo.png" alt="Carizon" className="h-7 sm:h-8" />
             </Link>
 
             {/* 검색바 (데스크톱) */}

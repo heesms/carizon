@@ -3,6 +3,13 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import AdSlot from '@/components/AdSlot'
 import { getWeeklyBest } from '@/api/likes'
 
+const AI_QUICK_PROMPTS = [
+  '500만원 이하 경제적인 소형차 추천해줘',
+  '아이 둘 있는 가족용 SUV 3000만원 이하',
+  '출퇴근용 전기차, 주행거리 넉넉한 것',
+  '20대 첫차로 좋은 중고차',
+]
+
 const NO_IMAGE = '/image/car/noimage/no_image.png'
 
 type WeeklyItem = {
@@ -57,6 +64,7 @@ export default function Home() {
   const [weekly, setWeekly] = useState<WeeklyItem[]>([])
   const [history, setHistory] = useState<string[]>([])
   const [showHistory, setShowHistory] = useState(false)
+  const [aiQuery, setAiQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const historyRef = useRef<HTMLFormElement>(null)
   const location = useLocation()
@@ -181,6 +189,53 @@ export default function Home() {
 
       {/* ── 광고 배너 (상단) ── */}
       <AdSlot id="home-top-banner" variant="banner" />
+
+      {/* ── AI 자연어 추천 ── */}
+      <section className="card overflow-hidden">
+        <div className="bg-gradient-to-r from-violet-600 to-purple-700 px-5 sm:px-6 py-5 text-white">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-lg">✨</span>
+            <span className="font-black text-base sm:text-lg">AI에게 직접 물어보세요</span>
+          </div>
+          <p className="text-purple-100 text-xs sm:text-sm">원하는 조건을 자유롭게 입력하면 AI가 맞춤 매물을 추천해 드려요</p>
+        </div>
+        <div className="p-4 sm:p-5">
+          <div className="flex flex-wrap gap-2 mb-3">
+            {AI_QUICK_PROMPTS.map(p => (
+              <button
+                key={p}
+                onClick={() => navigate(`/recommendation?query=${encodeURIComponent(p)}`)}
+                className="text-xs px-3 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-full border border-violet-200 transition-colors font-medium"
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          <form
+            onSubmit={e => {
+              e.preventDefault()
+              const q = aiQuery.trim()
+              if (!q) return
+              navigate(`/recommendation?query=${encodeURIComponent(q)}`)
+            }}
+            className="flex gap-2"
+          >
+            <input
+              value={aiQuery}
+              onChange={e => setAiQuery(e.target.value)}
+              placeholder="예: 3000만원 이하 가족용 SUV 추천해줘"
+              className="input flex-1 text-sm"
+            />
+            <button
+              type="submit"
+              disabled={!aiQuery.trim()}
+              className="px-4 py-2 bg-violet-600 text-white font-bold rounded-xl text-sm hover:bg-violet-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            >
+              AI 추천
+            </button>
+          </form>
+        </div>
+      </section>
 
       {/* ── 핵심 기능 3가지 ── */}
       <section>
