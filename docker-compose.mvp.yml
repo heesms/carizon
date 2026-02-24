@@ -7,12 +7,12 @@ services:
     image: mysql:8.0
     container_name: carizon-mysql
     restart: unless-stopped
-    mem_limit: ${MYSQL_MEM_LIMIT:-2048m}
+    mem_limit: ${MYSQL_MEM_LIMIT:-4g}
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --default-time-zone=Asia/Seoul
-      - --innodb_buffer_pool_size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-1024M}
+      - --innodb_buffer_pool_size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-2G}
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-carizon_pass}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-carizon}
@@ -64,7 +64,7 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
     container_name: carizon-elasticsearch
     restart: unless-stopped
-    mem_limit: 2048m
+    mem_limit: 3g
     ports:
       - "9200:9200"
     environment:
