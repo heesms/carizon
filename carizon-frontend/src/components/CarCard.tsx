@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import type { CarListItem } from '@/api/cars'
 
-const NO_IMAGE = '/image/car/noimage/no_image.png'
+const NO_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><text fill="#9ca3af" font-family="sans-serif" font-size="13" x="200" y="158" text-anchor="middle">이미지 없음</text><rect fill="#e5e7eb" x="170" y="110" width="60" height="38" rx="4"/></svg>')}`
 
 function imgSrc(item: CarListItem) {
   if (item.representativeImageUrl?.trim()) return item.representativeImageUrl
@@ -59,7 +59,7 @@ export default function CarCard({ item, likesCount }: Props) {
           alt={`${item.maker} ${item.model}`}
           className="w-full h-full object-cover object-center scale-[1.15] group-hover:scale-[1.25] transition-transform duration-300"
           loading="lazy"
-          onError={() => setSrc(NO_IMAGE)}
+          onError={() => { if (src !== NO_IMAGE) setSrc(NO_IMAGE) }}
         />
       </div>
 

@@ -38,6 +38,16 @@ export default function Search() {
     () => (list.length > 0 ? list : aiFallbackList),
     [list, aiFallbackList]
   )
+  const filteredVisibleList = useMemo(
+    () => visibleList.filter((item) => {
+      const min = item.priceMin
+      const max = item.priceMax
+      const hasValidPrice = (typeof min === 'number' && min >= 1) || (typeof max === 'number' && max >= 1)
+      const hasRepresentativeImage = typeof item.representativeImageUrl === 'string' && item.representativeImageUrl.trim().length > 0
+      return hasValidPrice && hasRepresentativeImage
+    }),
+    [visibleList]
+  )
 
   const fetchPage = async (p = 0) => {
     setLoading(true)
@@ -115,7 +125,7 @@ export default function Search() {
 
   useEffect(() => {
     let cancelled = false
-    const carIds = visibleList.map(it => Number(it.carId)).filter(Number.isFinite)
+    const carIds = filteredVisibleList.map(it => Number(it.carId)).filter(Number.isFinite)
     if (carIds.length === 0) {
       setLikesByCarId({})
       return
@@ -132,7 +142,7 @@ export default function Search() {
     return () => {
       cancelled = true
     }
-  }, [visibleList])
+  }, [filteredVisibleList])
 
   const setFilters = (v: Record<string, any>) => {
     const usp = new URLSearchParams()
@@ -182,7 +192,7 @@ export default function Search() {
               총 <strong className="text-gray-900">{totalElements.toLocaleString()}</strong>개 매물
             </p>
           )}
-          {!loading && list.length === 0 && aiFallbackList.length > 0 && (
+          {!loading && list.length === 0 && filteredVisibleList.length > 0 && (
             <p className="text-xs text-brand-600 mt-1 font-medium">
               검색결과가 없어 텍스트 기반 조건 추천 매물을 표시합니다.
             </p>
@@ -220,15 +230,14 @@ export default function Search() {
 
       {/* 카드 그리드 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {visibleList
-          .filter(it => it.priceMin != null || it.priceMax != null)
+        {filteredVisibleList
           .map((it, idx) => (
             <React.Fragment key={it.carId}>
               <div className="animate-fade-in" style={{ animationDelay: `${idx * 0.03}s` }}>
                 <CarCard item={it} likesCount={likesByCarId[it.carId] ?? 0} />
               </div>
               {/* 9번째 카드 뒤에 그리드 내 광고 삽입 */}
-              {idx === 8 && visibleList.length > 9 && (
+              {idx === 8 && filteredVisibleList.length > 9 && (
                 <div className="card flex items-center justify-center bg-gray-50 border-dashed border-gray-200 min-h-[200px]">
                   <AdSlot id="search-grid-ad" variant="rectangle" />
                 </div>
@@ -238,7 +247,7 @@ export default function Search() {
       </div>
 
       {/* 결과 없음 */}
-      {!loading && !aiFallbackLoading && list.length === 0 && aiFallbackList.length === 0 && (
+      {!loading && !aiFallbackLoading && filteredVisibleList.length === 0 && (
         <div className="card p-12 text-center">
           <div className="text-5xl mb-4">🔍</div>
           <p className="text-gray-600 font-medium mb-1">

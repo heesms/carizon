@@ -10,7 +10,7 @@ const AI_QUICK_PROMPTS = [
   '20대 첫차로 좋은 중고차',
 ]
 
-const NO_IMAGE = '/image/car/noimage/no_image.png'
+const NO_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><text fill="#9ca3af" font-family="sans-serif" font-size="13" x="200" y="158" text-anchor="middle">이미지 없음</text><rect fill="#e5e7eb" x="170" y="110" width="60" height="38" rx="4"/></svg>')}`
 
 type WeeklyItem = {
   carId?: number
@@ -94,11 +94,6 @@ export default function Home() {
     navigate(q ? `/search?q=${encodeURIComponent(q)}` : '/search')
   }
 
-  const handleAI = () => {
-    if (!query.trim()) { navigate('/recommendation'); return }
-    navigate(`/recommendation?query=${encodeURIComponent(query.trim())}`)
-  }
-
   return (
     <div className="space-y-8 sm:space-y-10 animate-fade-in">
 
@@ -134,16 +129,10 @@ export default function Home() {
                 placeholder="차량번호, 제조사, 모델명 입력"
                 className="flex-1 bg-transparent px-4 py-2.5 text-white placeholder-blue-200 text-sm focus:outline-none"
               />
-              <div className="flex gap-1.5">
-                <button type="submit"
-                  className="flex-1 sm:flex-none px-5 py-2.5 bg-white text-brand-700 font-bold rounded-lg sm:rounded-xl text-sm hover:bg-blue-50 transition-colors shadow-sm">
-                  검색
-                </button>
-                <button type="button" onClick={handleAI}
-                  className="px-4 py-2.5 bg-white/20 text-white font-semibold rounded-lg sm:rounded-xl text-sm hover:bg-white/30 transition-colors border border-white/30">
-                  AI
-                </button>
-              </div>
+              <button type="submit"
+                className="px-5 py-2.5 bg-white text-brand-700 font-bold rounded-lg sm:rounded-xl text-sm hover:bg-blue-50 transition-colors shadow-sm">
+                검색
+              </button>
             </div>
 
             {/* 검색 이력 드롭다운 */}
@@ -366,7 +355,7 @@ export default function Home() {
                       src={imgUrl}
                       alt={name}
                       className="w-full h-full object-cover object-[center_65%] group-hover:scale-105 transition-transform duration-300"
-                      onError={e => { (e.target as HTMLImageElement).src = NO_IMAGE }}
+                      onError={e => { const img = e.target as HTMLImageElement; if (img.src !== NO_IMAGE) img.src = NO_IMAGE }}
                     />
                     <span className="absolute top-2 left-2 w-7 h-7 rounded-full bg-brand-600 text-white text-xs font-black flex items-center justify-center shadow">
                       {i + 1}

@@ -5,7 +5,7 @@ import PriceChart from '@/components/PriceChart'
 import LikeButton from '@/components/LikeButton'
 import AdSlot from '@/components/AdSlot'
 
-const NO_IMAGE = '/image/car/noimage/no_image.png'
+const NO_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><text fill="#9ca3af" font-family="sans-serif" font-size="13" x="200" y="158" text-anchor="middle">이미지 없음</text><rect fill="#e5e7eb" x="170" y="110" width="60" height="38" rx="4"/></svg>')}`
 
 /** null / "null" / 빈문자열 → undefined 로 정리 */
 const clean = (v: any): string | undefined => {
@@ -156,10 +156,11 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
 
   const car = detail.car
   const platforms = detail.platformRows ?? []
-  const activePlatforms = platforms.filter(p => p.price && p.status !== 'SOLD')
+  const activePlatforms = platforms.filter(p => p.price != null && p.price > 0 && p.status !== 'SOLD')
   const soldPlatforms = platforms.filter(p => p.status === 'SOLD')
   const minPrice = activePlatforms.length > 0 ? Math.min(...activePlatforms.map(p => p.price!)) : null
   const maxPrice = activePlatforms.length > 0 ? Math.max(...activePlatforms.map(p => p.price!)) : null
+  const hasUniqueLowestPrice = minPrice != null && activePlatforms.filter(p => p.price === minPrice).length === 1
 
   const specs = [
     { label: '연식',     value: car.year ? `${car.year}년식` : undefined },
@@ -217,7 +218,9 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
               {/* 가격 */}
               {minPrice && (
                 <div className="mb-4">
-                  <div className="text-xs text-gray-400 mb-0.5">플랫폼 최저가</div>
+                  <div className="text-xs text-gray-400 mb-0.5">
+                    {hasUniqueLowestPrice ? '플랫폼 최저가' : '플랫폼 최저가격'}
+                  </div>
                   <div className="text-2xl sm:text-3xl font-black text-brand-600">
                     {minPrice.toLocaleString()}만원
                     {maxPrice && maxPrice !== minPrice && (
@@ -287,15 +290,14 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                 {/* 판매중 플랫폼 바 차트 */}
                 {activePlatforms
                   .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))
-                  .map((p, i) => {
+                  .map((p) => {
                     const url = platformUrl(p, isMobile)
                     const colors = barColor(p.platformName)
-                    const priceRange = (maxPrice ?? 0) - (minPrice ?? 0)
-                    // 바 너비: 최저가 70% ~ 최고가 100%
-                    const barWidth = priceRange > 0 && minPrice
-                      ? 70 + ((p.price! - minPrice) / priceRange) * 30
+                    const maxBasePrice = maxPrice ?? 0
+                    const barWidth = maxBasePrice > 0 && p.price != null
+                      ? Math.max(8, Math.min(100, (p.price / maxBasePrice) * 100))
                       : 100
-                    const isLowest = i === 0 && activePlatforms.length > 1
+                    const isLowest = hasUniqueLowestPrice && minPrice != null && p.price === minPrice
 
                     return (
                       <a

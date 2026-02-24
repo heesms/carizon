@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   getBodyTypes,
@@ -287,9 +287,23 @@ function RangeBlock({
   canReset?: boolean
   clearLabel?: string
 }) {
+  const [localStart, setLocalStart] = useState(start)
+  const [localEnd, setLocalEnd] = useState(end)
+  const localStartRef = useRef(start)
+  const localEndRef = useRef(end)
+  const onStartRef = useRef(onStart)
+  const onEndRef = useRef(onEnd)
+  const startTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => { onStartRef.current = onStart }, [onStart])
+  useEffect(() => { onEndRef.current = onEnd }, [onEnd])
+  useEffect(() => { setLocalStart(start); localStartRef.current = start }, [start])
+  useEffect(() => { setLocalEnd(end); localEndRef.current = end }, [end])
+
   const trackSpan = Math.max(1, trackMax - trackMin)
-  const startPercent = ((Math.min(Math.max(start, trackMin), trackMax) - trackMin) / trackSpan) * 100
-  const endPercent = ((Math.min(Math.max(end, trackMin), trackMax) - trackMin) / trackSpan) * 100
+  const startPercent = ((Math.min(Math.max(localStart, trackMin), trackMax) - trackMin) / trackSpan) * 100
+  const endPercent = ((Math.min(Math.max(localEnd, trackMin), trackMax) - trackMin) / trackSpan) * 100
   const rangeLeft = Math.min(startPercent, endPercent)
   const rangeRight = 100 - Math.max(startPercent, endPercent)
   const [startDraft, setStartDraft] = useState(startInputValue)
@@ -330,8 +344,14 @@ function RangeBlock({
           min={startMin}
           max={startMax}
           step={step}
-          value={start}
-          onChange={e => onStart(Number(e.target.value))}
+          value={localStart}
+          onChange={e => {
+            const v = Number(e.target.value)
+            localStartRef.current = v
+            setLocalStart(v)
+            if (startTimerRef.current) clearTimeout(startTimerRef.current)
+            startTimerRef.current = setTimeout(() => { onStartRef.current(localStartRef.current) }, 300)
+          }}
           className="pointer-events-none absolute inset-0 h-9 w-full appearance-none bg-transparent
             [&::-webkit-slider-runnable-track]:bg-transparent [&::-moz-range-track]:bg-transparent
             [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-sky-500 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:shadow-[0_2px_10px_rgba(14,165,233,0.45)] [&::-webkit-slider-thumb]:ring-2 [&::-webkit-slider-thumb]:ring-sky-200/80
@@ -342,8 +362,14 @@ function RangeBlock({
           min={endMin}
           max={endMax}
           step={step}
-          value={end}
-          onChange={e => onEnd(Number(e.target.value))}
+          value={localEnd}
+          onChange={e => {
+            const v = Number(e.target.value)
+            localEndRef.current = v
+            setLocalEnd(v)
+            if (endTimerRef.current) clearTimeout(endTimerRef.current)
+            endTimerRef.current = setTimeout(() => { onEndRef.current(localEndRef.current) }, 300)
+          }}
           className="pointer-events-none absolute inset-0 h-9 w-full appearance-none bg-transparent
             [&::-webkit-slider-runnable-track]:bg-transparent [&::-moz-range-track]:bg-transparent
             [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-brand-600 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:shadow-[0_2px_10px_rgba(37,99,235,0.4)] [&::-webkit-slider-thumb]:ring-2 [&::-webkit-slider-thumb]:ring-brand-200/70
@@ -461,6 +487,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   const [pickerModelsErrorByGroup, setPickerModelsErrorByGroup] = useState<Record<string, string>>({})
   const [selectedModelGroupByCode, setSelectedModelGroupByCode] = useState<Record<string, string>>({})
   const [selectedModelNameByCode, setSelectedModelNameByCode] = useState<Record<string, string>>({})
+  const [nameGroupVisibleCount, setNameGroupVisibleCount] = useState(40)
 
   const [trimPickerOpen, setTrimPickerOpen] = useState(false)
   const [trimSearch, setTrimSearch] = useState('')
@@ -793,14 +820,14 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     }
     setPickerModelGroupsLoading(true)
     setPickerModelGroupsError('')
-    getModelGroups(pickerMakerCode, countFiltersForModelGroups)
+    getModelGroups(pickerMakerCode)
       .then(setPickerModelGroups)
       .catch(() => {
         setPickerModelGroups([])
         setPickerModelGroupsError('모델그룹을 불러오지 못했습니다.')
       })
       .finally(() => setPickerModelGroupsLoading(false))
-  }, [modelPickerOpen, pickerMakerCode, countFilterForModelGroupsKey])
+  }, [modelPickerOpen, pickerMakerCode])
 
   const ensurePickerGroupModels = (groupCode: string) => {
     if (!pickerMakerCode || (!makerPickerOpen && !modelPickerOpen) || !groupCode) return
@@ -808,7 +835,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
     setPickerModelsLoadingByGroup(prev => ({ ...prev, [groupCode]: true }))
     setPickerModelsErrorByGroup(prev => ({ ...prev, [groupCode]: '' }))
-    getModels(pickerMakerCode, groupCode, countFiltersForModels)
+    getModels(pickerMakerCode, groupCode)
       .then(data => {
         setPickerModelsByGroup(prev => ({ ...prev, [groupCode]: data }))
       })
@@ -836,7 +863,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     setPickerModelsByGroup({})
     setPickerModelsLoadingByGroup({})
     setPickerModelsErrorByGroup({})
-  }, [modelPickerOpen, pickerMakerCode, countFilterKey])
+  }, [modelPickerOpen, pickerMakerCode])
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
     const v = e.target.value
@@ -1077,6 +1104,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   const openModelPicker = () => {
     if (!makerCode) return
     setPickerMakerCode(makerCode)
+    setNameGroupVisibleCount(40)
     const initialOpenGroups = selectedPickerGroupCodes.length
       ? selectedPickerGroupCodes
       : (modelGroupCode ? [modelGroupCode] : [])
@@ -1156,16 +1184,18 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   const selectedFuels = parseCsvTokens(value.fuel)
   const selectedModelCodeSet = useMemo(() => new Set(selectedModelCodes), [selectedModelCodes])
 
+  const hasPriceRange = value.priceMin != null || value.priceMax != null
+  const hasYearRange = value.yearMin != null || value.yearMax != null
+  const hasKmRange = value.kmMin != null || value.kmMax != null
   const detailFilterCount = [
     selectedFuels.length ? 'selected' : undefined,
     selectedColors.length ? 'selected' : undefined,
     value.carNo,
     selectedBodyTypes.length ? 'selected' : undefined,
+    hasPriceRange ? 'selected' : undefined,
+    hasYearRange ? 'selected' : undefined,
+    hasKmRange ? 'selected' : undefined,
   ].filter(v => v !== undefined && v !== '').length
-
-  const hasPriceRange = value.priceMin != null || value.priceMax != null
-  const hasYearRange = value.yearMin != null || value.yearMax != null
-  const hasKmRange = value.kmMin != null || value.kmMax != null
 
   const collapsedSummary = useMemo(() => {
     const chips: string[] = []
@@ -1271,7 +1301,18 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   )
 
   const visiblePopularGroups = popularGroups.filter(matchByKeyword)
-  const visibleNameGroups = nameGroups.filter(matchByKeyword)
+  const filteredNameGroups = useMemo(
+    () => nameGroups.filter(matchByKeyword),
+    [nameGroups, keyword]
+  )
+  const visibleNameGroups = useMemo(
+    () => {
+      if (keyword) return filteredNameGroups
+      return filteredNameGroups.slice(0, nameGroupVisibleCount)
+    },
+    [filteredNameGroups, keyword, nameGroupVisibleCount]
+  )
+  const canLoadMoreNameGroups = !keyword && visibleNameGroups.length < filteredNameGroups.length
   const visibleModelsByGroup = (groupCode: string) =>
     (pickerModelsByGroup[groupCode] ?? []).filter(matchByKeyword).slice().sort(sortByCountThenName)
 
@@ -1283,6 +1324,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     if (hasCount(maker) && countOf(maker) <= 0) return
     applyMaker(maker.code)
     setPickerMakerCode(maker.code)
+    setNameGroupVisibleCount(40)
     setPickerOpenGroupCodes([])
     setPickerModelsByGroup({})
     setPickerModelsLoadingByGroup({})
@@ -1377,10 +1419,16 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
           {searchMode === 'structured' ? (
             <div className={`grid grid-cols-1 gap-3 ${!makerCode ? 'sm:grid-cols-1' : !modelCode ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
               <div>
-                <label className="text-xs font-semibold text-gray-500 block mb-1">제조사</label>
+                <label className={`text-xs font-bold block mb-1 ${selectedMaker ? 'text-gray-500' : 'text-brand-600'}`}>
+                  {selectedMaker ? '제조사' : '제조사 선택'}
+                </label>
                 <div className="flex items-center gap-1.5">
                   <button
-                    className="flex-1 min-w-0 text-left px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white hover:border-gray-300 transition text-sm flex items-center justify-between"
+                    className={`flex-1 min-w-0 text-left px-3.5 py-2.5 rounded-xl border text-sm flex items-center justify-between transition ${
+                      selectedMaker
+                        ? 'border-gray-200 bg-white hover:border-gray-300'
+                        : 'border-brand-400 bg-brand-50 hover:border-brand-500 hover:bg-brand-100 ring-2 ring-brand-200 ring-offset-1'
+                    }`}
                     onClick={openMakerPicker}
                   >
                     <span className="flex items-center gap-2 min-w-0">
@@ -1390,10 +1438,10 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                           <span className="font-semibold text-gray-800 truncate">{selectedMaker.name}</span>
                         </>
                       ) : (
-                        <span className="text-gray-500">선택</span>
+                        <span className="text-gray-400">선택</span>
                       )}
                     </span>
-                    <span className="text-xs text-gray-400">▼</span>
+                    <span className={`text-xs ${selectedMaker ? 'text-gray-400' : 'text-brand-500'}`}>▼</span>
                   </button>
                   {makerCode && (
                     <ClearIconButton
@@ -1494,93 +1542,6 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <RangeBlock
-              label="가격"
-              trackMin={PRICE_MIN_BOUND}
-              trackMax={PRICE_MAX_UNLIMITED}
-              startMin={PRICE_MIN_BOUND}
-              startMax={PRICE_MAX_BOUND}
-              endMin={PRICE_MIN_BOUND}
-              endMax={PRICE_MAX_UNLIMITED}
-              step={100}
-              start={safePriceMin}
-              end={safePriceMax}
-              startLabel={priceStartLabel}
-              endLabel={priceEndLabel}
-              unit="만원"
-              startInputValue={priceStartInputValue}
-              endInputValue={priceEndInputValue}
-              startInputMin={PRICE_MIN_BOUND}
-              startInputMax={PRICE_MAX_BOUND}
-              endInputMin={PRICE_MIN_BOUND}
-              endInputMax={PRICE_MAX_BOUND}
-              onStart={setPriceStart}
-              onEnd={setPriceEnd}
-              onStartInput={setPriceStartInput}
-              onEndInput={setPriceEndInput}
-              onReset={resetPriceRange}
-              canReset={hasPriceRange}
-              clearLabel="가격 조건 해제"
-            />
-            <RangeBlock
-              label="연식"
-              trackMin={0}
-              trackMax={YEAR_END_HANDLE_MAX}
-              startMin={0}
-              startMax={YEAR_HANDLE_MAX}
-              endMin={1}
-              endMax={YEAR_END_HANDLE_MAX}
-              step={1}
-              start={yearStartHandle}
-              end={yearEndHandle}
-              startLabel={yearStartLabel}
-              endLabel={yearEndLabel}
-              unit="년"
-              startInputValue={yearStartInputValue}
-              endInputValue={yearEndInputValue}
-              startInputMin={YEAR_MIN_BOUND}
-              startInputMax={YEAR_MAX_BOUND}
-              endInputMin={YEAR_MIN_BOUND}
-              endInputMax={YEAR_MAX_BOUND}
-              onStart={setYearStart}
-              onEnd={setYearEnd}
-              onStartInput={setYearStartInput}
-              onEndInput={setYearEndInput}
-              onReset={resetYearRange}
-              canReset={hasYearRange}
-              clearLabel="연식 조건 해제"
-            />
-            <RangeBlock
-              label="주행거리"
-              trackMin={KM_MIN_BOUND}
-              trackMax={KM_MAX_UNLIMITED}
-              startMin={KM_MIN_BOUND}
-              startMax={KM_MAX_BOUND}
-              endMin={KM_MIN_BOUND}
-              endMax={KM_MAX_UNLIMITED}
-              step={1000}
-              start={safeKmMin}
-              end={safeKmMax}
-              startLabel={kmStartLabel}
-              endLabel={kmEndLabel}
-              unit="km"
-              startInputValue={kmStartInputValue}
-              endInputValue={kmEndInputValue}
-              startInputMin={KM_MIN_BOUND}
-              startInputMax={KM_MAX_BOUND}
-              endInputMin={KM_MIN_BOUND}
-              endInputMax={KM_MAX_BOUND}
-              onStart={setKmStart}
-              onEnd={setKmEnd}
-              onStartInput={setKmStartInput}
-              onEndInput={setKmEndInput}
-              onReset={resetKmRange}
-              canReset={hasKmRange}
-              clearLabel="주행거리 조건 해제"
-            />
-          </div>
-
           <div className="flex items-center justify-end gap-2">
             <button
               className={`btn-ghost h-[38px] text-sm ${detailOpen ? 'text-brand-600' : 'text-gray-500'}`}
@@ -1619,6 +1580,93 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
         {detailOpen && (
           <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-slide-up">
+            <div className="sm:col-span-2 lg:col-span-4 grid grid-cols-1 lg:grid-cols-3 gap-3">
+              <RangeBlock
+                label="가격"
+                trackMin={PRICE_MIN_BOUND}
+                trackMax={PRICE_MAX_UNLIMITED}
+                startMin={PRICE_MIN_BOUND}
+                startMax={PRICE_MAX_BOUND}
+                endMin={PRICE_MIN_BOUND}
+                endMax={PRICE_MAX_UNLIMITED}
+                step={100}
+                start={safePriceMin}
+                end={safePriceMax}
+                startLabel={priceStartLabel}
+                endLabel={priceEndLabel}
+                unit="만원"
+                startInputValue={priceStartInputValue}
+                endInputValue={priceEndInputValue}
+                startInputMin={PRICE_MIN_BOUND}
+                startInputMax={PRICE_MAX_BOUND}
+                endInputMin={PRICE_MIN_BOUND}
+                endInputMax={PRICE_MAX_BOUND}
+                onStart={setPriceStart}
+                onEnd={setPriceEnd}
+                onStartInput={setPriceStartInput}
+                onEndInput={setPriceEndInput}
+                onReset={resetPriceRange}
+                canReset={hasPriceRange}
+                clearLabel="가격 조건 해제"
+              />
+              <RangeBlock
+                label="연식"
+                trackMin={0}
+                trackMax={YEAR_END_HANDLE_MAX}
+                startMin={0}
+                startMax={YEAR_HANDLE_MAX}
+                endMin={1}
+                endMax={YEAR_END_HANDLE_MAX}
+                step={1}
+                start={yearStartHandle}
+                end={yearEndHandle}
+                startLabel={yearStartLabel}
+                endLabel={yearEndLabel}
+                unit="년"
+                startInputValue={yearStartInputValue}
+                endInputValue={yearEndInputValue}
+                startInputMin={YEAR_MIN_BOUND}
+                startInputMax={YEAR_MAX_BOUND}
+                endInputMin={YEAR_MIN_BOUND}
+                endInputMax={YEAR_MAX_BOUND}
+                onStart={setYearStart}
+                onEnd={setYearEnd}
+                onStartInput={setYearStartInput}
+                onEndInput={setYearEndInput}
+                onReset={resetYearRange}
+                canReset={hasYearRange}
+                clearLabel="연식 조건 해제"
+              />
+              <RangeBlock
+                label="주행거리"
+                trackMin={KM_MIN_BOUND}
+                trackMax={KM_MAX_UNLIMITED}
+                startMin={KM_MIN_BOUND}
+                startMax={KM_MAX_BOUND}
+                endMin={KM_MIN_BOUND}
+                endMax={KM_MAX_UNLIMITED}
+                step={1000}
+                start={safeKmMin}
+                end={safeKmMax}
+                startLabel={kmStartLabel}
+                endLabel={kmEndLabel}
+                unit="km"
+                startInputValue={kmStartInputValue}
+                endInputValue={kmEndInputValue}
+                startInputMin={KM_MIN_BOUND}
+                startInputMax={KM_MAX_BOUND}
+                endInputMin={KM_MIN_BOUND}
+                endInputMax={KM_MAX_BOUND}
+                onStart={setKmStart}
+                onEnd={setKmEnd}
+                onStartInput={setKmStartInput}
+                onEndInput={setKmEndInput}
+                onReset={resetKmRange}
+                canReset={hasKmRange}
+                clearLabel="주행거리 조건 해제"
+              />
+            </div>
+
             <div>
               <label className="text-xs font-semibold text-gray-500 block mb-1">차종</label>
               <button
@@ -1915,6 +1963,16 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                       )
                     })}
                   </div>
+                  {canLoadMoreNameGroups && (
+                    <div className="pt-2 flex justify-center">
+                      <button
+                        className="btn-ghost text-xs"
+                        onClick={() => setNameGroupVisibleCount(prev => prev + 40)}
+                      >
+                        더 보기 ({visibleNameGroups.length}/{filteredNameGroups.length})
+                      </button>
+                    </div>
+                  )}
                 </div>
                 </>
                 )}
