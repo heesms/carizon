@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 차량 데이터를 RAG에 사용할 텍스트로 변환하는 서비스
@@ -22,6 +23,7 @@ public class CarTextConverterService {
     
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final Map<String, Map<String, Object>> modelBasicInfoCache = new ConcurrentHashMap<>();
     
     /**
      * 차종을 카테고리로 매핑 (세단, SUV, 미니밴, 해치백, 왜건 등)
@@ -349,6 +351,10 @@ public class CarTextConverterService {
         if (modelCode == null || modelCode.isEmpty()) {
             return new HashMap<>();
         }
+        Map<String, Object> cached = modelBasicInfoCache.get(modelCode);
+        if (cached != null) {
+            return new HashMap<>(cached);
+        }
         
         // 각 필드별로 가장 빈도 높은 값 조회
         String sql = """
@@ -400,13 +406,20 @@ public class CarTextConverterService {
             List<Map<String, Object>> results = jdbcTemplate.queryForList(sql, 
                 modelCode, modelCode, modelCode, modelCode);
             if (!results.isEmpty()) {
-                return results.get(0);
+                Map<String, Object> loaded = new HashMap<>(results.get(0));
+                modelBasicInfoCache.put(modelCode, loaded);
+                return new HashMap<>(loaded);
             }
         } catch (Exception e) {
             log.warn("Failed to get model basic info for model_code={}", modelCode, e);
         }
         
+        modelBasicInfoCache.put(modelCode, Map.of());
         return new HashMap<>();
+    }
+
+    public void clearModelBasicInfoCache() {
+        modelBasicInfoCache.clear();
     }
     
     /**
@@ -473,6 +486,8 @@ public class CarTextConverterService {
             (String) carMap.get("color"),
             (String) carMap.get("body_type"),
             (String) carMap.get("region"),
+            null,
+            null,
             carMap.get("platformCarId") != null ? ((Number) carMap.get("platformCarId")).longValue() : null,
             (String) carMap.get("platform_name"),
             carMap.get("price") != null ? ((Number) carMap.get("price")).intValue() : null,

@@ -15,7 +15,7 @@ import java.util.Map;
 @RequestMapping("/api")
 @RequiredArgsConstructor
 @Tag(name = "차량 조회", description = "차량 목록 및 상세 조회 API")
-public class  CCarController {
+public class CarController {
     
   private final CarQueryService service;
   
