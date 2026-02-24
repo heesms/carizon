@@ -4,6 +4,7 @@ import { getCarDetail, getPriceHistory, type CarDetailData, type PricePoint, typ
 import PriceChart from '@/components/PriceChart'
 import LikeButton from '@/components/LikeButton'
 import AdSlot from '@/components/AdSlot'
+import { trackViewItem, trackPlatformLinkClick } from '@/lib/analytics'
 
 const NO_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><text fill="#9ca3af" font-family="sans-serif" font-size="13" x="200" y="158" text-anchor="middle">이미지 없음</text><rect fill="#e5e7eb" x="170" y="110" width="60" height="38" rx="4"/></svg>')}`
 
@@ -122,6 +123,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
         const url = data.car.representativeImageUrl
         if (url) setImgSrc(url)
         else if (data.car.modelCode) setImgSrc(`/image/car/model/${data.car.modelCode}.webp`)
+        trackViewItem(Number(id), data.car.maker ?? '', data.car.model ?? '', data.car.price ?? data.car.priceMin)
       })
       .catch(() => setError('차량 정보를 불러올 수 없습니다.'))
       .finally(() => setLoading(false))
@@ -306,6 +308,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                         target={url ? '_blank' : undefined}
                         rel="noopener noreferrer"
                         className={`block group rounded-xl p-3 transition-all hover:shadow-md ${colors.light} ${!url ? 'pointer-events-none' : ''}`}
+                        onClick={() => url && trackPlatformLinkClick(p.platformName ?? '', Number(id))}
                       >
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center gap-2">

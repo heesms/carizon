@@ -3,6 +3,7 @@ import { Link, useSearchParams, useLocation, type Location } from 'react-router-
 import { getRecommendations, type RecommendationResponse, type RecommendedCar } from '@/api/recommendations'
 import { toggleLike, getLike } from '@/api/likes'
 import AdSlot from '@/components/AdSlot'
+import { trackAiRecommendation, trackAiPromptClick } from '@/lib/analytics'
 
 const NO_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><text fill="#9ca3af" font-family="sans-serif" font-size="13" x="200" y="158" text-anchor="middle">이미지 없음</text><rect fill="#e5e7eb" x="170" y="110" width="60" height="38" rx="4"/></svg>')}`
 
@@ -63,6 +64,7 @@ export default function Recommendation() {
     const query = (text ?? input).trim()
     if (!query || loading) return
     setInput('')
+    trackAiRecommendation(query, text === queryParam ? 'url' : text ? 'quick_prompt' : 'input')
 
     setMessages(prev => [...prev, { role: 'user', text: query }, { role: 'loading' }])
     setLoading(true)
@@ -128,7 +130,7 @@ export default function Recommendation() {
                 {QUICK_PROMPTS.map(p => (
                   <button
                     key={p}
-                    onClick={() => handleSend(p)}
+                    onClick={() => { trackAiPromptClick(p); handleSend(p) }}
                     className="text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 rounded-full bg-brand-50 text-brand-700 border border-brand-100 hover:bg-brand-100 transition-colors font-medium"
                   >
                     {p}

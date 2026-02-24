@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import AdSlot from '@/components/AdSlot'
 import { getWeeklyBest } from '@/api/likes'
+import { trackSearch, trackQuickSearch, trackAiRecommendation, trackAiPromptClick, trackSelectItem } from '@/lib/analytics'
 
 const AI_QUICK_PROMPTS = [
   '500만원 이하 경제적인 소형차 추천해줘',
@@ -88,7 +89,7 @@ export default function Home() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     const q = query.trim()
-    if (q) addSearchHistory(q)
+    if (q) { addSearchHistory(q); trackSearch(q) }
     setHistory(getSearchHistory())
     setShowHistory(false)
     navigate(q ? `/search?q=${encodeURIComponent(q)}` : '/search')
@@ -166,7 +167,7 @@ export default function Home() {
             {QUICK_SEARCHES.map(qs => (
               <button
                 key={qs.label}
-                onClick={() => navigate(`/search?${new URLSearchParams(qs.param as any).toString()}`)}
+                onClick={() => { trackQuickSearch(qs.label); navigate(`/search?${new URLSearchParams(qs.param as any).toString()}`) }}
                 className="px-2.5 sm:px-3 py-1 bg-white/15 hover:bg-white/25 border border-white/20 rounded-full text-xs sm:text-sm font-medium transition-colors"
               >
                 {qs.label}
@@ -193,7 +194,7 @@ export default function Home() {
             {AI_QUICK_PROMPTS.map(p => (
               <button
                 key={p}
-                onClick={() => navigate(`/recommendation?query=${encodeURIComponent(p)}`)}
+                onClick={() => { trackAiPromptClick(p); navigate(`/recommendation?query=${encodeURIComponent(p)}`) }}
                 className="text-xs px-3 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-full border border-violet-200 transition-colors font-medium"
               >
                 {p}
@@ -205,6 +206,7 @@ export default function Home() {
               e.preventDefault()
               const q = aiQuery.trim()
               if (!q) return
+              trackAiRecommendation(q, 'input')
               navigate(`/recommendation?query=${encodeURIComponent(q)}`)
             }}
             className="flex gap-2"
@@ -348,6 +350,7 @@ export default function Home() {
                     backgroundLocation: location,
                   } : undefined}
                   className="card-hover overflow-hidden group"
+                  onClick={() => w.carId && trackSelectItem(w.carId, v(w.makerName) || v(w.maker), v(w.modelName) || v(w.model), 'weekly_best')}
                 >
                   {/* 이미지 */}
                   <div className="relative aspect-[16/9] bg-gray-100">

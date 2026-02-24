@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { getLike, toggleLike } from '@/api/likes'
+import { trackLike } from '@/lib/analytics'
 
 type Props = {
   carId: number
@@ -32,6 +33,7 @@ export default function LikeButton({ carId, className = '' }: Props) {
       const next = await toggleLike(carId)
       setLiked(!!next?.liked)
       setCount(Number(next?.count ?? 0))
+      trackLike(carId, !!next?.liked)
     } catch {
       // no-op
     } finally {

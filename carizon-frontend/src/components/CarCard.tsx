@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import type { CarListItem } from '@/api/cars'
+import { trackSelectItem } from '@/lib/analytics'
 
 const NO_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><text fill="#9ca3af" font-family="sans-serif" font-size="13" x="200" y="158" text-anchor="middle">이미지 없음</text><rect fill="#e5e7eb" x="170" y="110" width="60" height="38" rx="4"/></svg>')}`
 
@@ -51,6 +52,7 @@ export default function CarCard({ item, likesCount }: Props) {
       to={`/cars/${item.carId}`}
       state={state}
       className="card-hover flex flex-col group overflow-hidden"
+      onClick={() => trackSelectItem(item.carId, item.maker, item.model, source)}
     >
       {/* 이미지 */}
       <div className="relative aspect-[4/3] overflow-hidden bg-gray-50">

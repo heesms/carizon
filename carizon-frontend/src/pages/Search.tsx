@@ -6,6 +6,7 @@ import AdSlot from '@/components/AdSlot'
 import { searchCars, type CarListItem } from '@/api/cars'
 import { batchLikes } from '@/api/likes'
 import { getRecommendations } from '@/api/recommendations'
+import { trackFilterApply, trackSearch } from '@/lib/analytics'
 
 const SORT_OPTIONS = [
   { value: '', label: '무작위' },
@@ -145,6 +146,8 @@ export default function Search() {
   }, [filteredVisibleList])
 
   const setFilters = (v: Record<string, any>) => {
+    if (v.q) trackSearch(v.q)
+    else trackFilterApply(v)
     const usp = new URLSearchParams()
     Object.entries(v).forEach(([k, val]) => {
       if (val !== undefined && val !== null && val !== '') usp.set(k, String(val))
