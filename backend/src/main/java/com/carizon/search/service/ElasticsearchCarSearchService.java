@@ -4,8 +4,6 @@ import com.carizon.dto.CarListItemDto;
 import com.carizon.search.config.ElasticsearchConfig;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.SortOrder;
-import co.elastic.clients.elasticsearch._types.query_dsl.FunctionBoostMode;
-import co.elastic.clients.elasticsearch._types.query_dsl.FunctionScoreBuilders;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders;
 import co.elastic.clients.json.JsonData;
@@ -16,11 +14,6 @@ import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
 import co.elastic.clients.elasticsearch.core.bulk.IndexOperation;
 import co.elastic.clients.elasticsearch.core.search.Hit;
-import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
-import co.elastic.clients.elasticsearch._types.aggregations.LongTermsAggregate;
-import co.elastic.clients.elasticsearch._types.aggregations.LongTermsBucket;
-import co.elastic.clients.elasticsearch._types.aggregations.StringTermsAggregate;
-import co.elastic.clients.elasticsearch._types.aggregations.StringTermsBucket;
 import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,7 +23,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.function.Function;
 
 /**
  * Elasticsearch 기반 차량 검색/인덱싱 서비스.
@@ -44,8 +36,6 @@ public class ElasticsearchCarSearchService {
     private final ElasticsearchClient client;
     private final ObjectMapper objectMapper;
     private static final String INDEX = ElasticsearchConfig.CARS_INDEX;
-    private static final List<String> FUEL_LPG_ALIASES = List.of("LPG(일반인)", "LPG(일반인 구입)");
-    private static final List<String> FUEL_ELECTRIC_ALIASES = List.of("전기", "EV", "전기(EV)", "전기 EV");
 
     /**
      * 차량 검색 (페이징, 필터, 정렬, 전체 건수 포함)
@@ -58,37 +48,31 @@ public class ElasticsearchCarSearchService {
             if (size <= 0 || size > 200) size = 20;
             int from = page * size;
 
-            Query baseQuery = buildQuery(queryParams);
+            Query query = buildQuery(queryParams);
             String sortField = getSortField(queryParams);
             SortOrder sortOrder = getSortOrder(queryParams);
-            // 정렬 없으면 무작위 노출 (random_score)
-            Query query = sortField == null
-                    ? QueryBuilders.functionScore(fs -> fs
-                            .query(baseQuery)
-                            .functions(FunctionScoreBuilders.randomScore(rs -> rs.seed(String.valueOf(System.currentTimeMillis())).field("_seq_no")))
-                            .boostMode(FunctionBoostMode.Replace))
-                    : baseQuery;
 
             SearchRequest.Builder searchBuilder = new SearchRequest.Builder()
                     .index(INDEX)
                     .query(query)
                     .from(from)
-                    .size(size);
-            if (sortField != null) {
-                searchBuilder.sort(s -> s.field(f -> f.field(sortField).order(sortOrder)));
-            }
+                    .size(size)
+                    .trackTotalHits(t -> t.enabled(true));
+            searchBuilder.sort(s -> s.field(f -> f.field(sortField).order(sortOrder)));
 
             Map<String, Object> dslForLog = buildDslForLog(queryParams, from, size, sortField, sortOrder);
-            try {
-                log.info("[Elasticsearch] search DSL: {}", objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(dslForLog));
-            } catch (JsonProcessingException e) {
-                log.info("[Elasticsearch] search DSL (raw): {}", dslForLog);
+            if (log.isDebugEnabled()) {
+                try {
+                    log.debug("[Elasticsearch] search DSL: {}", objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(dslForLog));
+                } catch (JsonProcessingException e) {
+                    log.debug("[Elasticsearch] search DSL (raw): {}", dslForLog);
+                }
             }
 
-            // 매칭 건수는 Count API로 별도 조회 (검색 결과 total 상한 10k 없이 정확한 값)
-            long total = countByQuery(queryParams);
-
             SearchResponse<Map> response = client.search(searchBuilder.build(), Map.class);
+            long total = response.hits().total() != null
+                ? response.hits().total().value()
+                : 0L;
             List<CarListItemDto> content = new ArrayList<>();
             for (Hit<Map> hit : response.hits().hits()) {
                 Map<String, Object> source = hit.source();
@@ -207,96 +191,67 @@ public class ElasticsearchCarSearchService {
         }
     }
 
-    /**
-     * 필드별 terms 집계를 통해 카운트 계산 (필터 조건 포함).
-     * text 타입 필드인 경우 자동으로 .keyword 서브필드를 재시도한다.
-     * 집계 실패 시 예외를 throw하여 호출자가 DB fallback을 사용하게 한다.
-     */
-    public Map<String, Long> countTermsByField(Map<String, Object> queryParams, String field) {
-        return countTermsByField(queryParams, field, 10000);
-    }
-
-    public Map<String, Long> countTermsByField(Map<String, Object> queryParams, String field, int size) {
-        Query query = buildQuery(queryParams);
-        try {
-            return doTermsAgg(query, field, size);
-        } catch (ElasticsearchException e) {
-            String msg = e.getMessage() != null ? e.getMessage() : "";
-            if (msg.contains("index_not_found") || msg.contains("no such index")) {
-                return Map.of(); // 인덱스 없음 — 조용히 빈 맵 반환
-            }
-            // text 타입 필드 또는 all shards failed: .keyword 서브필드로 재시도
-            if (!field.endsWith(".keyword")) {
-                try {
-                    Map<String, Long> result = doTermsAgg(query, field + ".keyword", size);
-                    log.debug("[Elasticsearch] countTermsByField using '{}.keyword' succeeded", field);
-                    return result;
-                } catch (Exception e2) {
-                    log.debug("[Elasticsearch] countTermsByField .keyword fallback also failed: field={}, err={}", field, e2.getMessage());
-                }
-            }
-            log.warn("[Elasticsearch] countTermsByField failed: field={}, queryParams={}", field, queryParams, e);
-            throw new RuntimeException("[ES] countTermsByField failed: " + field, e);
-        } catch (Exception e) {
-            log.warn("[Elasticsearch] countTermsByField failed: field={}, queryParams={}", field, queryParams, e);
-            throw new RuntimeException("[ES] countTermsByField failed: " + field, e);
-        }
-    }
-
-    private Map<String, Long> doTermsAgg(Query query, String field, int size) throws java.io.IOException {
-        SearchResponse<Map> response = client.search(s -> s
-                .index(INDEX)
-                .size(0)
-                .query(query)
-                .aggregations("codes", a -> a.terms(t -> t.field(field).size(Math.max(1, size))))
-                , Map.class);
-
-        if (response.aggregations() == null || response.aggregations().get("codes") == null) {
-            return Map.of();
-        }
-
-        Map<String, Long> result = new LinkedHashMap<>();
-        Aggregate agg = response.aggregations().get("codes");
-
-        if (agg.isSterms()) {
-            // 문자열 필드 (keyword / text.keyword)
-            StringTermsAggregate sterms = agg.sterms();
-            if (sterms.buckets() == null || sterms.buckets().array() == null) return Map.of();
-            for (StringTermsBucket bucket : sterms.buckets().array()) {
-                String key = bucket.key().stringValue();
-                if (key == null || key.trim().isEmpty()) continue;
-                result.put(key, bucket.docCount());
-            }
-        } else if (agg.isLterms()) {
-            // 숫자처럼 생긴 코드(101, 102...)가 long으로 dynamic mapping된 경우
-            LongTermsAggregate lterms = agg.lterms();
-            if (lterms.buckets() == null || lterms.buckets().array() == null) return Map.of();
-            for (LongTermsBucket bucket : lterms.buckets().array()) {
-                result.put(String.valueOf(bucket.key()), bucket.docCount());
-            }
-        } else {
-            return Map.of();
-        }
-
-        return result;
-    }
-
     private Query buildQuery(Map<String, Object> params) {
         List<Query> must = new ArrayList<>();
         List<Query> filter = new ArrayList<>();
+        List<String> modelCodes = parseCsvValues(params.get("modelCode"));
+        List<String> makerCodes = parseCsvValues(params.get("makerCodes"));
+        List<String> excludeMakerCodes = parseCsvValues(params.get("excludeMakerCodes"));
 
         String q = buildSearchQuery(params);
         if (q != null && !q.isEmpty()) {
-            must.add(QueryBuilders.multiMatch(m -> m.query(q).fields("makerName", "modelName", "trimName", "modelCode")));
+            must.add(QueryBuilders.bool(b -> b
+                .should(QueryBuilders.multiMatch(m -> m.query(q).fields("makerName", "modelName", "trimName", "modelCode")))
+                .should(QueryBuilders.wildcard(w -> w.field("makerName").value("*" + q + "*")))
+                .should(QueryBuilders.wildcard(w -> w.field("modelName").value("*" + q + "*")))
+                .minimumShouldMatch("1")
+            ));
         }
         if (params.get("makerCode") != null) {
             filter.add(QueryBuilders.term(t -> t.field("makerCode").value(String.valueOf(params.get("makerCode")))));
         }
-        if (params.get("modelGroupCode") != null) {
+        if (!makerCodes.isEmpty()) {
+            if (makerCodes.size() == 1) {
+                filter.add(QueryBuilders.term(t -> t.field("makerCode").value(makerCodes.get(0))));
+            } else {
+                filter.add(QueryBuilders.bool(b -> {
+                    List<Query> should = new ArrayList<>();
+                    for (String code : makerCodes) {
+                        should.add(QueryBuilders.term(t -> t.field("makerCode").value(code)));
+                    }
+                    b.should(should);
+                    b.minimumShouldMatch("1");
+                    return b;
+                }));
+            }
+        }
+        if (!excludeMakerCodes.isEmpty()) {
+            filter.add(QueryBuilders.bool(b -> {
+                List<Query> mustNot = new ArrayList<>();
+                for (String code : excludeMakerCodes) {
+                    mustNot.add(QueryBuilders.term(t -> t.field("makerCode").value(code)));
+                }
+                b.mustNot(mustNot);
+                return b;
+            }));
+        }
+        if (params.get("modelGroupCode") != null && (modelCodes.isEmpty() || modelCodes.size() == 1)) {
             filter.add(QueryBuilders.term(t -> t.field("modelGroupCode").value(String.valueOf(params.get("modelGroupCode")))));
         }
-        if (params.get("modelCode") != null) {
-            filter.add(QueryBuilders.term(t -> t.field("modelCode").value(String.valueOf(params.get("modelCode")))));
+        if (!modelCodes.isEmpty()) {
+            if (modelCodes.size() == 1) {
+                filter.add(QueryBuilders.term(t -> t.field("modelCode").value(modelCodes.get(0))));
+            } else if (!modelCodes.isEmpty()) {
+                filter.add(QueryBuilders.bool(b -> {
+                    List<Query> should = new ArrayList<>();
+                    for (String code : modelCodes) {
+                        should.add(QueryBuilders.term(t -> t.field("modelCode").value(code)));
+                    }
+                    b.should(should);
+                    b.minimumShouldMatch("1");
+                    return b;
+                }));
+            }
         }
         if (params.get("trimCode") != null) {
             filter.add(QueryBuilders.term(t -> t.field("trimCode").value(String.valueOf(params.get("trimCode")))));
@@ -310,55 +265,81 @@ public class ElasticsearchCarSearchService {
         if (params.get("yearMax") != null) {
             filter.add(QueryBuilders.range(r -> r.field("year").lte(JsonData.of(parseInt(params.get("yearMax"), Integer.MAX_VALUE)))));
         }
+        if (params.get("kmMin") != null) {
+            filter.add(QueryBuilders.range(r -> r.field("km").gte(JsonData.of(parseInt(params.get("kmMin"), 0)))));
+        }
         if (params.get("kmMax") != null) {
             filter.add(QueryBuilders.range(r -> r.field("km").lte(JsonData.of(parseInt(params.get("kmMax"), Integer.MAX_VALUE)))));
         }
-        if (params.get("priceMin") != null) {
-            filter.add(QueryBuilders.range(r -> r.field("priceMin").gte(JsonData.of(parseInt(params.get("priceMin"), 0)))));
+        Integer priceMin = sanitizePriceMin(params.get("priceMin"));
+        Integer priceMax = sanitizePriceMax(params.get("priceMax"));
+        if (priceMin != null && priceMax != null && priceMax < priceMin) {
+            // 잘못된 상한(예: 0)으로 결과를 0건으로 만드는 상황 방지
+            priceMax = null;
         }
-        if (params.get("priceMax") != null) {
-            filter.add(QueryBuilders.range(r -> r.field("priceMax").lte(JsonData.of(parseInt(params.get("priceMax"), Integer.MAX_VALUE)))));
+        if (priceMin != null) {
+            filter.add(QueryBuilders.range(r -> r.field("priceMin").gte(JsonData.of(priceMin))));
         }
-        if (params.get("fuel") != null && !String.valueOf(params.get("fuel")).isEmpty()) {
-            Query query = buildMultiValueFilter("fuel", normalizeQueryListValue(params.get("fuel"), this::normalizeFuelQueryValues));
-            if (query != null) filter.add(query);
+        if (priceMax != null) {
+            final int finalPriceMax = priceMax;
+            filter.add(QueryBuilders.range(r -> r.field("priceMax").lte(JsonData.of(finalPriceMax))));
+        }
+        List<String> fuels = parseCsvValues(params.get("fuel"));
+        if (!fuels.isEmpty()) {
+            if (fuels.size() == 1) {
+                filter.add(QueryBuilders.term(t -> t.field("fuel.keyword").value(fuels.get(0))));
+            } else {
+                filter.add(QueryBuilders.bool(b -> {
+                    List<Query> should = new ArrayList<>();
+                    for (String fuel : fuels) {
+                        should.add(QueryBuilders.term(t -> t.field("fuel.keyword").value(fuel)));
+                    }
+                    b.should(should);
+                    b.minimumShouldMatch("1");
+                    return b;
+                }));
+            }
         }
         if (params.get("transmission") != null && !String.valueOf(params.get("transmission")).isEmpty()) {
-            filter.add(QueryBuilders.term(t -> t.field("transmission").value(String.valueOf(params.get("transmission")))));
+            filter.add(QueryBuilders.term(t -> t.field("transmission.keyword").value(String.valueOf(params.get("transmission")))));
         }
-        if (params.get("bodyType") != null && !String.valueOf(params.get("bodyType")).isEmpty()) {
-            Query query = buildMultiValueFilter("bodyType", normalizeQueryListValue(params.get("bodyType"), this::normalizeBodyTypeQueryValues));
-            if (query != null) filter.add(query);
-        }
-        if (params.get("color") != null && !String.valueOf(params.get("color")).isEmpty()) {
-            Query query = buildMultiValueFilter("color", params.get("color"));
-            if (query != null) filter.add(query);
+        List<String> bodyTypes = parseBodyTypeTokens(params.get("bodyType"));
+        if (!bodyTypes.isEmpty()) {
+            filter.add(QueryBuilders.bool(b -> {
+                List<Query> should = new ArrayList<>();
+                for (String bt : bodyTypes) {
+                    should.add(QueryBuilders.term(t -> t.field("bodyType.keyword").value(bt)));
+                }
+                b.should(should);
+                b.minimumShouldMatch("1");
+                return b;
+            }));
         }
         if (params.get("region") != null && !String.valueOf(params.get("region")).isEmpty()) {
-            filter.add(QueryBuilders.term(t -> t.field("region").value(String.valueOf(params.get("region")))));
+            filter.add(QueryBuilders.term(t -> t.field("region.keyword").value(String.valueOf(params.get("region")))));
         }
         if (params.get("carNo") != null && !String.valueOf(params.get("carNo")).trim().isEmpty()) {
-            filter.add(QueryBuilders.term(t -> t.field("carNo").value(String.valueOf(params.get("carNo")).trim())));
+            filter.add(QueryBuilders.term(t -> t.field("carNo.keyword").value(String.valueOf(params.get("carNo")).trim())));
         }
 
-        if (must.isEmpty() && filter.isEmpty()) {
-            return QueryBuilders.matchAll(m -> m);
-        }
+        // 기본 필터: 가격이 0보다 큰 매물만
+        filter.add(QueryBuilders.range(r -> r.field("priceMin").gt(JsonData.of(0))));
+
         return QueryBuilders.bool(b -> {
             if (!must.isEmpty()) b.must(must);
-            if (!filter.isEmpty()) b.filter(filter);
+            b.filter(filter);
             return b;
         });
     }
 
     private String getSortField(Map<String, Object> params) {
         String sort = params.containsKey("sort") ? String.valueOf(params.get("sort")) : null;
-        if (sort == null || sort.isEmpty() || "null".equals(sort)) return null;
+        if (sort == null || sort.isEmpty() || "null".equals(sort)) return "priceUpdatedAt";
         if ("LOW_PRICE".equals(sort)) return "priceMin";
         if ("LOW_KM".equals(sort)) return "km";
         if ("NEW_YEAR".equals(sort)) return "year";
         if ("RECENT".equals(sort)) return "priceUpdatedAt";
-        return null;
+        return "priceUpdatedAt";
     }
 
     private SortOrder getSortOrder(Map<String, Object> params) {
@@ -367,66 +348,6 @@ public class ElasticsearchCarSearchService {
         if ("LOW_PRICE".equals(sort) || "LOW_KM".equals(sort)) return SortOrder.Asc;
         if ("RECENT".equals(sort)) return SortOrder.Desc;
         return SortOrder.Desc;
-    }
-
-    private Query buildMultiValueFilter(String field, Object value) {
-        List<String> values = splitCsvParams(value);
-        if (values.isEmpty()) return null;
-        if (values.size() == 1) return QueryBuilders.term(t -> t.field(field).value(values.get(0)));
-        List<Query> shoulds = values.stream()
-                .map(v -> QueryBuilders.term(t -> t.field(field).value(v)))
-                .toList();
-        return QueryBuilders.bool(b -> b.should(shoulds).minimumShouldMatch("1"));
-    }
-
-    private List<String> splitCsvParams(Object value) {
-        if (value == null) return List.of();
-        return Arrays.stream(String.valueOf(value).split(","))
-                .map(String::trim)
-                .filter(v -> !v.isEmpty())
-                .toList();
-    }
-
-    private Object normalizeQueryListValue(Object value, Function<String, List<String>> normalizer) {
-        if (value == null) return null;
-        String raw = String.valueOf(value);
-        List<String> normalized = Arrays.stream(raw.split(","))
-                .map(String::trim)
-                .filter(v -> !v.isBlank())
-                .flatMap(v -> normalizer.apply(v).stream())
-                .filter(v -> v != null && !v.isBlank())
-                .distinct()
-                .toList();
-        if (normalized.isEmpty()) return null;
-        return String.join(",", normalized);
-    }
-
-    private List<String> normalizeFuelQueryValues(String value) {
-        if (value == null || value.isBlank()) return List.of();
-        String normalized = value.trim();
-        String upper = normalized.toUpperCase(Locale.ROOT);
-        if (upper.equals("EV") || upper.contains("전기")) return FUEL_ELECTRIC_ALIASES;
-        if (upper.contains("LPG") && upper.contains("일반인")) return FUEL_LPG_ALIASES;
-        return List.of(normalized);
-    }
-
-    private List<String> normalizeBodyTypeQueryValues(String value) {
-        if (value == null || value.isBlank()) return List.of();
-        String normalized = value.replaceAll("\\s+", "");
-        if (normalized.contains("경차")) return List.of("경차");
-        if (normalized.contains("소형")) return List.of("소형");
-        if (normalized.contains("준중형")) return List.of("준중형");
-        if (normalized.contains("중형")) return List.of("중형");
-        if (normalized.contains("대형")) return List.of("대형");
-        if (normalized.contains("스포츠카")) return List.of("스포츠카");
-        if (normalized.equalsIgnoreCase("RV")) return List.of("RV");
-        if (normalized.equalsIgnoreCase("SUV")) return List.of("SUV");
-        if (normalized.contains("승합")) return List.of("승합");
-        if (normalized.contains("버스")) return List.of("버스");
-        if (normalized.contains("화물") || normalized.contains("트럭") || normalized.contains("상용")) {
-            return List.of("화물", "트럭", "상용", "화물차");
-        }
-        return List.of("기타");
     }
 
     private String buildSearchQuery(Map<String, Object> params) {
@@ -457,54 +378,80 @@ public class ElasticsearchCarSearchService {
         String q = buildSearchQuery(params);
         List<Map<String, Object>> must = new ArrayList<>();
         List<Map<String, Object>> filter = new ArrayList<>();
+        List<String> modelCodes = parseCsvValues(params.get("modelCode"));
+        List<String> makerCodes = parseCsvValues(params.get("makerCodes"));
+        List<String> excludeMakerCodes = parseCsvValues(params.get("excludeMakerCodes"));
         if (q != null && !q.isEmpty()) {
-            must.add(Map.of("multi_match", Map.of("query", q, "fields", List.of("makerName", "modelName", "trimName", "modelCode"))));
+            must.add(Map.of("bool", Map.of(
+                "should", List.of(
+                    Map.of("multi_match", Map.of("query", q, "fields", List.of("makerName", "modelName", "trimName", "modelCode"))),
+                    Map.of("wildcard", Map.of("makerName", Map.of("value", "*" + q + "*"))),
+                    Map.of("wildcard", Map.of("modelName", Map.of("value", "*" + q + "*")))
+                ),
+                "minimum_should_match", "1"
+            )));
         }
         if (params.get("makerCode") != null) filter.add(Map.of("term", Map.of("makerCode", params.get("makerCode"))));
-        if (params.get("modelGroupCode") != null) filter.add(Map.of("term", Map.of("modelGroupCode", params.get("modelGroupCode"))));
-        if (params.get("modelCode") != null) filter.add(Map.of("term", Map.of("modelCode", params.get("modelCode"))));
+        if (!makerCodes.isEmpty()) {
+            if (makerCodes.size() == 1) {
+                filter.add(Map.of("term", Map.of("makerCode", makerCodes.get(0))));
+            } else {
+                filter.add(Map.of("terms", Map.of("makerCode", makerCodes)));
+            }
+        }
+        if (!excludeMakerCodes.isEmpty()) {
+            List<Map<String, Object>> mustNot = new ArrayList<>();
+            for (String code : excludeMakerCodes) {
+                mustNot.add(Map.of("term", Map.of("makerCode", code)));
+            }
+            filter.add(Map.of("bool", Map.of("must_not", mustNot)));
+        }
+        if (params.get("modelGroupCode") != null && (modelCodes.isEmpty() || modelCodes.size() == 1)) {
+            filter.add(Map.of("term", Map.of("modelGroupCode", params.get("modelGroupCode"))));
+        }
+        if (!modelCodes.isEmpty()) {
+            if (modelCodes.size() == 1) {
+                filter.add(Map.of("term", Map.of("modelCode", modelCodes.get(0))));
+            } else if (!modelCodes.isEmpty()) {
+                filter.add(Map.of("terms", Map.of("modelCode", modelCodes)));
+            }
+        }
         if (params.get("trimCode") != null) filter.add(Map.of("term", Map.of("trimCode", params.get("trimCode"))));
         if (params.get("gradeCode") != null) filter.add(Map.of("term", Map.of("gradeCode", params.get("gradeCode"))));
         if (params.get("yearMin") != null) filter.add(Map.of("range", Map.of("year", Map.of("gte", parseInt(params.get("yearMin"), 0)))));
         if (params.get("yearMax") != null) filter.add(Map.of("range", Map.of("year", Map.of("lte", parseInt(params.get("yearMax"), Integer.MAX_VALUE)))));
+        if (params.get("kmMin") != null) filter.add(Map.of("range", Map.of("km", Map.of("gte", parseInt(params.get("kmMin"), 0)))));
         if (params.get("kmMax") != null) filter.add(Map.of("range", Map.of("km", Map.of("lte", parseInt(params.get("kmMax"), Integer.MAX_VALUE)))));
-        if (params.get("priceMin") != null) filter.add(Map.of("range", Map.of("priceMin", Map.of("gte", parseInt(params.get("priceMin"), 0)))));
-        if (params.get("priceMax") != null) filter.add(Map.of("range", Map.of("priceMax", Map.of("lte", parseInt(params.get("priceMax"), Integer.MAX_VALUE)))));
-        if (params.get("fuel") != null && !String.valueOf(params.get("fuel")).isEmpty()) {
-            List<String> fuels = splitCsvParams(params.get("fuel"));
+        Integer priceMin = sanitizePriceMin(params.get("priceMin"));
+        Integer priceMax = sanitizePriceMax(params.get("priceMax"));
+        if (priceMin != null && priceMax != null && priceMax < priceMin) {
+            priceMax = null;
+        }
+        if (priceMin != null) filter.add(Map.of("range", Map.of("priceMin", Map.of("gte", priceMin))));
+        if (priceMax != null) filter.add(Map.of("range", Map.of("priceMax", Map.of("lte", priceMax))));
+        List<String> fuels = parseCsvValues(params.get("fuel"));
+        if (!fuels.isEmpty()) {
             if (fuels.size() == 1) {
-                filter.add(Map.of("term", Map.of("fuel", fuels.get(0))));
-            } else if (fuels.size() > 1) {
-                filter.add(buildOrTermFilterForLog("fuel", fuels));
+                filter.add(Map.of("term", Map.of("fuel.keyword", fuels.get(0))));
+            } else {
+                filter.add(Map.of("terms", Map.of("fuel.keyword", fuels)));
             }
         }
-        if (params.get("transmission") != null && !String.valueOf(params.get("transmission")).isEmpty()) filter.add(Map.of("term", Map.of("transmission", params.get("transmission"))));
-        if (params.get("bodyType") != null && !String.valueOf(params.get("bodyType")).isEmpty()) {
-            List<String> bodyTypes = splitCsvParams(params.get("bodyType"));
-            if (bodyTypes.size() == 1) {
-                filter.add(Map.of("term", Map.of("bodyType", bodyTypes.get(0))));
-            } else if (bodyTypes.size() > 1) {
-                filter.add(buildOrTermFilterForLog("bodyType", bodyTypes));
-            }
+        if (params.get("transmission") != null && !String.valueOf(params.get("transmission")).isEmpty()) filter.add(Map.of("term", Map.of("transmission.keyword", params.get("transmission"))));
+        List<String> bodyTypes = parseBodyTypeTokens(params.get("bodyType"));
+        if (!bodyTypes.isEmpty()) {
+            filter.add(Map.of("terms", Map.of("bodyType.keyword", bodyTypes)));
         }
-        if (params.get("region") != null && !String.valueOf(params.get("region")).isEmpty()) filter.add(Map.of("term", Map.of("region", params.get("region"))));
-        if (params.get("carNo") != null && !String.valueOf(params.get("carNo")).trim().isEmpty()) filter.add(Map.of("term", Map.of("carNo", String.valueOf(params.get("carNo")).trim())));
+        if (params.get("region") != null && !String.valueOf(params.get("region")).isEmpty()) filter.add(Map.of("term", Map.of("region.keyword", params.get("region"))));
+        if (params.get("carNo") != null && !String.valueOf(params.get("carNo")).trim().isEmpty()) filter.add(Map.of("term", Map.of("carNo.keyword", String.valueOf(params.get("carNo")).trim())));
 
-        if (must.isEmpty() && filter.isEmpty()) {
-            return Map.of("match_all", Map.of());
-        }
+        // 기본 필터: 가격이 0보다 큰 매물만
+        filter.add(Map.of("range", Map.of("priceMin", Map.of("gt", 0))));
+
         Map<String, Object> bool = new LinkedHashMap<>();
         if (!must.isEmpty()) bool.put("must", must);
-        if (!filter.isEmpty()) bool.put("filter", filter);
+        bool.put("filter", filter);
         return Map.of("bool", bool);
-    }
-
-    private Map<String, Object> buildOrTermFilterForLog(String field, List<String> values) {
-        List<Map<String, Object>> should = new ArrayList<>();
-        for (String value : values) {
-            should.add(Map.of("term", Map.of(field, value)));
-        }
-        return Map.of("bool", Map.of("should", should, "minimum_should_match", 1));
     }
 
     private Map<String, Object> createEmptyResult(Map<String, Object> queryParams) {
@@ -573,6 +520,69 @@ public class ElasticsearchCarSearchService {
             return Long.parseLong(String.valueOf(v).trim());
         } catch (Exception e) {
             return def;
+        }
+    }
+
+    private static List<String> parseCsvValues(Object value) {
+        if (value == null) return List.of();
+        String raw = String.valueOf(value).trim();
+        if (raw.isEmpty()) return List.of();
+
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        String[] parts = raw.split(",");
+        for (String part : parts) {
+            String item = part.trim();
+            if (!item.isEmpty()) values.add(item);
+        }
+        return new ArrayList<>(values);
+    }
+
+    private static List<String> parseBodyTypeTokens(Object value) {
+        List<String> values = parseCsvValues(value);
+        if (values.isEmpty()) return List.of();
+
+        LinkedHashSet<String> tokens = new LinkedHashSet<>();
+        for (String item : values) {
+            String trimmed = item == null ? "" : item.trim();
+            if (trimmed.isEmpty()) continue;
+
+            if ("스포츠카".equalsIgnoreCase(trimmed) || "sportscar".equalsIgnoreCase(trimmed) || "sports car".equalsIgnoreCase(trimmed)) {
+                tokens.add("스포츠카");
+                tokens.add("쿠페");
+                tokens.add("컨버터블");
+            }
+
+            // 영문 차종(SUV/RV)은 소문자 우선 + 대문자 호환 둘 다 지원
+            String lower = trimmed.toLowerCase(Locale.ROOT);
+            String upper = trimmed.toUpperCase(Locale.ROOT);
+            tokens.add(lower);
+            tokens.add(upper);
+            tokens.add(trimmed);
+        }
+        return new ArrayList<>(tokens);
+    }
+
+    private static Integer sanitizePriceMin(Object value) {
+        Integer parsed = parseNullableInt(value);
+        if (parsed == null) return null;
+        return Math.max(parsed, 0);
+    }
+
+    private static Integer sanitizePriceMax(Object value) {
+        Integer parsed = parseNullableInt(value);
+        if (parsed == null) return null;
+        return parsed > 0 ? parsed : null;
+    }
+
+    private static Integer parseNullableInt(Object value) {
+        if (value == null) return null;
+        if (value instanceof Number n) return n.intValue();
+        try {
+            String raw = String.valueOf(value).trim();
+            if (raw.isEmpty() || "null".equalsIgnoreCase(raw)) return null;
+            return Integer.parseInt(raw);
+        } catch (Exception ignored) {
+            return null;
         }
     }
 

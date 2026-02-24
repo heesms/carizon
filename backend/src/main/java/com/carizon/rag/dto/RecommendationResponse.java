@@ -15,7 +15,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class RecommendationResponse {
-    private String recommendation; // LLM이 생성한 추천 설명
+    private String recommendation; // 추천/검색 결과 안내 문구
     private List<RecommendedCar> cars; // 추천된 차량 목록
     
     @Data

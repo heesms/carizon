@@ -40,8 +40,10 @@ public class EncarTruckCrawler {
     private String encarReadsideReferer;
     @Value("${crawler.encar.headers.cookie:}")
     private String encarCookie;
-    @Value("${crawler.encar.truck.list-url-template:https://api.encar.com/search/car/list/truck?count=true&q=(And.Hidden.N._)&sr=%7CModifiedDate%7C{offset}%7C{size}&inav=%7CMetadata%7CSort}")
+    @Value("${crawler.encar.truck.list-url-template:https://api.encar.com/search/truck/list/mobile?count=true&q=Hidden.N.&sr=%7CMobileModifiedDate%7C{offset}%7C{size}&inav=%7CMetadata%7CSort}")
     private String truckListUrlTemplate;
+    @Value("${crawler.encar.truck.fallback-list-url-template:https://api.encar.com/search/car/list/mobile?count=true&q=(And.Hidden.N._.CarType.B.)&sr=%7CMobilePriceAsc%7C{offset}%7C{size}&inav=%7CMetadata%7CSort}")
+    private String truckFallbackListUrlTemplate;
 
     /** IP 변경은 하지 않음(프록시 NO). */
     private final OkHttpClient http = new OkHttpClient.Builder()
@@ -60,7 +62,7 @@ public class EncarTruckCrawler {
     /** 페이지 간 기본 딜레이(ms) */
     private static final long LIST_PAGE_DELAY_MS = 100L;
     /** 상세 API 청크 크기 (vehicleIds 한 번에 요청 개수) */
-    private static final int DETAIL_CHUNK = 50;
+    private static final int DETAIL_CHUNK = 20;
     /** 상세 요청 병렬 수 (과도하면 429 위험) */
     private static final int DETAIL_PARALLEL = 12;
     /** 부가 API(옵션/사고) 전용 병렬 수: 과도 호출 시 407 방지용 */
@@ -92,6 +94,7 @@ public class EncarTruckCrawler {
     private final Object standardOptionCodeNameLock = new Object();
     private final Object httpThrottleLock = new Object();
     private final Object extraApiThrottleLock = new Object();
+    private volatile String selectedTruckListUrlTemplate;
     private long lastHttpRequestAt = 0L;
     private long lastExtraApiRequestAt = 0L;
     private String nextUA() {
@@ -179,24 +182,8 @@ public class EncarTruckCrawler {
             log.info("[ENCAR_TRUCK] TRUNCATE raw_encar_truck done");
 
             while (true) {
-                String resolvedListUrl = truckListUrlTemplate
-                        .replace("{offset}", String.valueOf(offset))
-                        .replace("{size}", String.valueOf(PAGE_SIZE));
-                StringBuilder url = new StringBuilder(resolvedListUrl);
-                if (!cursor.isBlank()) {
-                    // 브라우저와 동일하게 ',' 등을 그대로 보냄(인코딩하지 않음)
-                    url.append("&cursor=").append(cursor);
-                }
-
-                log.debug("[ENCAR_TRUCK] list request: {}", url);
-
                 try {
-                    Object any = getJsonAny(url.toString());
-                    if (!(any instanceof Map)) {
-                        log.warn("[ENCAR_TRUCK] list response is not Map, exit");
-                        break;
-                    }
-                    Map<String, Object> obj = (Map<String, Object>) any;
+                    Map<String, Object> obj = fetchTruckListResponse(offset, cursor);
 
                     List<Map<String, Object>> list = (List<Map<String, Object>>) Optional
                             .ofNullable(obj.get("SearchResults"))
@@ -223,16 +210,14 @@ public class EncarTruckCrawler {
                     totalFetched += inserted;
 
                     // 종료 조건
-                    if (list.size() < PAGE_SIZE || (nextCursor.isBlank() && !cursor.isBlank())) {
+                    if (list.size() < PAGE_SIZE) {
                         log.warn("[ENCAR_TRUCK] last page (list < PAGE_SIZE), exit");
                         break;
                     }
-                    if (!nextCursor.isBlank() && nextCursor.equals(cursor)) {
-                        log.warn("[ENCAR_TRUCK] nextCursor unchanged, exit");
-                        break;
-                    }
 
-                    if (!nextCursor.isBlank()) cursor = nextCursor;
+                    if (!nextCursor.isBlank()) {
+                        cursor = nextCursor;
+                    }
                     offset += PAGE_SIZE;
 
                     Thread.sleep(LIST_PAGE_DELAY_MS);
@@ -254,6 +239,9 @@ public class EncarTruckCrawler {
                 }
             }
 
+            int dedupeUpdated = markUseYnByVehicleNo();
+            log.info("[ENCAR_TRUCK] use_yn dedupe done: updatedRows={}", dedupeUpdated);
+
             if (ENABLE_ENCAR_EXTRA_APIS && ENRICH_EXTRA_AFTER_BASE) {
                 try {
                     int enriched = enrichExtrasAfterBase();
@@ -270,10 +258,164 @@ public class EncarTruckCrawler {
         }
     }
 
+    /**
+     * DB 적재 없이 트럭 목록 페이징만 순회하여 건수를 점검한다.
+     * @param maxPages null/0 이하면 마지막 페이지까지 전체 순회
+     */
+    public Map<String, Object> runPagingCountOnly(Integer maxPages) {
+        int totalFetched = 0;
+        String cursor = "";
+        int offset = 0;
+        int tryCount = 0;
+        int pageNo = 0;
+        Integer apiCount = null;
+        Instant started = Instant.now();
+
+        while (true) {
+            try {
+                Map<String, Object> obj = fetchTruckListResponse(offset, cursor);
+                if (apiCount == null) {
+                    apiCount = toInteger(obj.get("Count"));
+                }
+
+                List<Map<String, Object>> list = (List<Map<String, Object>>) Optional
+                        .ofNullable(obj.get("SearchResults"))
+                        .orElse(List.of());
+
+                Map<String, Object> paging = (Map<String, Object>) Optional
+                        .ofNullable(obj.get("paging"))
+                        .orElse(obj.get("Paging"));
+
+                String nextCursor = "";
+                if (paging != null && paging.get("next") != null) {
+                    nextCursor = String.valueOf(paging.get("next")).trim();
+                }
+
+                if (list.isEmpty()) {
+                    log.info("[ENCAR_TRUCK][PAGING-TEST] SearchResults empty, exit");
+                    break;
+                }
+
+                pageNo++;
+                totalFetched += list.size();
+                log.info("[ENCAR_TRUCK][PAGING-TEST] page={} batch={} total={} nextCursor={}",
+                        pageNo, list.size(), totalFetched, nextCursor.isBlank() ? "-" : nextCursor);
+
+                if (maxPages != null && maxPages > 0 && pageNo >= maxPages) {
+                    log.info("[ENCAR_TRUCK][PAGING-TEST] maxPages reached: {}", maxPages);
+                    break;
+                }
+
+                if (list.size() < PAGE_SIZE) {
+                    log.info("[ENCAR_TRUCK][PAGING-TEST] last page detected, exit");
+                    break;
+                }
+
+                if (!nextCursor.isBlank()) {
+                    cursor = nextCursor;
+                }
+                offset += PAGE_SIZE;
+
+                Thread.sleep(LIST_PAGE_DELAY_MS);
+                tryCount = 0;
+            } catch (Exception e) {
+                log.warn("[ENCAR_TRUCK][PAGING-TEST] list error: {}", e.toString());
+                if (++tryCount > 5) {
+                    log.warn("[ENCAR_TRUCK][PAGING-TEST] retry limit exceeded, exit");
+                    break;
+                }
+                try {
+                    Thread.sleep(1000L * tryCount);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+
+        long elapsedSec = Math.max(0L, java.time.Duration.between(started, Instant.now()).toSeconds());
+        log.info("[ENCAR_TRUCK][PAGING-TEST] done pages={} fetchedByPaging={} apiCount={} elapsedSec={}",
+                pageNo, totalFetched, apiCount, elapsedSec);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("source", "ENCAR_TRUCK");
+        result.put("pages", pageNo);
+        result.put("fetchedByPaging", totalFetched);
+        result.put("apiCount", apiCount);
+        result.put("elapsedSec", elapsedSec);
+        result.put("maxPages", maxPages);
+        return result;
+    }
+
+    /** 크롤링 없이 raw_encar_truck의 use_yn만 재계산 */
+    public Map<String, Object> refreshUseYnOnly() {
+        int updatedRows = markUseYnByVehicleNo();
+        Integer yCount = jdbc.queryForObject("SELECT COUNT(*) FROM raw_encar_truck WHERE use_yn = 'Y'", Integer.class);
+        Integer nCount = jdbc.queryForObject("SELECT COUNT(*) FROM raw_encar_truck WHERE use_yn = 'N'", Integer.class);
+        Integer totalCount = jdbc.queryForObject("SELECT COUNT(*) FROM raw_encar_truck", Integer.class);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("source", "ENCAR_TRUCK");
+        result.put("updatedRows", updatedRows);
+        result.put("useYnYCount", yCount != null ? yCount : 0);
+        result.put("useYnNCount", nCount != null ? nCount : 0);
+        result.put("totalCount", totalCount != null ? totalCount : 0);
+        return result;
+    }
+
+    private Map<String, Object> fetchTruckListResponse(int offset, String cursor) throws Exception {
+        for (String template : truckListUrlTemplateCandidates()) {
+            String resolvedListUrl = template
+                    .replace("{offset}", String.valueOf(offset))
+                    .replace("{size}", String.valueOf(PAGE_SIZE));
+            StringBuilder url = new StringBuilder(resolvedListUrl);
+            if (cursor != null && !cursor.isBlank()) {
+                url.append("&cursor=").append(URLEncoder.encode(cursor, StandardCharsets.UTF_8));
+            }
+
+            log.debug("[ENCAR_TRUCK] list request: {}", url);
+            try {
+                Object any = getJsonAny(url.toString());
+                if (!(any instanceof Map<?, ?> map)) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                Map<String, Object> casted = (Map<String, Object>) map;
+                if (!template.equals(selectedTruckListUrlTemplate)) {
+                    selectedTruckListUrlTemplate = template;
+                    log.info("[ENCAR_TRUCK] selected list template={}", template);
+                }
+                return casted;
+            } catch (Exception e) {
+                if (isNotFoundError(e)) {
+                    log.warn("[ENCAR_TRUCK] list endpoint 404, fallback template={}", template);
+                    continue;
+                }
+                throw e;
+            }
+        }
+        throw new IllegalStateException("No available ENCAR_TRUCK list endpoint");
+    }
+
+    private List<String> truckListUrlTemplateCandidates() {
+        LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        if (selectedTruckListUrlTemplate != null && !selectedTruckListUrlTemplate.isBlank()) {
+            candidates.add(selectedTruckListUrlTemplate);
+        }
+        if (truckListUrlTemplate != null && !truckListUrlTemplate.isBlank()) {
+            candidates.add(truckListUrlTemplate);
+        }
+        if (truckFallbackListUrlTemplate != null && !truckFallbackListUrlTemplate.isBlank()) {
+            candidates.add(truckFallbackListUrlTemplate);
+        }
+        // 환경별 CarType 차이를 대비한 2차 폴백(C)
+        candidates.add("https://api.encar.com/search/car/list/mobile?count=true&q=(And.Hidden.N._.CarType.C.)&sr=%7CMobilePriceAsc%7C{offset}%7C{size}&inav=%7CMetadata%7CSort");
+        return new ArrayList<>(candidates);
+    }
+
     /** 상세 API를 청크 단위로 병렬 호출 후 한 번에 INSERT */
     private int handleDetails(List<Map<String, Object>> list) throws Exception {
         boolean enrichInline = ENABLE_ENCAR_EXTRA_APIS && !ENRICH_EXTRA_AFTER_BASE;
-        Map<String, String> sellTypeByVehicleId = enrichInline ? buildSellTypeByVehicleId(list) : Map.of();
 
         List<List<String>> idChunks = new ArrayList<>();
         for (int i = 0; i < list.size(); i += DETAIL_CHUNK) {
@@ -303,30 +445,22 @@ public class EncarTruckCrawler {
         int requestedIds = idChunks.stream().mapToInt(List::size).sum();
         log.info("[ENCAR_TRUCK] detail fetched vehicles={} requestedIds={}", allVehicles.size(), requestedIds);
         if (allVehicles.isEmpty()) return 0;
+        for (Map<String, Object> vehicle : allVehicles) {
+            applyTruckDefaults(vehicle);
+        }
 
         Map<String, CompletableFuture<EncarExtraData>> extraFutureByVehicleId = new HashMap<>();
-        int filteredNotNormal = 0;
-        int filteredUnknown = 0;
-        int calledNormal = 0;
         if (enrichInline) {
             for (Map<String, Object> vehicle : allVehicles) {
                 String vehicleId = extractVehicleId(vehicle);
                 if (vehicleId == null || vehicleId.isBlank()) continue;
-                String resolvedSellType = resolveSellType(vehicleId, vehicle, sellTypeByVehicleId);
-                if (!"NORMAL".equalsIgnoreCase(resolvedSellType)) {
-                    if (resolvedSellType == null || resolvedSellType.isBlank()) filteredUnknown++;
-                    else filteredNotNormal++;
-                    continue;
-                }
-                calledNormal++;
                 String vehicleNo = extractVehicleNo(vehicle);
                 extraFutureByVehicleId.computeIfAbsent(
                         vehicleId,
                         id -> CompletableFuture.supplyAsync(() -> fetchEncarExtraData(id, vehicleNo, vehicle), extraApiPool)
                 );
             }
-            log.info("[ENCAR_TRUCK] extra api target(normal only)={} calledNormal={} filteredNotNormal={} filteredUnknown={}",
-                    extraFutureByVehicleId.size(), calledNormal, filteredNotNormal, filteredUnknown);
+            log.info("[ENCAR_TRUCK] extra api target(all trucks)={}", extraFutureByVehicleId.size());
         }
 
         String sql = "INSERT INTO raw_encar_truck(payload, car_image_url, price_new, option_array, sel_option_array, seat_count, " +
@@ -347,10 +481,10 @@ public class EncarTruckCrawler {
                 String payloadJson = mapper.writeValueAsString(vehicle);
                 String carImageUrl = buildEncarImageUrl(vehicle);
                 Integer priceNew = extractOriginPrice(vehicle);
+                String vehicleId = extractVehicleId(vehicle);
 
                 EncarExtraData resolvedExtra = null;
                 if (enrichInline) {
-                    String vehicleId = extractVehicleId(vehicle);
                     if (vehicleId != null && !vehicleId.isBlank()) {
                         CompletableFuture<EncarExtraData> extraFuture = extraFutureByVehicleId.get(vehicleId);
                         if (extraFuture != null) {
@@ -401,7 +535,8 @@ public class EncarTruckCrawler {
         final String selectSql = """
                 SELECT id, vehicle_id, vehicle_no, payload
                 FROM raw_encar_truck
-                WHERE id > ? AND sell_type = 'NORMAL'
+                WHERE id > ?
+                  AND use_yn = 'Y'
                 ORDER BY id ASC
                 LIMIT ?
                 """;
@@ -490,6 +625,152 @@ public class EncarTruckCrawler {
         return totalUpdated;
     }
 
+    /**
+     * DB 컬럼 기준 기본값 정규화.
+     * - sell_type NULL/'null'/'' -> NORMAL
+     * - body_type NULL/'null'/'' -> 화물
+     * - model_group_code NULL/'null'/'' -> model_code
+     * - model_group_name NULL/'null'/'' -> model_name
+     *
+     * payload도 같이 보정해서(raw 컬럼이 payload 기반 생성일 때 대비) 추출값을 안정화한다.
+     */
+    private int normalizeTruckDefaultsInDb() {
+        int affected = 0;
+
+        // 1) payload 보정 (생성 컬럼 경로 대비)
+        affected += jdbc.update("""
+                UPDATE raw_encar_truck
+                SET payload = JSON_SET(
+                    COALESCE(payload, JSON_OBJECT()),
+                    '$.sellType', 'NORMAL',
+                    '$.sell_type', 'NORMAL',
+                    '$.advertisement.sellType', 'NORMAL',
+                    '$.advertisement.sell_type', 'NORMAL'
+                )
+                WHERE sell_type IS NULL
+                   OR TRIM(sell_type) = ''
+                   OR LOWER(TRIM(sell_type)) = 'null'
+                """);
+
+        affected += jdbc.update("""
+                UPDATE raw_encar_truck
+                SET payload = JSON_SET(
+                    COALESCE(payload, JSON_OBJECT()),
+                    '$.bodyType', '화물',
+                    '$.body_type', '화물',
+                    '$.category.bodyType', '화물',
+                    '$.category.body_type', '화물'
+                )
+                WHERE body_type IS NULL
+                   OR TRIM(body_type) = ''
+                   OR LOWER(TRIM(body_type)) = 'null'
+                """);
+
+        affected += jdbc.update("""
+                UPDATE raw_encar_truck
+                SET payload = JSON_SET(
+                    COALESCE(payload, JSON_OBJECT()),
+                    '$.modelGroupCode', model_code,
+                    '$.model_group_code', model_code,
+                    '$.modelGroup.code', model_code,
+                    '$.category.modelGroupCode', model_code,
+                    '$.category.modelGroup.code', model_code
+                )
+                WHERE (model_group_code IS NULL OR TRIM(model_group_code) = '' OR LOWER(TRIM(model_group_code)) = 'null')
+                  AND model_code IS NOT NULL
+                  AND TRIM(model_code) <> ''
+                  AND LOWER(TRIM(model_code)) <> 'null'
+                """);
+
+        affected += jdbc.update("""
+                UPDATE raw_encar_truck
+                SET payload = JSON_SET(
+                    COALESCE(payload, JSON_OBJECT()),
+                    '$.modelGroupName', model_name,
+                    '$.model_group_name', model_name,
+                    '$.modelGroup.name', model_name,
+                    '$.category.modelGroupName', model_name,
+                    '$.category.modelGroup.name', model_name
+                )
+                WHERE (model_group_name IS NULL OR TRIM(model_group_name) = '' OR LOWER(TRIM(model_group_name)) = 'null')
+                  AND model_name IS NOT NULL
+                  AND TRIM(model_name) <> ''
+                  AND LOWER(TRIM(model_name)) <> 'null'
+                """);
+
+        // 2) 컬럼 직접 보정 (raw 컬럼이 일반 컬럼인 경우 즉시 반영)
+        affected += jdbc.update("""
+                UPDATE raw_encar_truck
+                SET sell_type = 'NORMAL'
+                WHERE sell_type IS NULL
+                   OR TRIM(sell_type) = ''
+                   OR LOWER(TRIM(sell_type)) = 'null'
+                """);
+
+        affected += jdbc.update("""
+                UPDATE raw_encar_truck
+                SET body_type = '화물'
+                WHERE body_type IS NULL
+                   OR TRIM(body_type) = ''
+                   OR LOWER(TRIM(body_type)) = 'null'
+                """);
+
+        affected += jdbc.update("""
+                UPDATE raw_encar_truck
+                SET model_group_code = model_code
+                WHERE (model_group_code IS NULL OR TRIM(model_group_code) = '' OR LOWER(TRIM(model_group_code)) = 'null')
+                  AND model_code IS NOT NULL
+                  AND TRIM(model_code) <> ''
+                  AND LOWER(TRIM(model_code)) <> 'null'
+                """);
+
+        affected += jdbc.update("""
+                UPDATE raw_encar_truck
+                SET model_group_name = model_name
+                WHERE (model_group_name IS NULL OR TRIM(model_group_name) = '' OR LOWER(TRIM(model_group_name)) = 'null')
+                  AND model_name IS NOT NULL
+                  AND TRIM(model_name) <> ''
+                  AND LOWER(TRIM(model_name)) <> 'null'
+                """);
+
+        return affected;
+    }
+
+    /**
+     * vehicle_no 기준으로 대표 1건만 use_yn='Y'로 남기고 나머지는 'N' 처리.
+     * 우선순위:
+     * 1) adv_status='ADVERTISE' AND sell_type='NORMAL' AND price<>0
+     * 2) sell_type='NORMAL'
+     * 3) price<>0
+     * 4) id DESC
+     */
+    private int markUseYnByVehicleNo() {
+        jdbc.update("UPDATE raw_encar_truck SET use_yn = 'Y'");
+        return jdbc.update("""
+                UPDATE raw_encar_truck r
+                JOIN (
+                    SELECT id,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY vehicle_no
+                               ORDER BY
+                                 CASE
+                                   WHEN COALESCE(adv_status, '') = 'ADVERTISE'
+                                    AND COALESCE(sell_type, '') = 'NORMAL'
+                                    AND COALESCE(price, 0) <> 0
+                                   THEN 1 ELSE 0
+                                 END DESC,
+                                 CASE WHEN COALESCE(sell_type, '') = 'NORMAL' THEN 1 ELSE 0 END DESC,
+                                 CASE WHEN COALESCE(price, 0) <> 0 THEN 1 ELSE 0 END DESC,
+                                 id DESC
+                           ) AS rn
+                    FROM raw_encar_truck
+                    WHERE vehicle_no IS NOT NULL
+                      AND TRIM(vehicle_no) <> ''
+                ) x ON x.id = r.id
+                SET r.use_yn = CASE WHEN x.rn = 1 THEN 'Y' ELSE 'N' END
+                """);
+    }
+
     /** 한 청크(최대 DETAIL_CHUNK개 ID)에 대한 상세 API 호출. 실패 시 빈 리스트. */
     private List<Map<String, Object>> fetchDetailChunk(List<String> ids) {
         String detailUrl = "https://api.encar.com/v1/readside/vehicles/view?vehicleIds=" + String.join(",", ids);
@@ -528,6 +809,106 @@ public class EncarTruckCrawler {
         if (vehicleNo == null) return null;
         String value = String.valueOf(vehicleNo).trim();
         return value.isBlank() ? null : value;
+    }
+
+    private void applyTruckDefaults(Map<String, Object> vehicle) {
+        if (vehicle == null) return;
+
+        // 트럭은 무조건 NORMAL 취급
+        vehicle.put("sellType", "NORMAL");
+        vehicle.put("sell_type", "NORMAL");
+        vehicle.put("SellType", "NORMAL");
+        vehicle.put("SELL_TYPE", "NORMAL");
+
+        Map<String, Object> advertisement = getOrCreateMap(vehicle, "advertisement", "Advertisement");
+        advertisement.put("sellType", "NORMAL");
+        advertisement.put("sell_type", "NORMAL");
+        advertisement.put("SellType", "NORMAL");
+        advertisement.put("SELL_TYPE", "NORMAL");
+
+        Map<String, Object> spec = getOrCreateMap(vehicle, "spec", "Spec");
+        Map<String, Object> category = getOrCreateMap(vehicle, "category", "Category");
+        Map<String, Object> model = getOrCreateMap(vehicle, "model", "Model");
+        Map<String, Object> categoryModel = getOrCreateMap(category, "model", "Model");
+
+        // body_type 생성컬럼 경로: $.spec.bodyName
+        String bodyName = trimToNull(firstNonNull(
+                spec.get("bodyName"), spec.get("body_name"),
+                vehicle.get("bodyType"), vehicle.get("body_type"), vehicle.get("BodyType"), vehicle.get("BODY_TYPE"),
+                category.get("bodyName"), category.get("bodyType")
+        ));
+        if (bodyName == null) bodyName = "화물";
+        spec.put("bodyName", bodyName);
+        spec.put("body_name", bodyName);
+
+        // model_code 생성컬럼 경로: $.category.modelCd
+        String modelCode = trimToNull(firstNonNull(
+                category.get("modelCd"), category.get("modelCode"), category.get("model_code"),
+                categoryModel.get("code"), categoryModel.get("modelCd"),
+                vehicle.get("modelCd"), vehicle.get("modelCode"), vehicle.get("model_code"), vehicle.get("ModelCode"),
+                model.get("code"), model.get("modelCd"), model.get("modelCode")
+        ));
+        if (modelCode != null) {
+            category.put("modelCd", modelCode);
+            category.put("modelCode", modelCode);
+            category.put("model_code", modelCode);
+        }
+
+        // model_name 생성컬럼 경로: $.category.modelName
+        String modelName = trimToNull(firstNonNull(
+                category.get("modelName"), category.get("model_name"),
+                categoryModel.get("name"), categoryModel.get("modelName"),
+                vehicle.get("modelName"), vehicle.get("model_name"), vehicle.get("ModelName"), vehicle.get("Model"),
+                model.get("name"), model.get("modelName")
+        ));
+        if (modelName != null) {
+            category.put("modelName", modelName);
+            category.put("model_name", modelName);
+        }
+
+        // model_group_code 생성컬럼 경로: $.category.modelGroupCd
+        String modelGroupCode = trimToNull(firstNonNull(
+                category.get("modelGroupCd"), category.get("modelGroupCode"), category.get("model_group_code")
+        ));
+        if (modelGroupCode == null) modelGroupCode = modelCode;
+        if (modelGroupCode != null) {
+            category.put("modelGroupCd", modelGroupCode);
+            category.put("modelGroupCode", modelGroupCode);
+            category.put("model_group_code", modelGroupCode);
+            vehicle.put("modelGroupCode", modelGroupCode);
+            vehicle.put("model_group_code", modelGroupCode);
+            vehicle.put("ModelGroupCode", modelGroupCode);
+        }
+
+        // model_group_name 생성컬럼 경로: $.category.modelGroupName
+        String modelGroupName = trimToNull(firstNonNull(
+                category.get("modelGroupName"), category.get("model_group_name")
+        ));
+        if (modelGroupName == null) modelGroupName = modelName;
+        if (modelGroupName != null) {
+            category.put("modelGroupName", modelGroupName);
+            category.put("model_group_name", modelGroupName);
+            vehicle.put("modelGroupName", modelGroupName);
+            vehicle.put("model_group_name", modelGroupName);
+            vehicle.put("ModelGroupName", modelGroupName);
+        }
+    }
+
+    private Map<String, Object> getOrCreateMap(Map<String, Object> root, String... keys) {
+        for (String key : keys) {
+            Object v = root.get(key);
+            if (v instanceof Map<?, ?> map) {
+                Map<String, Object> result = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> e : map.entrySet()) {
+                    result.put(String.valueOf(e.getKey()), e.getValue());
+                }
+                root.put(key, result);
+                return result;
+            }
+        }
+        Map<String, Object> created = new LinkedHashMap<>();
+        root.put(keys[0], created);
+        return created;
     }
 
     private Map<String, String> buildSellTypeByVehicleId(List<Map<String, Object>> list) {
@@ -619,7 +1000,9 @@ public class EncarTruckCrawler {
     private static String trimToNull(Object value) {
         if (value == null) return null;
         String s = String.valueOf(value).trim();
-        return s.isBlank() ? null : s;
+        if (s.isBlank()) return null;
+        if ("null".equalsIgnoreCase(s)) return null;
+        return s;
     }
 
     private record EncarExtraData(

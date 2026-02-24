@@ -1,457 +1,596 @@
 package com.carizon.service;
 
 import com.carizon.domain.mapper.CarMapper;
-import com.carizon.search.service.ElasticsearchCarSearchService;
+import com.carizon.search.config.ElasticsearchConfig;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.http.util.EntityUtils;
+import org.elasticsearch.client.Request;
+import org.elasticsearch.client.Response;
+import org.elasticsearch.client.RestClient;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 public class CodeQueryService {
-  private final CarMapper mapper;
-  private final ElasticsearchCarSearchService searchService;
-
-  private static final int FUEL_OTHER_THRESHOLD = 50;
-  private static final String OTHER_LABEL = "기타";
-  private static final String BODY_ORDER_OTHER = "기타";
-  private static final List<String> BODY_TYPE_ORDER = List.of(
-      "경차",
-      "소형",
-      "준중형",
-      "중형",
-      "대형",
-      "스포츠카",
-      "RV",
-      "SUV",
-      "승합",
-      "버스",
-      "화물",
-      BODY_ORDER_OTHER
+  private static final long CACHE_TTL_MS = 600_000L;
+  private static final int AGG_BUCKET_SIZE = 5000;
+  private static final Set<String> ALLOWED_CONTEXT_KEYS = Set.of(
+      "q", "makerCode", "modelGroupCode", "modelCode", "trimCode",
+      "yearMin", "yearMax", "kmMin", "kmMax", "priceMin", "priceMax",
+      "fuel", "bodyType", "region", "transmission", "carNo"
   );
-  private static final int BODY_TYPE_OTHER_INDEX = BODY_TYPE_ORDER.size() - 1;
 
-  private static final List<String> LPG_NORMALIZED = List.of("LPG(일반인)", "LPG(일반인 구입)");
-  private static final List<String> ELECTRIC_NORMALIZED = List.of("전기", "EV", "전기(EV)", "전기 EV");
+  private final CarMapper mapper;
+  private final RestClient restClient;
+  private final ObjectMapper objectMapper;
 
-  public CodeQueryService(CarMapper mapper, ElasticsearchCarSearchService searchService) {
+  private volatile CacheEntry makersCache;
+  private volatile CacheEntry bodyTypesCache;
+  private volatile CacheEntry fuelsCache;
+  private final Map<String, CacheEntry> modelGroupsCache = new ConcurrentHashMap<>();
+  private final Map<String, CacheEntry> modelsCache = new ConcurrentHashMap<>();
+
+  public CodeQueryService(CarMapper mapper, RestClient restClient, ObjectMapper objectMapper) {
     this.mapper = mapper;
-    this.searchService = searchService;
+    this.restClient = restClient;
+    this.objectMapper = objectMapper;
   }
 
-  public List<Map<String, Object>> makers() { return mapper.selectMakers(); }
+  public List<Map<String, Object>> makers(Map<String, String> context) {
+    long start = System.currentTimeMillis();
+    Map<String, String> ctx = sanitizeContext(context, Set.of("makerCode", "makerCodes"));
+    boolean dynamicContext = !ctx.isEmpty();
 
-  public List<Map<String, Object>> makers(Map<String, Object> filters) {
-    Map<String, Object> normalized = normalize(filters);
-    List<Map<String, Object>> dbRows = mapper.selectMakers();
-    try {
-      Map<String, Long> counts = searchService.countTermsByField(normalized, "makerCode");
-      return enrichWithCounts(dbRows, counts);
-    } catch (Exception e) {
-      log.warn("makers count from elasticsearch failed, fallback to db count", e);
-      return sortByCountThenName(mapper.selectMakersWithCounts(normalized));
+    long cacheCheckStart = System.currentTimeMillis();
+    CacheEntry cache = makersCache;
+    boolean cacheHit = !dynamicContext && isValid(cache);
+    long cacheCheckMs = System.currentTimeMillis() - cacheCheckStart;
+    if (cacheHit) {
+      long totalMs = System.currentTimeMillis() - start;
+      log.info("[codes.makers] cacheHit=true, rows={}, cacheCheckMs={}ms, totalMs={}ms",
+          cache.data().size(), cacheCheckMs, totalMs);
+      return cache.data();
     }
-  }
 
-  public List<Map<String, Object>> modelGroups(String makerCode) {
-    return mapper.selectModelGroups(makerCode);
-  }
+    List<Map<String, Object>> rows = loadRows("codes.makers", mapper::selectMakers);
+    long esStart = System.currentTimeMillis();
+    Map<String, Long> counts = fetchEsCounts(
+        "codes.makers",
+        List.of("makerCode.keyword", "makerCode"),
+        Collections.emptyMap(),
+        Function.identity(),
+        ctx
+    );
+    long esMs = System.currentTimeMillis() - esStart;
+    List<Map<String, Object>> merged = mergeCounts(rows, counts);
+    merged.sort((a, b) -> {
+      int ad = parseInt(a.get("domestic"), 0);
+      int bd = parseInt(b.get("domestic"), 0);
+      if (ad != bd) return Integer.compare(bd, ad);
+      long ac = parseLong(a.get("carCount"), 0L);
+      long bc = parseLong(b.get("carCount"), 0L);
+      if (ac != bc) return Long.compare(bc, ac);
+      return String.valueOf(a.getOrDefault("name", "")).compareTo(String.valueOf(b.getOrDefault("name", "")));
+    });
 
-  public List<Map<String, Object>> modelGroups(String makerCode, Map<String, Object> filters) {
-    Map<String, Object> normalized = normalize(filters);
-    normalized.put("makerCode", makerCode);
-    List<Map<String, Object>> dbRows = mapper.selectModelGroups(makerCode);
-    try {
-      Map<String, Long> counts = searchService.countTermsByField(normalized, "modelGroupCode");
-      return enrichWithCounts(dbRows, counts);
-    } catch (Exception e) {
-      log.warn("modelGroups count from elasticsearch failed, fallback to db count: makerCode={}", makerCode, e);
-      return sortByCountThenName(mapper.selectModelGroupsWithCounts(makerCode, normalized));
+    long cacheStoreMs = 0L;
+    if (!dynamicContext) {
+      long cacheStoreStart = System.currentTimeMillis();
+      makersCache = new CacheEntry(System.currentTimeMillis(), merged);
+      cacheStoreMs = System.currentTimeMillis() - cacheStoreStart;
     }
+
+    long totalMs = System.currentTimeMillis() - start;
+    log.info("[codes.makers] cacheHit=false, rows={}, cacheCheckMs={}ms, esMs={}ms, cacheStoreMs={}ms, totalMs={}ms",
+        merged.size(), cacheCheckMs, esMs, cacheStoreMs, totalMs);
+
+    return merged;
   }
 
-  public List<Map<String, Object>> models(String makerCode, String modelGroupCode) {
-    return mapper.selectModels(makerCode, modelGroupCode);
-  }
-
-  public List<Map<String, Object>> models(String makerCode, String modelGroupCode, Map<String, Object> filters) {
-    Map<String, Object> normalized = normalize(filters);
-    normalized.put("makerCode", makerCode);
-    normalized.put("modelGroupCode", modelGroupCode);
-    List<Map<String, Object>> dbRows = mapper.selectModels(makerCode, modelGroupCode);
-    try {
-      Map<String, Long> counts = searchService.countTermsByField(normalized, "modelCode");
-      return enrichWithCounts(dbRows, counts);
-    } catch (Exception e) {
-      log.warn("models count from elasticsearch failed, fallback to db count: makerCode={}, modelGroupCode={}", makerCode, modelGroupCode, e);
-      return sortByCountThenName(mapper.selectModelsWithCounts(makerCode, modelGroupCode, normalized));
+  public List<Map<String, Object>> bodyTypes(Map<String, String> context) {
+    long start = System.currentTimeMillis();
+    Map<String, String> ctx = sanitizeContext(context, Set.of("bodyType"));
+    boolean dynamicContext = !ctx.isEmpty();
+    CacheEntry cache = bodyTypesCache;
+    if (!dynamicContext && isValid(cache)) {
+      log.info("[codes.body-types] cacheHit=true, rows={}, totalMs={}ms",
+          cache.data().size(), System.currentTimeMillis() - start);
+      return cache.data();
     }
-  }
 
-  public List<Map<String, Object>> trims(String makerCode, String modelGroupCode, String modelCode) {
-    return mapper.selectTrims(makerCode, modelGroupCode, modelCode);
-  }
-
-  public List<Map<String, Object>> trims(String makerCode, String modelGroupCode, String modelCode, Map<String, Object> filters) {
-    Map<String, Object> normalized = normalize(filters);
-    normalized.put("makerCode", makerCode);
-    normalized.put("modelGroupCode", modelGroupCode);
-    normalized.put("modelCode", modelCode);
-    List<Map<String, Object>> dbRows = mapper.selectTrims(makerCode, modelGroupCode, modelCode);
-    try {
-      Map<String, Long> counts = searchService.countTermsByField(normalized, "trimCode");
-      return enrichWithCounts(dbRows, counts);
-    } catch (Exception e) {
-      log.warn("trims count from elasticsearch failed, fallback to db count: makerCode={}, modelGroupCode={}, modelCode={}", makerCode, modelGroupCode, modelCode, e);
-      return sortByCountThenName(mapper.selectTrimsWithCounts(makerCode, modelGroupCode, modelCode, normalized));
+    List<Map<String, Object>> rows = loadRows("codes.body-types", mapper::selectBodyTypes);
+    long esStart = System.currentTimeMillis();
+    Map<String, Long> counts = fetchEsCounts(
+        "codes.body-types",
+        List.of("bodyType.keyword", "bodyType"),
+        Collections.emptyMap(),
+        CodeQueryService::normalizeBodyType,
+        ctx
+    );
+    long esMs = System.currentTimeMillis() - esStart;
+    List<Map<String, Object>> merged = mergeCounts(rows, counts, CodeQueryService::normalizeBodyType);
+    if (!dynamicContext) {
+      bodyTypesCache = new CacheEntry(System.currentTimeMillis(), merged);
     }
+    log.info("[codes.body-types] cacheHit=false, rows={}, esMs={}ms, totalMs={}ms",
+        merged.size(), esMs, System.currentTimeMillis() - start);
+    return merged;
+  }
+
+  public List<Map<String, Object>> fuels(Map<String, String> context) {
+    long start = System.currentTimeMillis();
+    Map<String, String> ctx = sanitizeContext(context, Set.of("fuel"));
+    boolean dynamicContext = !ctx.isEmpty();
+    CacheEntry cache = fuelsCache;
+    if (!dynamicContext && isValid(cache)) {
+      log.info("[codes.fuels] cacheHit=true, rows={}, totalMs={}ms",
+          cache.data().size(), System.currentTimeMillis() - start);
+      return cache.data();
+    }
+
+    long esStart = System.currentTimeMillis();
+    Map<String, Long> counts = fetchEsCounts(
+        "codes.fuels",
+        List.of("fuel.keyword", "fuel"),
+        Collections.emptyMap(),
+        CodeQueryService::normalizeFuelType,
+        ctx
+    );
+    long esMs = System.currentTimeMillis() - esStart;
+
+    List<Map<String, Object>> rows = new ArrayList<>();
+    List<String> ordered = List.of("가솔린", "디젤", "하이브리드", "전기", "LPG");
+    for (String fuel : ordered) {
+      Map<String, Object> row = new LinkedHashMap<>();
+      row.put("code", fuel);
+      row.put("name", fuel);
+      row.put("carCount", counts.getOrDefault(fuel, 0L));
+      rows.add(row);
+    }
+
+    for (Map.Entry<String, Long> entry : counts.entrySet()) {
+      String fuel = entry.getKey();
+      if (ordered.contains(fuel)) continue;
+      Map<String, Object> row = new LinkedHashMap<>();
+      row.put("code", fuel);
+      row.put("name", fuel);
+      row.put("carCount", entry.getValue());
+      rows.add(row);
+    }
+
+    if (!dynamicContext) {
+      fuelsCache = new CacheEntry(System.currentTimeMillis(), rows);
+    }
+
+    log.info("[codes.fuels] cacheHit=false, rows={}, esMs={}ms, totalMs={}ms",
+        rows.size(), esMs, System.currentTimeMillis() - start);
+    return rows;
+  }
+
+  public List<Map<String, Object>> modelGroups(String makerCode, Map<String, String> context) {
+    long start = System.currentTimeMillis();
+    String key = makerCode == null ? "" : makerCode.trim();
+    Map<String, String> ctx = sanitizeContext(context, Set.of("makerCode", "makerCodes", "modelGroupCode"));
+    boolean dynamicContext = !ctx.isEmpty();
+
+    long cacheCheckStart = System.currentTimeMillis();
+    CacheEntry cache = modelGroupsCache.get(key);
+    boolean cacheHit = !dynamicContext && isValid(cache);
+    long cacheCheckMs = System.currentTimeMillis() - cacheCheckStart;
+    if (cacheHit) {
+      long totalMs = System.currentTimeMillis() - start;
+      log.info("[codes.model-groups] cacheHit=true, makerCode={}, rows={}, cacheCheckMs={}ms, totalMs={}ms",
+          key, cache.data().size(), cacheCheckMs, totalMs);
+      return cache.data();
+    }
+
+    List<Map<String, Object>> rows = loadRows("codes.model-groups", () -> mapper.selectModelGroups(makerCode));
+    long esStart = System.currentTimeMillis();
+    Map<String, Long> counts = fetchEsCounts(
+        "codes.model-groups",
+        List.of("modelGroupCode.keyword", "modelGroupCode"),
+        Map.of("makerCode", key),
+        Function.identity(),
+        ctx
+    );
+    long esMs = System.currentTimeMillis() - esStart;
+    List<Map<String, Object>> merged = mergeCounts(rows, counts);
+
+    long cacheStoreMs = 0L;
+    if (!dynamicContext) {
+      long cacheStoreStart = System.currentTimeMillis();
+      modelGroupsCache.put(key, new CacheEntry(System.currentTimeMillis(), merged));
+      cacheStoreMs = System.currentTimeMillis() - cacheStoreStart;
+    }
+
+    long totalMs = System.currentTimeMillis() - start;
+    log.info("[codes.model-groups] cacheHit=false, makerCode={}, rows={}, cacheCheckMs={}ms, esMs={}ms, cacheStoreMs={}ms, totalMs={}ms",
+        key, merged.size(), cacheCheckMs, esMs, cacheStoreMs, totalMs);
+
+    return merged;
+  }
+
+  public List<Map<String, Object>> models(String makerCode, String modelGroupCode, Map<String, String> context) {
+    long start = System.currentTimeMillis();
+    String makerKey = makerCode == null ? "" : makerCode.trim();
+    String modelGroupKey = modelGroupCode == null ? "" : modelGroupCode.trim();
+    String key = makerKey + "|" + modelGroupKey;
+    Map<String, String> ctx = sanitizeContext(context, Set.of("makerCode", "makerCodes", "modelGroupCode", "modelCode"));
+    boolean dynamicContext = !ctx.isEmpty();
+
+    long cacheCheckStart = System.currentTimeMillis();
+    CacheEntry cache = modelsCache.get(key);
+    boolean cacheHit = !dynamicContext && isValid(cache);
+    long cacheCheckMs = System.currentTimeMillis() - cacheCheckStart;
+    if (cacheHit) {
+      long totalMs = System.currentTimeMillis() - start;
+      log.info("[codes.models] cacheHit=true, key={}, rows={}, cacheCheckMs={}ms, totalMs={}ms",
+          key, cache.data().size(), cacheCheckMs, totalMs);
+      return cache.data();
+    }
+
+    List<Map<String, Object>> rows = loadRows("codes.models", () -> mapper.selectModels(makerCode, modelGroupCode));
+    long esStart = System.currentTimeMillis();
+    Map<String, Long> counts = fetchEsCounts(
+        "codes.models",
+        List.of("modelCode.keyword", "modelCode"),
+        Map.of("makerCode", makerKey, "modelGroupCode", modelGroupKey),
+        Function.identity(),
+        ctx
+    );
+    long esMs = System.currentTimeMillis() - esStart;
+    List<Map<String, Object>> merged = mergeCounts(rows, counts);
+
+    long cacheStoreMs = 0L;
+    if (!dynamicContext) {
+      long cacheStoreStart = System.currentTimeMillis();
+      modelsCache.put(key, new CacheEntry(System.currentTimeMillis(), merged));
+      cacheStoreMs = System.currentTimeMillis() - cacheStoreStart;
+    }
+
+    long totalMs = System.currentTimeMillis() - start;
+    log.info("[codes.models] cacheHit=false, key={}, rows={}, cacheCheckMs={}ms, esMs={}ms, cacheStoreMs={}ms, totalMs={}ms",
+        key, merged.size(), cacheCheckMs, esMs, cacheStoreMs, totalMs);
+
+    return merged;
+  }
+
+  public List<Map<String, Object>> trims(String makerCode, String modelGroupCode, String modelCode, Map<String, String> context) {
+    long start = System.currentTimeMillis();
+    String makerKey = makerCode == null ? "" : makerCode.trim();
+    String modelGroupKey = modelGroupCode == null ? "" : modelGroupCode.trim();
+    String modelKey = modelCode == null ? "" : modelCode.trim();
+    Map<String, String> ctx = sanitizeContext(
+        context,
+        Set.of("makerCode", "makerCodes", "modelGroupCode", "modelCode", "trimCode")
+    );
+
+    List<Map<String, Object>> rows = loadRows("codes.trims", () -> mapper.selectTrims(makerCode, modelGroupCode, modelCode));
+    long esStart = System.currentTimeMillis();
+    Map<String, Long> counts = fetchEsCounts(
+        "codes.trims",
+        List.of("trimCode.keyword", "trimCode"),
+        Map.of("makerCode", makerKey, "modelGroupCode", modelGroupKey, "modelCode", modelKey),
+        Function.identity(),
+        ctx
+    );
+    long esMs = System.currentTimeMillis() - esStart;
+    List<Map<String, Object>> merged = mergeCounts(rows, counts);
+
+    long totalMs = System.currentTimeMillis() - start;
+    log.info("[codes.trims] rows={}, esMs={}ms, totalMs={}ms, makerCode={}, modelGroupCode={}, modelCode={}",
+        merged.size(), esMs, totalMs, makerKey, modelGroupKey, modelKey);
+    return merged;
   }
 
   public List<Map<String, Object>> grades(String makerCode, String modelGroupCode, String modelCode, String trimCode) {
     return mapper.selectGrades(makerCode, modelGroupCode, modelCode, trimCode);
   }
 
-  public List<Map<String, Object>> bodyTypes(Map<String, Object> filters) {
-    Map<String, Object> normalized = normalize(filters);
-    Set<String> selectedBodyTypes = parseFilterSet(normalized.get("bodyType"), this::normalizeBodyTypeForDisplay);
-    try {
-      Map<String, Long> counts = searchService.countTermsByField(normalized, "bodyType");
-      return applyBodyTypeBuckets(counts, selectedBodyTypes);
-    } catch (Exception e) {
-      log.warn("bodyTypes count from elasticsearch failed, fallback to db count", e);
-      return sortBodyTypesByPriority(mapper.selectBodyTypesWithCounts(normalized));
-    }
+  private static boolean isValid(CacheEntry cache) {
+    return cache != null && (System.currentTimeMillis() - cache.cachedAtMs()) < CACHE_TTL_MS;
   }
 
-  public List<Map<String, Object>> fuels(Map<String, Object> filters) {
-    Map<String, Object> normalized = normalize(filters);
-    Set<String> selectedFuels = parseFilterSet(normalized.get("fuel"), this::normalizeFuelForDisplay);
-    try {
-      Map<String, Long> counts = searchService.countTermsByField(normalized, "fuel");
-      return applyFuelBuckets(counts, selectedFuels);
-    } catch (Exception e) {
-      log.warn("fuels count from elasticsearch failed, fallback to db count", e);
-      Map<String, Long> counts = mapper.selectFuelsWithCounts(normalized)
-          .stream()
-          .collect(Collectors.toMap(
-              row -> asString(row.get("code")),
-              row -> parseCount(row.get("carCount")),
-              Long::sum,
-              LinkedHashMap::new
-          ));
-      return applyFuelBuckets(counts, selectedFuels);
-    }
+  private List<Map<String, Object>> loadRows(String tag, RowLoader loader) {
+    long dbStart = System.currentTimeMillis();
+    List<Map<String, Object>> rows = loader.load();
+    long dbMs = System.currentTimeMillis() - dbStart;
+    log.info("[{}] dbListMs={}ms, rows={}", tag, dbMs, rows != null ? rows.size() : 0);
+    return rows == null ? List.of() : rows;
   }
 
-  public List<Map<String, Object>> colors(Map<String, Object> filters) {
-    Map<String, Object> normalized = normalize(filters);
-    List<Map<String, Object>> dbRows = mapper.selectColorsWithCounts(normalized);
-    try {
-      Map<String, Long> counts = normalizeColorCounts(searchService.countTermsByField(normalized, "color"));
-      long esCountTotal = counts.values().stream().mapToLong(v -> v == null ? 0L : v).sum();
-      long dbCountTotal = dbRows.stream()
-          .mapToLong(r -> parseCount(r.get("carCount")))
-          .sum();
-      List<Map<String, Object>> enriched = enrichWithCounts(dbRows, counts);
-      if (!containsCode(enriched, OTHER_LABEL) && counts.getOrDefault(OTHER_LABEL, 0L) > 0L) {
-        enriched.add(buildCodeItem(OTHER_LABEL, counts.getOrDefault(OTHER_LABEL, 0L)));
-      }
-      enriched = sortByCountThenName(enriched);
-      long enrichedTotal = enriched.stream()
-          .mapToLong(r -> parseCount(r.get("carCount")))
-          .sum();
-      if ((esCountTotal == 0 || enrichedTotal == 0) && dbCountTotal > 0) {
-        return sortByCountThenName(dbRows);
-      }
-      return enriched;
-    } catch (Exception e) {
-      log.warn("colors count from elasticsearch failed, fallback to db count", e);
-      return sortByCountThenName(dbRows);
-    }
-  }
+  private Map<String, Long> fetchEsCounts(
+      String tag,
+      List<String> aggFieldCandidates,
+      Map<String, String> termFilters,
+      Function<String, String> keyNormalizer,
+      Map<String, String> contextFilters
+  ) {
+    List<Map<String, Object>> additionalFilters = buildContextFilterClauses(contextFilters);
+    List<Map<String, Object>> mustClauses = buildContextMustClauses(contextFilters);
+    for (String aggField : aggFieldCandidates) {
+      long esStart = System.currentTimeMillis();
+      try {
+        String payload = buildAggPayload(aggField, termFilters, mustClauses, additionalFilters);
+        Request request = new Request("POST", "/" + ElasticsearchConfig.CARS_INDEX + "/_search");
+        request.setJsonEntity(payload);
+        Response response = restClient.performRequest(request);
+        String responseBody = EntityUtils.toString(response.getEntity());
 
-  private List<Map<String, Object>> enrichWithCounts(List<Map<String, Object>> source, Map<String, Long> counts) {
-    List<Map<String, Object>> rows = source.stream()
-        .map(item -> {
-          Map<String, Object> row = new LinkedHashMap<>(item);
-          String code = asString(item.get("code"));
-          row.put("carCount", counts.getOrDefault(code, 0L));
-          return row;
-        })
-        .collect(Collectors.toList());
-    return sortByCountThenName(rows);
-  }
+        JsonNode buckets = objectMapper.readTree(responseBody)
+            .path("aggregations")
+            .path("codes")
+            .path("buckets");
 
-  private List<Map<String, Object>> applyBodyTypeBuckets(Map<String, Long> rawCounts, Set<String> selectedBodyTypes) {
-    Map<String, Long> normalized = new LinkedHashMap<>();
-    rawCounts.forEach((rawCode, count) -> {
-      String normalizedCode = normalizeBodyTypeForDisplay(rawCode);
-      if (normalizedCode == null || normalizedCode.isEmpty()) return;
-      normalized.merge(normalizedCode, count, Long::sum);
-    });
+        Map<String, Long> counts = new HashMap<>();
+        if (buckets.isArray()) {
+          for (JsonNode bucket : buckets) {
+            String key = bucket.path("key").asText("");
+            if (key == null || key.isBlank()) continue;
+            String normalizedKey = keyNormalizer.apply(key);
+            if (normalizedKey == null || normalizedKey.isBlank()) continue;
+            long count = bucket.path("doc_count").asLong(0L);
+            counts.merge(normalizedKey, count, Long::sum);
+          }
+        }
 
-    List<Map<String, Object>> rows = new ArrayList<>();
-
-    for (String orderedCode : BODY_TYPE_ORDER) {
-      Long count = normalized.remove(orderedCode);
-      if ((count != null && count > 0) || selectedBodyTypes.contains(orderedCode)) {
-        rows.add(buildCodeItem(orderedCode, count == null ? 0L : count));
+        long esMs = System.currentTimeMillis() - esStart;
+        log.info("[{}] esAggMs={}ms, field={}, termFilters={}, contextFilters={}, buckets={}",
+            tag, esMs, aggField, termFilters, contextFilters, counts.size());
+        return counts;
+      } catch (Exception e) {
+        long esMs = System.currentTimeMillis() - esStart;
+        log.warn("[{}] esAgg failed: field={}, termFilters={}, contextFilters={}, esMs={}ms, reason={}",
+            tag, aggField, termFilters, contextFilters, esMs, e.getMessage());
       }
     }
-
-    long etc = 0L;
-    for (Map.Entry<String, Long> e : normalized.entrySet()) {
-      etc += e.getValue() == null ? 0L : e.getValue();
-    }
-    mergeOrAddCodeItem(rows, BODY_ORDER_OTHER, etc);
-
-    return rows.stream()
-        .sorted(Comparator
-            .comparingInt((Map<String, Object> row) -> {
-              String code = asString(row.get("code"));
-              int idx = BODY_TYPE_ORDER.indexOf(code);
-              return idx >= 0 ? idx : BODY_TYPE_OTHER_INDEX;
-            })
-            .thenComparingLong(r -> -parseCount(r.get("carCount"))))
-        .collect(Collectors.toList());
+    return Collections.emptyMap();
   }
 
-  private boolean containsCode(List<Map<String, Object>> rows, String code) {
+  private String buildAggPayload(
+      String aggField,
+      Map<String, String> termFilters,
+      List<Map<String, Object>> mustClauses,
+      List<Map<String, Object>> additionalFilters
+  ) throws Exception {
+    Map<String, Object> root = new LinkedHashMap<>();
+    root.put("size", 0);
+
+    List<Map<String, Object>> filters = new ArrayList<>();
+    for (Map.Entry<String, String> entry : termFilters.entrySet()) {
+      String value = entry.getValue();
+      if (value == null || value.isBlank()) continue;
+      filters.add(Map.of("term", Map.of(entry.getKey(), value)));
+    }
+
+    if (additionalFilters != null && !additionalFilters.isEmpty()) {
+      filters.addAll(additionalFilters);
+    }
+
+    List<Map<String, Object>> must = mustClauses == null ? List.of() : mustClauses;
+    if (must.isEmpty() && filters.isEmpty()) {
+      root.put("query", Map.of("match_all", Map.of()));
+    } else {
+      Map<String, Object> bool = new LinkedHashMap<>();
+      if (!must.isEmpty()) bool.put("must", must);
+      if (!filters.isEmpty()) bool.put("filter", filters);
+      root.put("query", Map.of("bool", bool));
+    }
+
+    root.put("aggs", Map.of(
+        "codes", Map.of(
+            "terms", Map.of(
+                "field", aggField,
+                "size", AGG_BUCKET_SIZE
+            )
+        )
+    ));
+    return objectMapper.writeValueAsString(root);
+  }
+
+  private static Map<String, String> sanitizeContext(Map<String, String> context, Set<String> excludeKeys) {
+    Map<String, String> out = new LinkedHashMap<>();
+    if (context == null || context.isEmpty()) return out;
+    for (Map.Entry<String, String> entry : context.entrySet()) {
+      String key = entry.getKey();
+      String value = entry.getValue();
+      if (key == null || value == null) continue;
+      String trimmedKey = key.trim();
+      String trimmedValue = value.trim();
+      if (trimmedKey.isEmpty() || trimmedValue.isEmpty()) continue;
+      if (!ALLOWED_CONTEXT_KEYS.contains(trimmedKey)) continue;
+      if (excludeKeys != null && excludeKeys.contains(trimmedKey)) continue;
+      out.put(trimmedKey, trimmedValue);
+    }
+    return out;
+  }
+
+  private static List<Map<String, Object>> buildContextMustClauses(Map<String, String> context) {
+    String q = context != null ? context.get("q") : null;
+    if (q == null || q.isBlank()) return List.of();
+    String query = q.trim();
+    return List.of(
+        Map.of("bool", Map.of(
+            "should", List.of(
+                Map.of("multi_match", Map.of("query", query, "fields", List.of("makerName", "modelName", "trimName", "modelCode"))),
+                Map.of("wildcard", Map.of("makerName", Map.of("value", "*" + query + "*"))),
+                Map.of("wildcard", Map.of("modelName", Map.of("value", "*" + query + "*")))
+            ),
+            "minimum_should_match", "1"
+        ))
+    );
+  }
+
+  private static List<Map<String, Object>> buildContextFilterClauses(Map<String, String> context) {
+    if (context == null || context.isEmpty()) return List.of();
+    List<Map<String, Object>> filters = new ArrayList<>();
+
+    addTermFilter(filters, "makerCode", context.get("makerCode"));
+    addTermFilter(filters, "modelGroupCode", context.get("modelGroupCode"));
+    addTermsShouldFilter(filters, "modelCode", context.get("modelCode"));
+    addTermFilter(filters, "trimCode", context.get("trimCode"));
+    addRangeGte(filters, "year", parseInteger(context.get("yearMin")));
+    addRangeLte(filters, "year", parseInteger(context.get("yearMax")));
+    addRangeGte(filters, "km", parseInteger(context.get("kmMin")));
+    addRangeLte(filters, "km", parseInteger(context.get("kmMax")));
+    addRangeGte(filters, "priceMin", parseInteger(context.get("priceMin")));
+    addRangeLte(filters, "priceMax", parseInteger(context.get("priceMax")));
+    addTermsShouldFilter(filters, "fuel.keyword", context.get("fuel"));
+    addBodyTypeShouldFilter(filters, context.get("bodyType"));
+    addTermFilter(filters, "region.keyword", context.get("region"));
+    addTermFilter(filters, "transmission.keyword", context.get("transmission"));
+    addTermFilter(filters, "carNo.keyword", context.get("carNo"));
+    return filters;
+  }
+
+  private static void addTermFilter(List<Map<String, Object>> filters, String field, String value) {
+    if (value == null || value.isBlank()) return;
+    filters.add(Map.of("term", Map.of(field, value.trim())));
+  }
+
+  private static void addTermsShouldFilter(List<Map<String, Object>> filters, String field, String csv) {
+    List<String> values = parseCsvValues(csv);
+    if (values.isEmpty()) return;
+    if (values.size() == 1) {
+      filters.add(Map.of("term", Map.of(field, values.get(0))));
+      return;
+    }
+    List<Map<String, Object>> should = new ArrayList<>();
+    for (String value : values) {
+      should.add(Map.of("term", Map.of(field, value)));
+    }
+    filters.add(Map.of("bool", Map.of(
+        "should", should,
+        "minimum_should_match", "1"
+    )));
+  }
+
+  private static void addBodyTypeShouldFilter(List<Map<String, Object>> filters, String csv) {
+    List<String> values = parseCsvValues(csv);
+    if (values.isEmpty()) return;
+    List<Map<String, Object>> should = new ArrayList<>();
+    for (String value : values) {
+      String normalized = normalizeBodyType(value);
+      if (normalized == null || normalized.isBlank()) continue;
+      should.add(Map.of("term", Map.of("bodyType.keyword", normalized)));
+    }
+    if (should.isEmpty()) return;
+    filters.add(Map.of("bool", Map.of(
+        "should", should,
+        "minimum_should_match", "1"
+    )));
+  }
+
+  private static List<String> parseCsvValues(String raw) {
+    if (raw == null || raw.isBlank()) return List.of();
+    String[] arr = raw.split(",");
+    List<String> out = new ArrayList<>();
+    for (String item : arr) {
+      if (item == null) continue;
+      String value = item.trim();
+      if (value.isEmpty()) continue;
+      out.add(value);
+    }
+    return out;
+  }
+
+  private static Integer parseInteger(String raw) {
+    if (raw == null || raw.isBlank()) return null;
+    try {
+      return Integer.parseInt(raw.trim());
+    } catch (Exception e) {
+      return null;
+    }
+  }
+
+  private static void addRangeGte(List<Map<String, Object>> filters, String field, Integer value) {
+    if (value == null) return;
+    filters.add(Map.of("range", Map.of(field, Map.of("gte", value))));
+  }
+
+  private static void addRangeLte(List<Map<String, Object>> filters, String field, Integer value) {
+    if (value == null) return;
+    filters.add(Map.of("range", Map.of(field, Map.of("lte", value))));
+  }
+
+  private static List<Map<String, Object>> mergeCounts(List<Map<String, Object>> rows, Map<String, Long> counts) {
+    return mergeCounts(rows, counts, Function.identity());
+  }
+
+  private static List<Map<String, Object>> mergeCounts(
+      List<Map<String, Object>> rows,
+      Map<String, Long> counts,
+      Function<String, String> keyNormalizer
+  ) {
+    List<Map<String, Object>> out = new ArrayList<>();
+    if (rows == null) return out;
     for (Map<String, Object> row : rows) {
-      if (code.equals(asString(row.get("code")))) return true;
+      Map<String, Object> copy = new LinkedHashMap<>(row);
+      String code = String.valueOf(copy.getOrDefault("code", ""));
+      String normalizedCode = keyNormalizer.apply(code);
+      long count = counts.getOrDefault(normalizedCode, 0L);
+      copy.put("carCount", count);
+      out.add(copy);
     }
-    return false;
+    return out;
   }
 
-  private Map<String, Long> normalizeColorCounts(Map<String, Long> rawCounts) {
-    if (rawCounts == null || rawCounts.isEmpty()) return Map.of();
-    Map<String, Long> normalized = new LinkedHashMap<>();
-    rawCounts.forEach((rawCode, count) -> {
-      String normalizedCode = normalizeColorCode(rawCode);
-      normalized.merge(normalizedCode, count == null ? 0L : count, Long::sum);
-    });
-    return normalized;
+  private static String normalizeBodyType(String raw) {
+    if (raw == null) return "";
+    String v = raw.trim();
+    if ("suv".equalsIgnoreCase(v)) return "SUV";
+    if ("rv".equalsIgnoreCase(v)) return "RV";
+    return v;
   }
 
-  private String normalizeColorCode(Object rawCode) {
-    String value = asString(rawCode).trim();
-    if (value.isBlank() || "null".equalsIgnoreCase(value)) return OTHER_LABEL;
-    return value;
+  private static String normalizeFuelType(String raw) {
+    if (raw == null) return "";
+    String v = raw.trim().toLowerCase();
+    if (v.isBlank()) return "";
+    if (v.contains("lpg")) return "LPG";
+    if (v.contains("전기") || v.contains("electric") || "ev".equals(v)) return "전기";
+    if (v.contains("하이브리드") || v.contains("hybrid")) return "하이브리드";
+    if (v.contains("디젤") || v.contains("경유") || v.contains("diesel")) return "디젤";
+    if (v.contains("가솔린") || v.contains("휘발유") || v.contains("gasoline") || v.contains("petrol")) return "가솔린";
+    return raw.trim();
   }
 
-  private void mergeOrAddCodeItem(List<Map<String, Object>> rows, String code, long plusCount) {
-    for (Map<String, Object> row : rows) {
-      if (code.equals(asString(row.get("code")))) {
-        row.put("carCount", parseCount(row.get("carCount")) + plusCount);
-        return;
-      }
-    }
-    rows.add(buildCodeItem(code, plusCount));
-  }
-
-  private List<Map<String, Object>> applyFuelBuckets(Map<String, Long> rawCounts, Set<String> selectedFuels) {
-    Map<String, Long> normalized = new LinkedHashMap<>();
-    rawCounts.forEach((rawCode, count) -> {
-      String normalizedCode = normalizeFuelForDisplay(rawCode);
-      if (normalizedCode == null || normalizedCode.isEmpty()) return;
-      normalized.merge(normalizedCode, count, Long::sum);
-    });
-
-    long other = 0L;
-    List<Map<String, Object>> rows = new ArrayList<>();
-    for (Map.Entry<String, Long> e : normalized.entrySet()) {
-      String code = e.getKey();
-      long count = e.getValue() == null ? 0L : e.getValue();
-      if (OTHER_LABEL.equals(code) || (count < FUEL_OTHER_THRESHOLD && !selectedFuels.contains(code))) {
-        other += count;
-        continue;
-      }
-      rows.add(buildCodeItem(code, count));
-    }
-
-    final List<Map<String, Object>> rowsSnapshot = rows;
-    selectedFuels.stream()
-        .filter(f -> !normalized.containsKey(f))
-        .filter(f -> rowsSnapshot.stream().noneMatch(r -> f.equals(asString(r.get("code")))))
-        .forEach(f -> rowsSnapshot.add(buildCodeItem(f, 0L)));
-
-    List<Map<String, Object>> sortedRows = sortByCountThenName(rowsSnapshot);
-    if (other > 0) {
-      sortedRows.add(buildCodeItem(OTHER_LABEL, other));
-    }
-    sortedRows.sort((a, b) -> {
-      String codeA = asString(a.get("code"));
-      String codeB = asString(b.get("code"));
-      boolean aIsOther = OTHER_LABEL.equals(codeA);
-      boolean bIsOther = OTHER_LABEL.equals(codeB);
-      if (aIsOther != bIsOther) return aIsOther ? 1 : -1;
-      long countA = parseCount(a.get("carCount"));
-      long countB = parseCount(b.get("carCount"));
-      int countDiff = Long.compare(countB, countA);
-      if (countDiff != 0) return countDiff;
-      return asString(a.get("name")).compareToIgnoreCase(asString(b.get("name")));
-    });
-    return sortedRows;
-  }
-
-  private Map<String, Object> buildCodeItem(String code, long carCount) {
-    Map<String, Object> row = new LinkedHashMap<>();
-    row.put("code", code);
-    row.put("name", code);
-    row.put("carCount", carCount);
-    return row;
-  }
-
-  private List<Map<String, Object>> sortBodyTypesByPriority(List<Map<String, Object>> rows) {
-    return rows.stream()
-        .filter(Objects::nonNull)
-        .sorted(Comparator
-            .comparingInt((Map<String, Object> row) -> {
-              String code = asString(row.get("code"));
-              int idx = BODY_TYPE_ORDER.indexOf(code);
-              return idx >= 0 ? idx : BODY_TYPE_OTHER_INDEX;
-            })
-            .thenComparing((Map<String, Object> a, Map<String, Object> b) -> {
-              long ca = parseCount(a.get("carCount"));
-              long cb = parseCount(b.get("carCount"));
-              return Long.compare(cb, ca);
-            })
-            .thenComparing(a -> asString(a.get("name")), String::compareTo))
-        .collect(Collectors.toList());
-  }
-
-  private String normalizeFuelForDisplay(Object raw) {
-    String value = asString(raw);
-    if (value == null || value.isBlank()) return "";
-    String normalized = value.trim();
-    String upper = normalized.toUpperCase(Locale.ROOT);
-    if (upper.contains("LPG") && upper.contains("일반인")) return LPG_NORMALIZED.get(0);
-    if (upper.equals("EV") || upper.contains("전기")) return ELECTRIC_NORMALIZED.get(0);
-    return normalized;
-  }
-
-  private String normalizeBodyTypeForDisplay(Object raw) {
-    String value = asString(raw);
-    if (value == null || value.isBlank()) return "";
-    String normalized = value.replaceAll("\\s+", "");
-    if (normalized.contains("경차")) return "경차";
-    if (normalized.contains("소형")) return "소형";
-    if (normalized.contains("준중형")) return "준중형";
-    if (normalized.contains("중형")) return "중형";
-    if (normalized.contains("대형")) return "대형";
-    if (normalized.contains("스포츠카")) return "스포츠카";
-    if (normalized.contains("RV")) return "RV";
-    if (normalized.equalsIgnoreCase("SUV") || normalized.toUpperCase(Locale.ROOT).contains("SUV")) return "SUV";
-    if (normalized.contains("승합")) return "승합";
-    if (normalized.contains("버스")) return "버스";
-    if (normalized.contains("트럭") || normalized.contains("화물") || normalized.contains("상용")) return "화물";
-    return BODY_ORDER_OTHER;
-  }
-
-  private Set<String> parseFilterSet(Object value) {
-    return parseFilterSet(value, null);
-  }
-
-  private Set<String> parseFilterSet(Object value, Function<String, String> normalizer) {
-    if (value == null) return Set.of();
-    return Arrays.stream(String.valueOf(value).split(","))
-        .map(String::trim)
-        .filter(v -> !v.isEmpty())
-        .map(v -> normalizer == null ? v : normalizer.apply(v))
-        .filter(v -> v != null && !v.isEmpty())
-        .collect(Collectors.toCollection(LinkedHashSet::new));
-  }
-
-  private List<Map<String, Object>> sortByCountThenName(List<Map<String, Object>> rows) {
-    rows.sort((a, b) -> {
-      long ca = parseCount(a.get("carCount"));
-      long cb = parseCount(b.get("carCount"));
-      int countDiff = Long.compare(cb, ca);
-      if (countDiff != 0) return countDiff;
-      String na = asString(a.get("name"));
-      String nb = asString(b.get("name"));
-      return na.compareToIgnoreCase(nb);
-    });
-    return rows;
-  }
-
-  private Map<String, Object> normalize(Map<String, Object> source) {
-    if (source == null) return new LinkedHashMap<>();
-    Map<String, Object> normalized = new LinkedHashMap<>(source);
-    normalized.put("fuel", normalizeFuelFiltersForQuery(normalized.get("fuel")));
-    normalized.put("bodyType", normalizeBodyTypeFiltersForQuery(normalized.get("bodyType")));
-    if (normalized.containsKey("color")) {
-      String color = normalizeFilterValueList(normalized.get("color"));
-      if (color == null || color.isBlank()) normalized.remove("color");
-      else normalized.put("color", color);
-    }
-    return normalized;
-  }
-
-  private String normalizeFuelFiltersForQuery(Object raw) {
-    return normalizeFilterValueListByAliases(raw, this::normalizeFuelFilterAliases);
-  }
-
-  private String normalizeBodyTypeFiltersForQuery(Object raw) {
-    return normalizeFilterValueListByAliases(raw, this::normalizeBodyTypeFilterAliases);
-  }
-
-  private String normalizeFilterValueList(Object raw) {
-    return normalizeFilterValueListByAliases(raw, v -> v == null ? Collections.emptyList() : List.of(v));
-  }
-
-  private String normalizeFilterValueListByAliases(Object raw, Function<String, List<String>> normalizer) {
-    if (raw == null) return null;
-    String original = String.valueOf(raw);
-    List<String> tokens = Arrays.stream(original.split(","))
-        .map(String::trim)
-        .filter(v -> !v.isBlank())
-        .flatMap(v -> normalizer.apply(v).stream())
-        .map(String::trim)
-        .filter(v -> !v.isBlank())
-        .distinct()
-        .toList();
-
-    if (tokens.isEmpty()) return null;
-    return String.join(",", tokens);
-  }
-
-  private List<String> normalizeFuelFilterAliases(String raw) {
-    String value = raw == null ? "" : raw.trim();
-    if (value.isBlank()) return List.of();
-    String upper = value.toUpperCase(Locale.ROOT);
-    if (upper.equals("EV") || upper.contains("전기")) return ELECTRIC_NORMALIZED;
-    if (upper.contains("LPG") && upper.contains("일반인")) return LPG_NORMALIZED;
-    return List.of(value);
-  }
-
-  private List<String> normalizeBodyTypeFilterAliases(String raw) {
-    String value = raw == null ? "" : raw.trim();
-    if (value.isBlank()) return List.of();
-    String normalized = normalizeBodyTypeForDisplay(value);
-    if ("화물".equals(normalized)) return List.of("화물", "트럭", "상용", "화물차");
-    if ("SUV".equals(normalized)) return List.of("SUV");
-    if ("RV".equals(normalized)) return List.of("RV");
-    return List.of(normalized);
-  }
-
-  private String asString(Object v) {
-    return v == null ? "" : String.valueOf(v);
-  }
-
-  private long parseCount(Object value) {
-    if (value == null) return 0;
-    if (value instanceof Number) return ((Number) value).longValue();
+  private static int parseInt(Object v, int def) {
+    if (v == null) return def;
+    if (v instanceof Number n) return n.intValue();
     try {
-      return Long.parseLong(String.valueOf(value).replace(",", ""));
+      return Integer.parseInt(String.valueOf(v).trim());
     } catch (Exception e) {
-      return 0;
+      return def;
     }
   }
+
+  private static long parseLong(Object v, long def) {
+    if (v == null) return def;
+    if (v instanceof Number n) return n.longValue();
+    try {
+      return Long.parseLong(String.valueOf(v).trim());
+    } catch (Exception e) {
+      return def;
+    }
+  }
+
+  @FunctionalInterface
+  private interface RowLoader {
+    List<Map<String, Object>> load();
+  }
+
+  private record CacheEntry(long cachedAtMs, List<Map<String, Object>> data) {}
 }

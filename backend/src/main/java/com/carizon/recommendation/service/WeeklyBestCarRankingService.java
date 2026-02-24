@@ -11,6 +11,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -39,6 +40,21 @@ public class WeeklyBestCarRankingService {
 
     private final JdbcTemplate jdbc;
 
+    // ── 인메모리 캐시 (1시간 TTL) ──
+    private static final long CACHE_TTL_MS = 60 * 60 * 1000L; // 1시간
+    private final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Object> cacheLocks = new ConcurrentHashMap<>();
+
+    private record CacheEntry(List<WeeklyBestCarDto> data, long createdAt) {
+        boolean isExpired() { return System.currentTimeMillis() - createdAt > CACHE_TTL_MS; }
+    }
+
+    /** 캐시 수동 초기화 (배치 작업 후 호출 가능) */
+    public void evictCache() {
+        cache.clear();
+        log.info("[weekly Best] cache evicted");
+    }
+
     // 스코어 가중치 (총합 1.0) - 가격보다 주행거리 비중 확대 (저주행·적정가 선호 반영)
     private static final double WEIGHT_PRICE = 0.35;      // 가격 35%
     private static final double WEIGHT_MILEAGE = 0.35;    // 주행거리 35%
@@ -63,8 +79,6 @@ public class WeeklyBestCarRankingService {
     private static final double FUEL_BONUS_DIESEL = 14.0;
     /** 원점수 최대값 (base 100 + 가솔린 20) → 100점 만점으로 비율 환산 시 사용 */
     private static final double MAX_RAW_SCORE = 120.0;
-    /** 후보 조회 상한. 전량 로딩으로 인한 OOM 방지용 */
-    private static final int CANDIDATE_FETCH_LIMIT = 20000;
 
     /**
      * 모델 기준 주간 Best 매물 순위 선정
@@ -79,6 +93,36 @@ public class WeeklyBestCarRankingService {
      * 복수인 경우 각 모델 후보를 합쳐서 상위 limit개 선정.
      */
     public List<WeeklyBestCarDto> getWeeklyBestCars(String modelCode, String trimCode, int limit) {
+        // 캐시 키 생성
+        String cacheKey = (modelCode == null ? "ALL" : modelCode) + ":" + (trimCode == null ? "" : trimCode) + ":" + limit;
+        CacheEntry cached = cache.get(cacheKey);
+        if (cached != null && !cached.isExpired()) {
+            log.debug("[weekly Best] cache hit: key={}, age={}s", cacheKey, (System.currentTimeMillis() - cached.createdAt()) / 1000);
+            return cached.data();
+        }
+
+        Object lock = cacheLocks.computeIfAbsent(cacheKey, k -> new Object());
+        synchronized (lock) {
+            cached = cache.get(cacheKey);
+            if (cached != null && !cached.isExpired()) {
+                log.debug("[weekly Best] cache hit(after-wait): key={}, age={}s", cacheKey, (System.currentTimeMillis() - cached.createdAt()) / 1000);
+                return cached.data();
+            }
+
+            if (cached == null) {
+                log.info("[weekly Best] cache miss: key={}", cacheKey);
+            } else {
+                log.info("[weekly Best] cache expired: key={}, age={}s", cacheKey, (System.currentTimeMillis() - cached.createdAt()) / 1000);
+            }
+
+            List<WeeklyBestCarDto> result = computeWeeklyBestCars(modelCode, trimCode, limit);
+            cache.put(cacheKey, new CacheEntry(List.copyOf(result), System.currentTimeMillis()));
+            log.info("[weekly Best] cached: key={}", cacheKey);
+            return result;
+        }
+    }
+
+    private List<WeeklyBestCarDto> computeWeeklyBestCars(String modelCode, String trimCode, int limit) {
         long startTime = System.currentTimeMillis();
         List<String> modelCodes = parseModelCodes(modelCode);
         log.info("[weekly Best] model={}, trim={}, limit={} start (parsed: {} models)", modelCode, trimCode, limit, modelCodes.size());
@@ -116,8 +160,25 @@ public class WeeklyBestCarRankingService {
                 .map(car -> calculateScores(car, modelStats, false)) // 평가 사유는 규칙 기반으로 먼저 생성
                 .collect(Collectors.toList());
         long step4Time = System.currentTimeMillis() - step4Start;
-        log.info("[weekly Best] [step4] score calc done: {} ({}ms, avg {}ms/row)", 
+        log.info("[weekly Best] [step4] score calc done: {} ({}ms, avg {}ms/row)",
                 scoredCars.size(), step4Time, step4Time / Math.max(1, scoredCars.size()));
+
+        // 4.5. car_id 기준 중복 제거: 동일 차량이 여러 플랫폼에 등록된 경우 스코어 높은 플랫폼만 유지
+        long step45Start = System.currentTimeMillis();
+        scoredCars = scoredCars.stream()
+                .sorted(Comparator.comparing(WeeklyBestCarDto::getCarizonScore,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .collect(Collectors.toMap(
+                        WeeklyBestCarDto::getCarId,
+                        c -> c,
+                        (a, b) -> a, // 스코어 높은 항목(먼저 온 것) 유지
+                        LinkedHashMap::new
+                ))
+                .values()
+                .stream()
+                .collect(Collectors.toList());
+        long step45Time = System.currentTimeMillis() - step45Start;
+        log.info("[weekly Best] [step4.5] dedup by car_id: {} ({}ms)", scoredCars.size(), step45Time);
 
         // 5. 카리즌 스코어 기준 정렬 및 순위 부여 (동점 시 가솔린·디젤 > LPG 우선)
         long step5Start = System.currentTimeMillis();
@@ -144,7 +205,7 @@ public class WeeklyBestCarRankingService {
         log.info("[weekly Best] [step7] result return done ({}ms)", step7Time);
         log.info("[weekly Best] done: {} selected (total {}ms)", result.size(), totalTime);
         for (WeeklyBestCarDto car : result) {
-            log.debug("  [rank {}] {} {} - carizon score: {}, price: {} manwon, mileage: {}km", 
+            log.debug("  [rank {}] {} {} - carizon score: {}, price: {} manwon, mileage: {}km",
                     car.getRank(), car.getMakerName(), car.getModelName(),
                     car.getCarizonScore() != null ? car.getCarizonScore().setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO,
                     car.getPrice(), car.getMileage());
@@ -244,8 +305,6 @@ public class WeeklyBestCarRankingService {
         }
 
         sql.append(" ORDER BY pc.last_seen_date DESC, pc.updated_at DESC");
-        sql.append(" LIMIT ?");
-        params.add(CANDIDATE_FETCH_LIMIT);
 
         return jdbc.query(sql.toString(), params.toArray(), (rs, rowNum) -> {
             LocalDate lastSeenDate = rs.getDate("last_seen_date") != null 
@@ -338,63 +397,81 @@ public class WeeklyBestCarRankingService {
      * 필터링 적용 (탈락 조건 체크)
      */
     private List<WeeklyBestCarDto> applyFilters(List<WeeklyBestCarDto> candidates) {
-        return candidates.stream()
-                .filter(car -> {
-                    // 1. 업데이트가 너무 오래됨 (14일 이상) - 제외
-                    if (car.getDaysSinceUpdate() >= MAX_DAYS_SINCE_UPDATE) {
-                        log.debug("[filter] exclude stale update: carId={}, days={}", 
-                                car.getCarId(), car.getDaysSinceUpdate());
-                        return false;
-                    }
-                    
-                    // 2. 핵심 필드 누락 체크
-                    if (car.getPrice() == null || car.getPrice() <= 0) {
-                        log.debug("[filter] exclude no price: carId={}", car.getCarId());
-                        return false;
-                    }
-                    if (car.getMileage() == null || car.getMileage() < 0) {
-                        log.debug("[filter] exclude no mileage: carId={}", car.getCarId());
-                        return false;
-                    }
-                    if (car.getYear() == null || car.getYear() <= 0) {
-                        log.debug("[filter] exclude no year: carId={}", car.getCarId());
-                        return false;
-                    }
-                    
-                    // 2-1. 차량 정보 필수 필드 체크 (포스팅에 필요)
-                    if (car.getMakerName() == null || car.getMakerName().trim().isEmpty()) {
-                        log.debug("[filter] exclude no maker: carId={}", car.getCarId());
-                        return false;
-                    }
-                    if (car.getModelGroupName() == null || car.getModelGroupName().trim().isEmpty()) {
-                        log.debug("[filter] exclude no model group: carId={}", car.getCarId());
-                        return false;
-                    }
-                    if (car.getModelName() == null || car.getModelName().trim().isEmpty()) {
-                        log.debug("[filter] exclude no model: carId={}", car.getCarId());
-                        return false;
-                    }
-                    
-                    // 3. 주행거리/연식 불일치 체크 (과도하게 많은 주행거리)
-                    int currentYear = LocalDate.now().getYear();
-                    int carAge = Math.max(1, currentYear - car.getYear());
-                    int expectedKm = carAge * IDEAL_MILEAGE_PER_YEAR;
-                    double kmRatio = expectedKm > 0 ? (double) car.getMileage() / expectedKm : 0;
-                    
-                    if (kmRatio > MAX_KM_RATIO_FILTER) {
-                        log.debug("[filter] exclude high mileage: carId={}, kmRatio={}", car.getCarId(), kmRatio);
-                        return false;
-                    }
-                    
-                    // 4. 이상한 가격 패턴 체크 (999만원, 1111만원, 1234만원 등)
-                    if (isSuspiciousPrice(car.getPrice())) {
-                        log.debug("[filter] exclude suspicious price: carId={}, price={} manwon", car.getCarId(), car.getPrice());
-                        return false;
-                    }
-                    
-                    return true;
-                })
-                .collect(Collectors.toList());
+        if (candidates == null || candidates.isEmpty()) return List.of();
+
+        int excludedStale = 0;
+        int excludedNoPrice = 0;
+        int excludedNoMileage = 0;
+        int excludedNoYear = 0;
+        int excludedNoMaker = 0;
+        int excludedNoModelGroup = 0;
+        int excludedNoModel = 0;
+        int excludedHighMileage = 0;
+        int excludedSuspiciousPrice = 0;
+
+        List<WeeklyBestCarDto> passed = new ArrayList<>(candidates.size());
+        int currentYear = LocalDate.now().getYear();
+        for (WeeklyBestCarDto car : candidates) {
+            // 1. 업데이트가 너무 오래됨 (14일 이상) - 제외
+            if (car.getDaysSinceUpdate() >= MAX_DAYS_SINCE_UPDATE) {
+                excludedStale++;
+                continue;
+            }
+
+            // 2. 핵심 필드 누락 체크
+            if (car.getPrice() == null || car.getPrice() <= 0) {
+                excludedNoPrice++;
+                continue;
+            }
+            if (car.getMileage() == null || car.getMileage() < 0) {
+                excludedNoMileage++;
+                continue;
+            }
+            if (car.getYear() == null || car.getYear() <= 0) {
+                excludedNoYear++;
+                continue;
+            }
+
+            // 2-1. 차량 정보 필수 필드 체크 (포스팅에 필요)
+            if (car.getMakerName() == null || car.getMakerName().trim().isEmpty()) {
+                excludedNoMaker++;
+                continue;
+            }
+            if (car.getModelGroupName() == null || car.getModelGroupName().trim().isEmpty()) {
+                excludedNoModelGroup++;
+                continue;
+            }
+            if (car.getModelName() == null || car.getModelName().trim().isEmpty()) {
+                excludedNoModel++;
+                continue;
+            }
+
+            // 3. 주행거리/연식 불일치 체크 (과도하게 많은 주행거리)
+            int carAge = Math.max(1, currentYear - car.getYear());
+            int expectedKm = carAge * IDEAL_MILEAGE_PER_YEAR;
+            double kmRatio = expectedKm > 0 ? (double) car.getMileage() / expectedKm : 0;
+            if (kmRatio > MAX_KM_RATIO_FILTER) {
+                excludedHighMileage++;
+                continue;
+            }
+
+            // 4. 이상한 가격 패턴 체크 (999만원, 1111만원, 1234만원 등)
+            if (isSuspiciousPrice(car.getPrice())) {
+                excludedSuspiciousPrice++;
+                continue;
+            }
+
+            passed.add(car);
+        }
+
+        if (log.isDebugEnabled()) {
+            log.debug("[filter] summary: input={}, passed={}, stale={}, noPrice={}, noMileage={}, noYear={}, noMaker={}, noModelGroup={}, noModel={}, highMileage={}, suspiciousPrice={}",
+                    candidates.size(), passed.size(),
+                    excludedStale, excludedNoPrice, excludedNoMileage, excludedNoYear,
+                    excludedNoMaker, excludedNoModelGroup, excludedNoModel,
+                    excludedHighMileage, excludedSuspiciousPrice);
+        }
+        return passed;
     }
 
     /**

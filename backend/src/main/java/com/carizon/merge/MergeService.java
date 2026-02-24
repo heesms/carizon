@@ -44,6 +44,51 @@ public class MergeService {
     private static final int UPSERT_BATCH_SIZE = 1_000; // raw_* → platform_car
     private static final int LINK_BATCH_SIZE   = 1_000; // platform_car → car_master
     private static final boolean PARALLEL_ALL  = false;
+    private static final String AD_DATE_EXPR_CHACHACHA = """
+            CASE
+              WHEN COALESCE(STR_TO_DATE(r.AD_DAY, '%Y%m%d'), STR_TO_DATE(r.AD_DAY, '%Y-%m-%d')) IS NULL THEN NULL
+              ELSE TIMESTAMP(
+                COALESCE(STR_TO_DATE(r.AD_DAY, '%Y%m%d'), STR_TO_DATE(r.AD_DAY, '%Y-%m-%d')),
+                COALESCE(
+                  TIME(STR_TO_DATE(r.ORDER_DT, '%Y-%m-%d %H:%i:%s')),
+                  TIME(STR_TO_DATE(r.ORDER_DT, '%Y%m%d%H%i%s')),
+                  '00:00:00'
+                )
+              )
+            END
+            """.strip();
+    private static final String AD_DATE_EXPR_ENCAR = """
+            COALESCE(
+              STR_TO_DATE(SUBSTRING(REPLACE(REPLACE(CAST(r.regist_dt AS CHAR), 'T', ' '), '/', '-'), 1, 19), '%Y-%m-%d %H:%i:%s'),
+              STR_TO_DATE(CONCAT(SUBSTRING(REPLACE(REPLACE(CAST(r.regist_dt AS CHAR), 'T', ' '), '/', '-'), 1, 10), ' 00:00:00'), '%Y-%m-%d %H:%i:%s'),
+              STR_TO_DATE(CONCAT(TRIM(CAST(r.regist_dt AS CHAR)), ' 00:00:00'), '%Y%m%d %H:%i:%s')
+            )
+            """.strip();
+    private static final String AD_DATE_EXPR_KCAR = "DATE_SUB(NOW(), INTERVAL 3 MONTH)";
+    private static final String AD_DATE_EXPR_CHUTCHA = "COALESCE(r.ad_date, DATE_SUB(NOW(), INTERVAL 3 MONTH))";
+    private static final String AD_DATE_EXPR_CHARANCHA = """
+            COALESCE(
+              STR_TO_DATE(SUBSTRING(REPLACE(REPLACE(COALESCE(
+                JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sell_start_dt')),
+                JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sellStartDt'))
+              ), 'T', ' '), '/', '-'), 1, 19), '%Y-%m-%d %H:%i:%s'),
+              STR_TO_DATE(CONCAT(SUBSTRING(REPLACE(REPLACE(COALESCE(
+                JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sell_start_dt')),
+                JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sellStartDt'))
+              ), 'T', ' '), '/', '-'), 1, 10), ' 00:00:00'), '%Y-%m-%d %H:%i:%s')
+            )
+            """.strip();
+    private static final String AD_DATE_EXPR_TCAR = """
+            CASE
+              WHEN r.reg_dt_compact IS NULL OR TRIM(CAST(r.reg_dt_compact AS CHAR)) = '' THEN NULL
+              WHEN LENGTH(TRIM(CAST(r.reg_dt_compact AS CHAR))) = 8
+                THEN STR_TO_DATE(CONCAT(TRIM(CAST(r.reg_dt_compact AS CHAR)), ' 00:00:00'), '%Y%m%d %H:%i:%s')
+              ELSE STR_TO_DATE(
+                CONCAT(SUBSTRING(REPLACE(TRIM(CAST(r.reg_dt_compact AS CHAR)), '/', '-'), 1, 10), ' 00:00:00'),
+                '%Y-%m-%d %H:%i:%s'
+              )
+            END
+            """.strip();
 
     /* ====================== 유틸 ====================== */
 
@@ -102,9 +147,12 @@ public class MergeService {
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public int mergeAllPlatforms(LocalDate bizDate) {
+        long mergeStart = System.currentTimeMillis();
+        log.info("[merge] all start bizDate={} parallel={}", bizDate, PARALLEL_ALL);
         if (PARALLEL_ALL) {
             var ex = Executors.newFixedThreadPool(6);
             try {
+                log.info("[merge] stage 1/2 platform merges start (parallel)");
                 CompletableFuture.allOf(
                         CompletableFuture.runAsync(() -> mergeChachachaDetail(bizDate), ex),
                         CompletableFuture.runAsync(() -> mergeEncarDetail(bizDate), ex),
@@ -113,16 +161,45 @@ public class MergeService {
                         CompletableFuture.runAsync(() -> mergeCharanchaDetail(bizDate), ex),
                         CompletableFuture.runAsync(() -> mergeTcarDetail(bizDate), ex)
                 ).join();
+                log.info("[merge] stage 1/2 platform merges done (parallel)");
             } finally { ex.shutdown(); }
         } else {
+            long stageStart = System.currentTimeMillis();
+            log.info("[merge] stage 1/7 CHACHACHA start");
             mergeChachachaDetail(bizDate);
+            log.info("[merge] stage 1/7 CHACHACHA done elapsedMs={}", System.currentTimeMillis() - stageStart);
+
+            stageStart = System.currentTimeMillis();
+            log.info("[merge] stage 2/7 ENCAR start");
             mergeEncarDetail(bizDate);
+            log.info("[merge] stage 2/7 ENCAR done elapsedMs={}", System.currentTimeMillis() - stageStart);
+
+            stageStart = System.currentTimeMillis();
+            log.info("[merge] stage 3/7 KCAR start");
             mergeKcarDetail(bizDate);
+            log.info("[merge] stage 3/7 KCAR done elapsedMs={}", System.currentTimeMillis() - stageStart);
+
+            stageStart = System.currentTimeMillis();
+            log.info("[merge] stage 4/7 CHUTCHA start");
             mergeChutchaDetail(bizDate);
+            log.info("[merge] stage 4/7 CHUTCHA done elapsedMs={}", System.currentTimeMillis() - stageStart);
+
+            stageStart = System.currentTimeMillis();
+            log.info("[merge] stage 5/7 CHARANCHA start");
             mergeCharanchaDetail(bizDate);
+            log.info("[merge] stage 5/7 CHARANCHA done elapsedMs={}", System.currentTimeMillis() - stageStart);
+
+            stageStart = System.currentTimeMillis();
+            log.info("[merge] stage 6/7 TCAR start");
             mergeTcarDetail(bizDate);
+            log.info("[merge] stage 6/7 TCAR done elapsedMs={}", System.currentTimeMillis() - stageStart);
         }
-        return postProcess(bizDate);
+        long postProcessStart = System.currentTimeMillis();
+        log.info("[merge] stage 7/7 postProcess start");
+        int result = postProcess(bizDate);
+        log.info("[merge] stage 7/7 postProcess done elapsedMs={}", System.currentTimeMillis() - postProcessStart);
+        log.info("[merge] all done elapsedMs={}", System.currentTimeMillis() - mergeStart);
+        return result;
     }
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -152,6 +229,11 @@ public class MergeService {
             case "raw_encar" -> sql = """
                 SELECT MAX(id) FROM (
                   SELECT id FROM raw_encar WHERE id > ? ORDER BY id LIMIT ?
+                ) x
+            """;
+            case "raw_encar_truck" -> sql = """
+                SELECT MAX(id) FROM (
+                  SELECT id FROM raw_encar_truck WHERE id > ? ORDER BY id LIMIT ?
                 ) x
             """;
             case "raw_kcar" -> sql = """
@@ -198,7 +280,7 @@ public class MergeService {
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
                        price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
                     SELECT
                        'CHACHACHA', r.car_seq, r.car_no, NULL,
                        r.MAKER_CODE, r.CLASS_CODE, r.CAR_CODE, r.MODEL_CODE, r.GRADE_CODE,
@@ -206,13 +288,14 @@ public class MergeService {
                        r.SELL_AMT, r.KM, r.displacement, r.YYMM, 'ONSALE', r.COLOR, r.GAS_NAME, r.auto_gbn_name, r.use_code_name, r.REGION,
                        CONCAT('https://m.kbchachacha.com/public/web/car/detail.kbc?carSeq=', r.CAR_SEQ),
                        CONCAT('https://www.kbchachacha.com/public/car/detail.kbc?carSeq=', r.car_seq),
-                       r.FIRST_AD_DAY, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
+                       r.FIRST_AD_DAY, AD_DATE_EXPR_CHACHACHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
                     FROM raw_chachacha r
                     WHERE r.id > ? AND r.id <= ?
                     ON DUPLICATE KEY UPDATE
                        price          = VALUES(price),
                        status         = VALUES(status),
                        extra          = VALUES(extra),
+                       ad_date        = COALESCE(VALUES(ad_date), platform_car.ad_date),
                        car_image_url  = VALUES(car_image_url),
                        last_seen_date = VALUES(last_seen_date),
                        updated_at     = NOW(),
@@ -227,7 +310,8 @@ public class MergeService {
                        model_name = COALESCE(platform_car.model_name, VALUES(model_name)),
                        trim_name = COALESCE(platform_car.trim_name, VALUES(trim_name)),
                        grade_name = COALESCE(platform_car.grade_name, VALUES(grade_name))
-                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
+                   .replace("AD_DATE_EXPR_CHACHACHA", AD_DATE_EXPR_CHACHACHA);
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
                 log.debug("CHACHACHA upsert affected={}", affected);
                 return null;
@@ -238,23 +322,30 @@ public class MergeService {
     }
 
     public void mergeEncarDetail(LocalDate bizDate) {
+        mergeEncarDetailBySource(bizDate, "raw_encar", true, "merge:ENCAR", "ENCAR");
+        mergeEncarDetailBySource(bizDate, "raw_encar_truck", false, "merge:ENCAR_TRUCK", "ENCAR_TRUCK");
+    }
+
+    private void mergeEncarDetailBySource(LocalDate bizDate, String rawTable, boolean requireNormalSellType, String lockName, String logTag) {
+        String sourceTable = validateEncarRawTable(rawTable);
         long from = 0L;
-        final String lockName = "merge:ENCAR";
         while (true) {
-            Long to = nextUpperIdFor("raw_encar", from, UPSERT_BATCH_SIZE);
+            Long to = nextUpperIdFor(sourceTable, from, UPSERT_BATCH_SIZE);
             if (to == null) break;
             final long cursorFrom = from;
             final long cursorTo   = to;
 
             inTxWithNamedLock(lockName, () -> {
                 String bizDateStr = bizDate.toString();
+                String sellTypeFilter = requireNormalSellType ? " AND r.sell_type = 'NORMAL'" : "";
                 String sql = """
                     INSERT INTO platform_car
                       (platform_name, platform_car_key, car_no, car_id,
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
                        price, price_new, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url,
+                       option_array, sel_option_array, seat_count, my_accident_cnt, flood_total_loss_cnt)
                     SELECT
                       'ENCAR', r.vehicle_id, r.vehicle_no, NULL,
                       r.manufacturer_code, r.model_group_code, r.model_code, r.grade_code, r.grade_detail_code,
@@ -263,19 +354,36 @@ public class MergeService {
                       NULLIF(r.price_new, 0),
                       r.mileage, r.displacement , r.form_year,
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.status')),
-                      r.color, r.fuel, r.transmission, r.body_type, r.region,
+                      r.color, r.fuel, r.transmission,
+                      CASE r.body_type
+                        WHEN '준중형차' THEN '준중형' WHEN '경차' THEN '경차' WHEN '중형차' THEN '중형'
+                        WHEN 'SUV' THEN 'SUV' WHEN '소형차' THEN '소형' WHEN '대형차' THEN '대형'
+                        WHEN 'RV' THEN 'RV' WHEN '기타' THEN '기타' WHEN '스포츠카' THEN '스포츠카'
+                        WHEN '화물차' THEN '트럭' WHEN '승합차' THEN '승합' WHEN '경승합차' THEN '승합'
+                        ELSE r.body_type
+                      END,
+                      r.region,
                       CONCAT('https://fem.encar.com/cars/detail/', r.vehicle_id),
                       CONCAT('https://fem.encar.com/cars/detail/', r.vehicle_id),
                       DATE_FORMAT(r.first_ad_dt, '%Y%m%d'),
-                      NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
-                    FROM raw_encar r
-                    WHERE r.id > ? AND r.id <= ? AND r.sell_type = 'NORMAL'
+                      AD_DATE_EXPR_ENCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url,
+                      r.option_array, r.sel_option_array, r.seat_count, r.my_accident_cnt, r.flood_total_loss_cnt
+                    FROM RAW_TABLE r
+                    WHERE r.id > ? AND r.id <= ?
+                      AND COALESCE(r.use_yn, 'Y') = 'Y'
+                      SELL_TYPE_FILTER
                     ON DUPLICATE KEY UPDATE
                       price          = VALUES(price),
                       price_new      = COALESCE(VALUES(price_new), platform_car.price_new),
                       status         = VALUES(status),
                       extra          = VALUES(extra),
+                      ad_date        = COALESCE(VALUES(ad_date), platform_car.ad_date),
                       car_image_url  = VALUES(car_image_url),
+                      option_array   = COALESCE(NULLIF(VALUES(option_array), ''), platform_car.option_array),
+                      sel_option_array = COALESCE(NULLIF(VALUES(sel_option_array), ''), platform_car.sel_option_array),
+                      seat_count     = COALESCE(VALUES(seat_count), platform_car.seat_count),
+                      my_accident_cnt = COALESCE(VALUES(my_accident_cnt), platform_car.my_accident_cnt),
+                      flood_total_loss_cnt = COALESCE(VALUES(flood_total_loss_cnt), platform_car.flood_total_loss_cnt),
                       last_seen_date = VALUES(last_seen_date),
                       updated_at     = NOW(),
                       car_no = COALESCE(platform_car.car_no, VALUES(car_no)),
@@ -289,9 +397,12 @@ public class MergeService {
                       model_name = COALESCE(platform_car.model_name, VALUES(model_name)),
                       trim_name = COALESCE(platform_car.trim_name, VALUES(trim_name)),
                       grade_name = COALESCE(platform_car.grade_name, VALUES(grade_name))
-                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
+                   .replace("AD_DATE_EXPR_ENCAR", AD_DATE_EXPR_ENCAR)
+                   .replace("RAW_TABLE", sourceTable)
+                   .replace("SELL_TYPE_FILTER", sellTypeFilter);
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
-                log.debug("ENCAR upsert affected={}", affected);
+                log.debug("{} upsert affected={}", logTag, affected);
                 return null;
             });
 
@@ -316,23 +427,32 @@ public class MergeService {
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
                        price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
                     SELECT
                       'KCAR', r.car_cd, r.cno, NULL,
                       r.maker_code, r.model_group_code, r.model_code, r.grade_code, r.grade_detail_code,
                       r.maker_name, r.model_group_name, r.model_name, r.grade_name, r.grade_detail_name,
                       r.price, r.mileage, r.displacement, r.yymm,
                       'SALE',
-                      r.color, r.fuel, r.transmission, r.body_type, r.region,
+                      r.color, r.fuel, r.transmission,
+                      CASE r.body_type
+                        WHEN '중형차' THEN '중형' WHEN 'SUV' THEN 'SUV' WHEN '대형차' THEN '대형'
+                        WHEN '경차' THEN '경차' WHEN '준중형차' THEN '준중형' WHEN '화물차' THEN '화물'
+                        WHEN 'RV' THEN 'RV' WHEN '소형차' THEN '소형' WHEN '승합차' THEN '승합'
+                        WHEN '스포츠카' THEN '스포츠카'
+                        ELSE r.body_type
+                      END,
+                      r.region,
                       CONCAT('https://m.kcar.com/bc/detail/carInfoDtl?i_sCarCd=', r.car_cd),
                       CONCAT('https://www.kcar.com/bc/detail/carInfoDtl?i_sCarCd=', r.car_cd),
-                      NULL, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.main_img
+                      NULL, AD_DATE_EXPR_KCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.main_img
                     FROM raw_kcar r
                     WHERE r.id > ? AND r.id <= ?
                     ON DUPLICATE KEY UPDATE
                       price          = VALUES(price),
                       status         = VALUES(status),
                       extra          = VALUES(extra),
+                      ad_date        = COALESCE(VALUES(ad_date), platform_car.ad_date),
                       car_image_url  = VALUES(car_image_url),
                       last_seen_date = VALUES(last_seen_date),
                       updated_at     = NOW(),
@@ -347,7 +467,8 @@ public class MergeService {
                       model_name = COALESCE(platform_car.model_name, VALUES(model_name)),
                       trim_name = COALESCE(platform_car.trim_name, VALUES(trim_name)),
                       grade_name = COALESCE(platform_car.grade_name, VALUES(grade_name))
-                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
+                   .replace("AD_DATE_EXPR_KCAR", AD_DATE_EXPR_KCAR);
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
                 log.debug("KCAR upsert affected={}", affected);
                 return null;
@@ -373,21 +494,32 @@ public class MergeService {
                       (platform_name, platform_car_key, car_no, car_id,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
                        price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url,
+                       option_array)
                     SELECT
                       'CHUTCHA', r.car_id, r.number_plate, NULL,
                       r.brand_name, r.model_name, r.sub_model_name, r.grade_name, r.sub_grade_name,
                       r.price, r.mileage, r.displacement, r.first_reg_year, NULL,
-                      r.color, r.fuel_name, r.transmission_name, r.car_type, r.shop_addr_short,
+                      r.color, r.fuel_name, r.transmission_name,
+                      CASE r.car_type
+                        WHEN '경차' THEN '경차' WHEN '중대형' THEN '중형' WHEN '대형' THEN '대형'
+                        WHEN '준중형' THEN '준중형' WHEN 'SUV' THEN 'SUV' WHEN '소형' THEN '소형'
+                        WHEN '스포츠카/쿠페' THEN '스포츠카' WHEN '상용' THEN '상용'
+                        ELSE r.car_type
+                      END,
+                      r.shop_addr_short,
                       CONCAT('https://www.chutcha.net/share/car/detail/', JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.detail_link_hash'))),
                       CONCAT('https://web.chutcha.net/bmc/detail/', JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.detail_link_hash'))),
-                      NULL, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
+                      NULL, AD_DATE_EXPR_CHUTCHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url,
+                      r.option_array
                     FROM raw_chutcha r
                     WHERE r.id > ? AND r.id <= ? AND r.CAR_ID IS NOT NULL
                     ON DUPLICATE KEY UPDATE
                       price          = VALUES(price),
                       extra          = VALUES(extra),
+                      ad_date        = COALESCE(VALUES(ad_date), platform_car.ad_date),
                       car_image_url  = VALUES(car_image_url),
+                      option_array   = COALESCE(NULLIF(VALUES(option_array), ''), platform_car.option_array),
                       last_seen_date = VALUES(last_seen_date),
                       updated_at     = NOW(),
                       car_no = COALESCE(platform_car.car_no, VALUES(car_no)),
@@ -396,7 +528,8 @@ public class MergeService {
                       model_name = COALESCE(platform_car.model_name, VALUES(model_name)),
                       trim_name = COALESCE(platform_car.trim_name, VALUES(trim_name)),
                       grade_name = COALESCE(platform_car.grade_name, VALUES(grade_name))
-                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
+                   .replace("AD_DATE_EXPR_CHUTCHA", AD_DATE_EXPR_CHUTCHA);
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
                 log.debug("CHUTCHA upsert affected={}", affected);
                 return null;
@@ -426,23 +559,31 @@ public class MergeService {
                                            price, km, displacement, yymm, status,
                                            color, fuel, transmission, body_type, region,
                                            m_url, pc_url,
-                                           first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                                           first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
                     
                     SELECT
                     'CHARANCHA', R.SELL_NO, R.CAR_NO, NULL,
                     R.maker_code, R.model_code, R.model_detail_code, R.grade_code,
                     R.maker_name, R.model_name, R.model_detail_name, R.grade_name,
                     r.sell_price, r.mileage, r.displacement, substr(r.yyyymm,1,4), 'SALE',
-                    R.color_name, R.fuel_name, R.transmission_name, R.car_type, r.region_name,
+                    R.color_name, R.fuel_name, R.transmission_name,
+                    CASE R.car_type
+                      WHEN '소형' THEN '소형' WHEN '중형' THEN '중형' WHEN '대형' THEN '대형'
+                      WHEN '경형(일반형)' THEN '경차' WHEN '준중형' THEN '준중형'
+                      WHEN '기타' THEN '기타' WHEN '경형(초소형)' THEN '경차'
+                      ELSE R.car_type
+                    END,
+                    r.region_name,
                     CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
                     CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
-                      NULL, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
-                    FROM raw_charancha r
+                      NULL, AD_DATE_EXPR_CHARANCHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
+                    FROM RAW_CHARANCHA r
                     WHERE r.id > ? AND r.id <= ?
                     ON DUPLICATE KEY UPDATE
                       price          = VALUES(price),
                       status         = VALUES(status),
                       extra          = VALUES(extra),
+                      ad_date        = COALESCE(VALUES(ad_date), platform_car.ad_date),
                       car_image_url  = VALUES(car_image_url),
                       last_seen_date = VALUES(last_seen_date),
                       updated_at     = NOW(),
@@ -457,7 +598,8 @@ public class MergeService {
                       model_name = COALESCE(platform_car.model_name, VALUES(model_name)),
                       trim_name = COALESCE(platform_car.trim_name, VALUES(trim_name)),
                       grade_name = COALESCE(platform_car.grade_name, VALUES(grade_name))
-                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
+                   .replace("AD_DATE_EXPR_CHARANCHA", AD_DATE_EXPR_CHARANCHA);
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
                 log.debug("CHARANCHA upsert affected={}", affected);
                 return null;
@@ -487,7 +629,7 @@ public class MergeService {
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
                        price, price_new, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
                     SELECT
                       'TCAR', 
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId')),
@@ -516,12 +658,12 @@ public class MergeService {
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.color')),
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuel')),
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.trans')),
-                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.shapeType')),
+                      r.body_type,
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.areaCd')),
       CONCAT('https://mycarsave.lotterentacar.net/cr/search/view?carId=', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
       CONCAT('https://mycarsave.lotterentacar.net/cr/search/view?carId=', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
-      CASE 
-        WHEN JSON_EXTRACT(r.payload, '$.postStartDt') IS NULL 
+      CASE
+        WHEN JSON_EXTRACT(r.payload, '$.postStartDt') IS NULL
              OR JSON_EXTRACT(r.payload, '$.postStartDt') = JSON_QUOTE('null')
              OR JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.postStartDt')) = 'null'
              OR JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.postStartDt')) = ''
@@ -529,15 +671,21 @@ public class MergeService {
         THEN NULL
         ELSE DATE_FORMAT(STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.postStartDt')), '%Y-%m-%d %H:%i:%s.%f'), '%Y%m%d')
       END,
-                      NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url2
+                      AD_DATE_EXPR_TCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url2
                     FROM raw_tcar r
                     WHERE r.id > ? AND r.id <= ?
-                      AND (JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sale_type')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sale_type')) != 'R')
+                      AND UPPER(TRIM(COALESCE(
+                        JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sale_type')),
+                        JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.saleType')),
+                        JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.SALE_TYPE')),
+                        ''
+                      ))) = 'S'
                     ON DUPLICATE KEY UPDATE
                       price          = VALUES(price),
                       price_new      = COALESCE(VALUES(price_new), platform_car.price_new),
                       status         = VALUES(status),
                       extra          = VALUES(extra),
+                      ad_date        = COALESCE(VALUES(ad_date), platform_car.ad_date),
                       car_image_url  = VALUES(car_image_url),
                       last_seen_date = VALUES(last_seen_date),
                       updated_at     = NOW(),
@@ -552,14 +700,26 @@ public class MergeService {
                       model_name = COALESCE(platform_car.model_name, VALUES(model_name)),
                       trim_name = COALESCE(platform_car.trim_name, VALUES(trim_name)),
                       grade_name = COALESCE(platform_car.grade_name, VALUES(grade_name))
-                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
+                   .replace("AD_DATE_EXPR_TCAR", AD_DATE_EXPR_TCAR);
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
                 log.debug("TCAR upsert affected={}", affected);
                 
                 // 디버깅: 첫 번째 배치의 payload 샘플 로깅
                 if (isFirst) {
                     String samplePayload = jdbc.queryForObject(
-                        "SELECT payload FROM raw_tcar WHERE id > ? AND (JSON_UNQUOTE(JSON_EXTRACT(payload, '$.sale_type')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(payload, '$.sale_type')) != 'R') LIMIT 1",
+                        """
+                        SELECT payload
+                        FROM raw_tcar
+                        WHERE id > ?
+                          AND UPPER(TRIM(COALESCE(
+                            JSON_UNQUOTE(JSON_EXTRACT(payload, '$.sale_type')),
+                            JSON_UNQUOTE(JSON_EXTRACT(payload, '$.saleType')),
+                            JSON_UNQUOTE(JSON_EXTRACT(payload, '$.SALE_TYPE')),
+                            ''
+                          ))) = 'S'
+                        LIMIT 1
+                        """,
                         String.class, cursorFrom);
                     if (samplePayload != null) {
                         log.info("[TCAR] sample payload (first batch): {}", samplePayload);
@@ -578,10 +738,29 @@ public class MergeService {
     static record ExecResult(int processed, long nextCursor) {}
 
     public int postProcess(LocalDate bizDate) {
+        purgeLowPricePlatformCars();
         int linked = linkToMaster();
         snapshotPrices(bizDate);
         closeMissingAds(bizDate);
         return linked;
+    }
+
+    /** 모든 플랫폼 공통: 100만원 미만(또는 비정상 0/음수) 매물은 platform_car에서 제거 */
+    public void purgeLowPricePlatformCars() {
+        runWithRetry(3, 200L, () ->
+                requiresNew().execute(status -> {
+                    int deleted = jdbc.update("""
+                        DELETE FROM platform_car
+                        WHERE price IS NULL OR price < 100
+                    """);
+                    if (deleted > 0) {
+                        log.info("[merge] purgeLowPricePlatformCars done: {} rows deleted (price < 100)", deleted);
+                    } else {
+                        log.info("[merge] purgeLowPricePlatformCars done: no rows");
+                    }
+                    return null;
+                })
+        );
     }
 
     /** TRUNCATE 후 platform_car와 car_master 재생성 (순수 INSERT만 사용, 더 빠름) */
@@ -654,7 +833,7 @@ public class MergeService {
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
                        price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
                     SELECT
                        'CHACHACHA', r.car_seq, r.car_no, NULL,
                        r.MAKER_CODE, r.CLASS_CODE, r.CAR_CODE, r.MODEL_CODE, r.GRADE_CODE,
@@ -662,10 +841,11 @@ public class MergeService {
                        r.SELL_AMT, r.KM, r.displacement, r.YYMM, 'ONSALE', r.COLOR, r.GAS_NAME, r.auto_gbn_name, r.use_code_name, r.REGION,
                        CONCAT('https://m.kbchachacha.com/public/web/car/detail.kbc?carSeq=', r.CAR_SEQ),
                        CONCAT('https://www.kbchachacha.com/public/car/detail.kbc?carSeq=', r.car_seq),
-                       r.FIRST_AD_DAY, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
+                       r.FIRST_AD_DAY, AD_DATE_EXPR_CHACHACHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
                     FROM raw_chachacha r
                     WHERE r.id > ? AND r.id <= ?
-                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
+                   .replace("AD_DATE_EXPR_CHACHACHA", AD_DATE_EXPR_CHACHACHA);
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });
@@ -676,24 +856,31 @@ public class MergeService {
 
     /** ENCAR INSERT만 */
     private void mergeEncarDetailInsertOnly(LocalDate bizDate) {
+        mergeEncarDetailInsertOnlyBySource(bizDate, "raw_encar", true, "merge:ENCAR");
+        mergeEncarDetailInsertOnlyBySource(bizDate, "raw_encar_truck", false, "merge:ENCAR_TRUCK");
+    }
+
+    private void mergeEncarDetailInsertOnlyBySource(LocalDate bizDate, String rawTable, boolean requireNormalSellType, String lockName) {
+        String sourceTable = validateEncarRawTable(rawTable);
         long from = 0L;
-        final String lockName = "merge:ENCAR";
         String bizDateStr = bizDate.toString();
-        
+
         while (true) {
-            Long to = nextUpperIdFor("raw_encar", from, UPSERT_BATCH_SIZE);
+            Long to = nextUpperIdFor(sourceTable, from, UPSERT_BATCH_SIZE);
             if (to == null) break;
             final long cursorFrom = from;
             final long cursorTo   = to;
 
             inTxWithNamedLock(lockName, () -> {
+                String sellTypeFilter = requireNormalSellType ? " AND r.sell_type = 'NORMAL'" : "";
                 String sql = """
                     INSERT IGNORE INTO platform_car
                       (platform_name, platform_car_key, car_no, car_id,
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
                        price, price_new, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url,
+                       option_array, sel_option_array, seat_count, my_accident_cnt, flood_total_loss_cnt)
                     SELECT DISTINCT
                       'ENCAR', r.vehicle_id, r.vehicle_no, NULL,
                       r.manufacturer_code, r.model_group_code, r.model_code, r.grade_code, r.grade_detail_code,
@@ -702,20 +889,41 @@ public class MergeService {
                       NULLIF(r.price_new, 0),
                       r.mileage, r.displacement , r.form_year,
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.status')),
-                      r.color, r.fuel, r.transmission, r.body_type, r.region,
+                      r.color, r.fuel, r.transmission,
+                      CASE r.body_type
+                        WHEN '준중형차' THEN '준중형' WHEN '경차' THEN '경차' WHEN '중형차' THEN '중형'
+                        WHEN 'SUV' THEN 'SUV' WHEN '소형차' THEN '소형' WHEN '대형차' THEN '대형'
+                        WHEN 'RV' THEN 'RV' WHEN '기타' THEN '기타' WHEN '스포츠카' THEN '스포츠카'
+                        WHEN '화물차' THEN '트럭' WHEN '승합차' THEN '승합' WHEN '경승합차' THEN '승합'
+                        ELSE r.body_type
+                      END,
+                      r.region,
                       CONCAT('https://fem.encar.com/cars/detail/', r.vehicle_id),
                       CONCAT('https://fem.encar.com/cars/detail/', r.vehicle_id),
                       DATE_FORMAT(r.first_ad_dt, '%Y%m%d'),
-                      NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
-                    FROM raw_encar r
-                    WHERE r.id > ? AND r.id <= ? AND r.sell_type = 'NORMAL'
-                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                      AD_DATE_EXPR_ENCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url,
+                      r.option_array, r.sel_option_array, r.seat_count, r.my_accident_cnt, r.flood_total_loss_cnt
+                    FROM RAW_TABLE r
+                    WHERE r.id > ? AND r.id <= ?
+                      AND COALESCE(r.use_yn, 'Y') = 'Y'
+                      SELL_TYPE_FILTER
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
+                   .replace("AD_DATE_EXPR_ENCAR", AD_DATE_EXPR_ENCAR)
+                   .replace("RAW_TABLE", sourceTable)
+                   .replace("SELL_TYPE_FILTER", sellTypeFilter);
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });
 
             from = cursorTo;
         }
+    }
+
+    private String validateEncarRawTable(String rawTable) {
+        if ("raw_encar".equals(rawTable) || "raw_encar_truck".equals(rawTable)) {
+            return rawTable;
+        }
+        throw new IllegalArgumentException("unsupported ENCAR raw table: " + rawTable);
     }
 
     /** KCAR INSERT만 */
@@ -737,19 +945,28 @@ public class MergeService {
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
                        price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
                     SELECT
                       'KCAR', r.car_cd, r.cno, NULL,
                       r.maker_code, r.model_group_code, r.model_code, r.grade_code, r.grade_detail_code,
                       r.maker_name, r.model_group_name, r.model_name, r.grade_name, r.grade_detail_name,
                       r.price, r.mileage, r.displacement, r.yymm, 'SALE',
-                      r.color, r.fuel, r.transmission, r.body_type, r.region,
+                      r.color, r.fuel, r.transmission,
+                      CASE r.body_type
+                        WHEN '중형차' THEN '중형' WHEN 'SUV' THEN 'SUV' WHEN '대형차' THEN '대형'
+                        WHEN '경차' THEN '경차' WHEN '준중형차' THEN '준중형' WHEN '화물차' THEN '화물'
+                        WHEN 'RV' THEN 'RV' WHEN '소형차' THEN '소형' WHEN '승합차' THEN '승합'
+                        WHEN '스포츠카' THEN '스포츠카'
+                        ELSE r.body_type
+                      END,
+                      r.region,
                       CONCAT('https://m.kcar.com/bc/detail/carInfoDtl?i_sCarCd=', r.car_cd),
                       CONCAT('https://www.kcar.com/bc/detail/carInfoDtl?i_sCarCd=', r.car_cd),
-                      NULL, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.main_img
+                      NULL, AD_DATE_EXPR_KCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.main_img
                     FROM raw_kcar r
                     WHERE r.id > ? AND r.id <= ?
-                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
+                   .replace("AD_DATE_EXPR_KCAR", AD_DATE_EXPR_KCAR);
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });
@@ -776,18 +993,28 @@ public class MergeService {
                       (platform_name, platform_car_key, car_no, car_id,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
                        price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url,
+                       option_array)
                     SELECT
                       'CHUTCHA', r.car_id, r.number_plate, NULL,
                       r.brand_name, r.model_name, r.sub_model_name, r.grade_name, r.sub_grade_name,
                       r.price, r.mileage, r.displacement, r.first_reg_year, NULL,
-                      r.color, r.fuel_name, r.transmission_name, r.car_type, r.shop_addr_short,
+                      r.color, r.fuel_name, r.transmission_name,
+                      CASE r.car_type
+                        WHEN '경차' THEN '경차' WHEN '중대형' THEN '중형' WHEN '대형' THEN '대형'
+                        WHEN '준중형' THEN '준중형' WHEN 'SUV' THEN 'SUV' WHEN '소형' THEN '소형'
+                        WHEN '스포츠카/쿠페' THEN '스포츠카' WHEN '상용' THEN '상용'
+                        ELSE r.car_type
+                      END,
+                      r.shop_addr_short,
                       CONCAT('https://www.chutcha.net/share/car/detail/', JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.detail_link_hash'))),
                       CONCAT('https://web.chutcha.net/bmc/detail/', JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.detail_link_hash'))),
-                      NULL, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
-                    FROM raw_chutcha r
+                      NULL, AD_DATE_EXPR_CHUTCHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url,
+                      r.option_array
+                    From raw_chutcha r
                     WHERE r.id > ? AND r.id <= ? AND r.CAR_ID IS NOT NULL
-                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
+                   .replace("AD_DATE_EXPR_CHUTCHA", AD_DATE_EXPR_CHUTCHA);
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });
@@ -817,19 +1044,27 @@ public class MergeService {
                        price, km, displacement, yymm, status,
                        color, fuel, transmission, body_type, region,
                        m_url, pc_url,
-                       first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                       first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
                     SELECT
                       'CHARANCHA', R.SELL_NO, R.CAR_NO, NULL,
                       R.maker_code, R.model_code, R.model_detail_code, R.grade_code,
                       R.maker_name, R.model_name, R.model_detail_name, R.grade_name,
                       r.sell_price, r.mileage, r.displacement, substr(r.yyyymm,1,4), 'SALE',
-                      R.color_name, R.fuel_name, R.transmission_name, R.car_type, r.region_name,
+                      R.color_name, R.fuel_name, R.transmission_name,
+                      CASE R.car_type
+                        WHEN '소형' THEN '소형' WHEN '중형' THEN '중형' WHEN '대형' THEN '대형'
+                        WHEN '경형(일반형)' THEN '경차' WHEN '준중형' THEN '준중형'
+                        WHEN '기타' THEN '기타' WHEN '경형(초소형)' THEN '경차'
+                        ELSE R.car_type
+                      END,
+                      r.region_name,
                       CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
                       CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
-                      NULL, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
-                    FROM raw_charancha r
+                      NULL, AD_DATE_EXPR_CHARANCHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
+                    FROM RAW_CHARANCHA r
                     WHERE r.id > ? AND r.id <= ?
-                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
+                   .replace("AD_DATE_EXPR_CHARANCHA", AD_DATE_EXPR_CHARANCHA);
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });
@@ -857,7 +1092,7 @@ public class MergeService {
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
                        price, price_new, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, created_at, updated_at, extra, last_seen_date, car_image_url)
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
                     SELECT
                       'TCAR', 
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId')),
@@ -892,12 +1127,12 @@ public class MergeService {
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.color')),
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuel')),
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.trans')),
-                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.shapeType')),
+                      r.body_type,
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.areaCd')),
       CONCAT('https://mycarsave.lotterentacar.net/cr/search/view?carId=', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
       CONCAT('https://mycarsave.lotterentacar.net/cr/search/view?carId=', JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId'))),
-      CASE 
-        WHEN JSON_EXTRACT(r.payload, '$.postStartDt') IS NULL 
+      CASE
+        WHEN JSON_EXTRACT(r.payload, '$.postStartDt') IS NULL
              OR JSON_EXTRACT(r.payload, '$.postStartDt') = JSON_QUOTE('null')
              OR JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.postStartDt')) = 'null'
              OR JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.postStartDt')) = ''
@@ -905,11 +1140,17 @@ public class MergeService {
         THEN NULL
         ELSE DATE_FORMAT(STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.postStartDt')), '%Y-%m-%d %H:%i:%s.%f'), '%Y%m%d')
       END,
-                      NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url2
+                      AD_DATE_EXPR_TCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url2
                     FROM raw_tcar r
                     WHERE r.id > ? AND r.id <= ?
-                      AND (JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sale_type')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sale_type')) != 'R')
-                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr);
+                      AND UPPER(TRIM(COALESCE(
+                        JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sale_type')),
+                        JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.saleType')),
+                        JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.SALE_TYPE')),
+                        ''
+                      ))) = 'S'
+                """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
+                   .replace("AD_DATE_EXPR_TCAR", AD_DATE_EXPR_TCAR);
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });
@@ -1012,6 +1253,102 @@ public class MergeService {
                     WHERE cm.price_new IS NULL
                     """);
                 if (filled > 0) log.info("[merge] backfill car_master.price_new from platform_car: {} rows", filled);
+                return null;
+            }));
+
+        // car_id 링크 후: car_master.ad_date를 platform_car.ad_date의 최대값으로 동기화
+        runWithRetry(3, 200L, () ->
+            requiresNew().execute(status -> {
+                int synced = jdbc.update("""
+                    UPDATE car_master cm
+                    INNER JOIN (
+                        SELECT car_id, MAX(ad_date) AS max_ad_date
+                        FROM platform_car
+                        WHERE car_id IS NOT NULL AND ad_date IS NOT NULL
+                        GROUP BY car_id
+                    ) pc ON pc.car_id = cm.car_id
+                    SET cm.ad_date = pc.max_ad_date, cm.updated_at = NOW()
+                    WHERE cm.ad_date IS NULL OR cm.ad_date <> pc.max_ad_date
+                    """);
+                if (synced > 0) log.info("[merge] sync car_master.ad_date from platform_car max: {} rows", synced);
+                return null;
+            }));
+
+        // car_id 링크 후: ENCAR 확장 필드(seat/사고) 동기화
+        runWithRetry(3, 200L, () ->
+            requiresNew().execute(status -> {
+                int synced = jdbc.update("""
+                    UPDATE car_master cm
+                    INNER JOIN (
+                        SELECT car_id,
+                               MAX(seat_count) AS seat_count,
+                               MAX(my_accident_cnt) AS my_accident_cnt,
+                               MAX(flood_total_loss_cnt) AS flood_total_loss_cnt
+                        FROM platform_car
+                        WHERE car_id IS NOT NULL
+                        GROUP BY car_id
+                    ) pc ON pc.car_id = cm.car_id
+                    SET cm.seat_count = COALESCE(pc.seat_count, cm.seat_count),
+                        cm.my_accident_cnt = COALESCE(pc.my_accident_cnt, cm.my_accident_cnt),
+                        cm.flood_total_loss_cnt = COALESCE(pc.flood_total_loss_cnt, cm.flood_total_loss_cnt),
+                        cm.updated_at = NOW()
+                    WHERE (pc.seat_count IS NOT NULL AND (cm.seat_count IS NULL OR cm.seat_count <> pc.seat_count))
+                       OR (pc.my_accident_cnt IS NOT NULL AND (cm.my_accident_cnt IS NULL OR cm.my_accident_cnt <> pc.my_accident_cnt))
+                       OR (pc.flood_total_loss_cnt IS NOT NULL AND (cm.flood_total_loss_cnt IS NULL OR cm.flood_total_loss_cnt <> pc.flood_total_loss_cnt))
+                    """);
+                if (synced > 0) log.info("[merge] sync car_master seat/accident fields from platform_car: {} rows", synced);
+                return null;
+            }));
+
+        // car_id 링크 후: option_array/sel_option_array 동기화 (최신 ENCAR 우선)
+        runWithRetry(3, 200L, () ->
+            requiresNew().execute(status -> {
+                int synced = jdbc.update("""
+                    UPDATE car_master cm
+                    SET cm.option_array = COALESCE((
+                            SELECT pc.option_array
+                            FROM platform_car pc
+                            WHERE pc.car_id = cm.car_id
+                              AND pc.option_array IS NOT NULL
+                              AND TRIM(pc.option_array) <> ''
+                            ORDER BY (pc.platform_name = 'ENCAR') DESC,
+                                     pc.ad_date DESC,
+                                     pc.updated_at DESC,
+                                     pc.platform_car_id DESC
+                            LIMIT 1
+                        ), cm.option_array),
+                        cm.sel_option_array = COALESCE((
+                            SELECT pc.sel_option_array
+                            FROM platform_car pc
+                            WHERE pc.car_id = cm.car_id
+                              AND pc.sel_option_array IS NOT NULL
+                              AND TRIM(pc.sel_option_array) <> ''
+                            ORDER BY (pc.platform_name = 'ENCAR') DESC,
+                                     pc.ad_date DESC,
+                                     pc.updated_at DESC,
+                                     pc.platform_car_id DESC
+                            LIMIT 1
+                        ), cm.sel_option_array),
+                        cm.updated_at = NOW()
+                    WHERE cm.car_id IS NOT NULL
+                      AND (
+                           (cm.option_array IS NULL AND EXISTS (
+                               SELECT 1
+                               FROM platform_car p1
+                               WHERE p1.car_id = cm.car_id
+                                 AND p1.option_array IS NOT NULL
+                                 AND TRIM(p1.option_array) <> ''
+                           ))
+                        OR (cm.sel_option_array IS NULL AND EXISTS (
+                               SELECT 1
+                               FROM platform_car p2
+                               WHERE p2.car_id = cm.car_id
+                                 AND p2.sel_option_array IS NOT NULL
+                                 AND TRIM(p2.sel_option_array) <> ''
+                           ))
+                      )
+                    """);
+                if (synced > 0) log.info("[merge] sync car_master option arrays from platform_car: {} rows", synced);
                 return null;
             }));
 

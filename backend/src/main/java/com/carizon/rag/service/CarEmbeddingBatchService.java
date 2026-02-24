@@ -14,7 +14,6 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -31,13 +30,11 @@ public class CarEmbeddingBatchService {
     private final ChromaVectorStoreService vectorStoreService;
 
     private static final int WORKERS = 10;         // 병렬 워커 수 (Ollama 병목 시 조정)
-    private static final int DB_QUERY_PARALLELISM = 2; // DB 조회 동시성 제한 (MySQL CPU 보호)
     private static final int BATCH_SIZE_DB = 400;  // DB에서 끊어 처리할 청크 크기
     private static final int BATCH_SIZE_CHROMA = 80; // Chroma add 배치 크기
     private static final int PROGRESS_LOG_INTERVAL = 50; // N건마다 진행 로그
 
     private final AtomicInteger metadataLogCount = new AtomicInteger(0); // Metadata 로그 출력 카운터
-    private final Semaphore dbQuerySemaphore = new Semaphore(DB_QUERY_PARALLELISM);
 
     /** API/로그용 진행 상황 (진행 중일 때만 갱신, 배치 종료 후 마지막 결과 유지) */
     private volatile boolean progressRunning = false;
@@ -64,8 +61,8 @@ public class CarEmbeddingBatchService {
      * 모든 차량을 벡터 DB에 임베딩으로 저장
      */
     @Transactional(readOnly = true)
-    public void embedAllCars() {
-        embedAllCarsParallel();
+    public int embedAllCars() {
+        return embedAllCarsParallel();
     }
     
     /**
@@ -115,55 +112,14 @@ public class CarEmbeddingBatchService {
         
         List<Long> carIds = jdbcTemplate.queryForList(sql, Long.class, 
             java.sql.Timestamp.valueOf(since));
-        int totalCount = carIds.size();
-        progressRunning = true;
-        progressTotal = totalCount;
-        progressProcessed = 0;
-        progressOk = 0;
-        progressFail = 0;
-        progressStartedAt = System.currentTimeMillis();
-        progressMessage = "증분 임베딩 (since: " + since + ")";
-
-        log.info("************************************");
-        log.info("***   INCREMENTAL JOB START      ***  total={} (since: {})", totalCount, since);
-        log.info("************************************");
-
-        int successCount = 0;
-        int failCount = 0;
-        for (Long carId : carIds) {
-            try {
-                embedCar(carId);
-                successCount++;
-                progressProcessed = successCount + failCount;
-                progressOk = successCount;
-                progressFail = failCount;
-                if ((successCount + failCount) % PROGRESS_LOG_INTERVAL == 0) {
-                    log.info("[embedding] 진행: {}/{} 건 (성공: {}, 실패: {})", successCount + failCount, totalCount, successCount, failCount);
-                }
-            } catch (Exception e) {
-                failCount++;
-                progressProcessed = successCount + failCount;
-                progressFail = failCount;
-                log.warn("[embedding] fail [carId={}]: {}", carId, e.getMessage());
-            }
-        }
-
-        progressRunning = false;
-        progressProcessed = totalCount;
-        progressOk = successCount;
-        progressFail = failCount;
-
-        log.info("************************************");
-        log.info("***   INCREMENTAL JOB DONE       ***  ok={} fail={}", successCount, failCount);
-        log.info("************************************");
-        return successCount;
+        return embedCarIdsParallel(carIds, "INCREMENTAL JOB", "증분 임베딩 (since: " + since + ")");
     }
 
     /**
      * 특정 범위의 차량만 임베딩 (증분 업데이트용)
      */
     @Transactional(readOnly = true)
-    public void embedCarsInRange(Long fromCarId, Long toCarId) {
+    public int embedCarsInRange(Long fromCarId, Long toCarId) {
         String sql = """
             SELECT DISTINCT cm.car_id
             FROM car_master cm
@@ -178,37 +134,14 @@ public class CarEmbeddingBatchService {
             """;
         
         List<Long> carIds = jdbcTemplate.queryForList(sql, Long.class, fromCarId, toCarId);
-        int totalCount = carIds.size();
-        log.info("************************************");
-        log.info("***   RANGE JOB START           ***");
-        log.info("************************************");
-        log.info("[embedding] total requests: {} (range: {} - {})", totalCount, fromCarId, toCarId);
-        
-        int successCount = 0;
-        int failCount = 0;
-        for (Long carId : carIds) {
-            try {
-                embedCar(carId);
-                successCount++;
-                log.info("[embedding] progress: {}/{} (ok: {}, fail: {})", 
-                    successCount + failCount, totalCount, successCount, failCount);
-            } catch (Exception e) {
-                failCount++;
-                log.warn("[embedding] fail [carId={}]: {}", carId, e.getMessage());
-            }
-        }
-        
-        log.info("************************************");
-        log.info("***   RANGE JOB DONE            ***");
-        log.info("************************************");
-        log.info("[embedding] total: {} | ok: {} | fail: {}", totalCount, successCount, failCount);
+        return embedCarIdsParallel(carIds, "RANGE JOB", "범위 임베딩 (" + fromCarId + " - " + toCarId + ")");
     }
 
     /**
      * 병렬 + 배치 처리로 전체 차량 임베딩
      */
     @Transactional(readOnly = true)
-    public void embedAllCarsParallel() {
+    public int embedAllCarsParallel() {
         String sql = """
             SELECT DISTINCT cm.car_id
             FROM car_master cm
@@ -222,98 +155,11 @@ public class CarEmbeddingBatchService {
             """;
 
         List<Long> carIds = jdbcTemplate.queryForList(sql, Long.class);
-        int totalCount = carIds.size();
-
-        progressRunning = true;
-        progressTotal = totalCount;
-        progressProcessed = 0;
-        progressOk = 0;
-        progressFail = 0;
-        progressStartedAt = System.currentTimeMillis();
-        progressMessage = "전체 임베딩";
-
-        log.info("************************************");
-        log.info("***   EMBEDDING JOB START       ***  total={}", totalCount);
-        log.info("************************************");
-
-        metadataLogCount.set(0);
-        ExecutorService executor = Executors.newFixedThreadPool(WORKERS);
-        AtomicInteger success = new AtomicInteger();
-        AtomicInteger fail = new AtomicInteger();
-        AtomicInteger processed = new AtomicInteger();
-
-        try {
-            for (List<Long> chunk : partition(carIds, BATCH_SIZE_DB)) {
-                List<Future<CarEmbeddingDto>> futures = new ArrayList<>();
-                for (Long carId : chunk) {
-                    futures.add(executor.submit(() -> buildEmbeddingDto(carId)));
-                }
-
-                List<CarEmbeddingDto> ready = new ArrayList<>();
-                for (Future<CarEmbeddingDto> f : futures) {
-                    try {
-                        CarEmbeddingDto dto = f.get();
-                        if (dto != null && dto.getEmbedding() != null) {
-                            ready.add(dto);
-                            int curOk = success.incrementAndGet();
-                            int curProcessed = processed.incrementAndGet();
-                            progressOk = curOk;
-                            progressProcessed = curProcessed;
-                            progressFail = fail.get();
-
-                            if (curProcessed % PROGRESS_LOG_INTERVAL == 0 || curProcessed == totalCount) {
-                                log.info("[embedding] 진행: {}/{} 건 (성공: {}, 실패: {})", curProcessed, totalCount, curOk, fail.get());
-                            }
-                        } else {
-                            fail.incrementAndGet();
-                            int curProcessed = processed.incrementAndGet();
-                            progressProcessed = curProcessed;
-                            progressFail = fail.get();
-                        }
-                    } catch (Exception e) {
-                        fail.incrementAndGet();
-                        int curProcessed = processed.incrementAndGet();
-                        progressProcessed = curProcessed;
-                        progressFail = fail.get();
-                        log.warn("[embedding] fail: {}", e.getMessage());
-                    }
-                }
-
-                for (List<CarEmbeddingDto> chromaBatch : partition(ready, BATCH_SIZE_CHROMA)) {
-                    try {
-                        vectorStoreService.addCarEmbeddingsBatch(chromaBatch);
-                        log.debug("[ChromaDB] batch save done: {}", chromaBatch.size());
-                    } catch (Exception e) {
-                        int batchSize = chromaBatch.size();
-                        fail.addAndGet(batchSize);
-                        success.addAndGet(-batchSize);
-                        progressFail = fail.get();
-                        progressOk = success.get();
-                        log.warn("[ChromaDB] batch save failed ({}): {}", batchSize, e.getMessage());
-                    }
-                }
-            }
-        } finally {
-            executor.shutdown();
-            progressRunning = false;
-            progressProcessed = processed.get();
-            progressOk = success.get();
-            progressFail = fail.get();
-        }
-
-        log.info("************************************");
-        log.info("***   EMBEDDING JOB DONE        ***  ok={} fail={}", success.get(), fail.get());
-        log.info("************************************");
+        return embedCarIdsParallel(carIds, "EMBEDDING JOB", "전체 임베딩");
     }
 
     private CarEmbeddingDto buildEmbeddingDto(Long carId) throws Exception {
-        CarEmbeddingDto dto;
-        dbQuerySemaphore.acquire();
-        try {
-            dto = textConverterService.createCarEmbedding(carId);
-        } finally {
-            dbQuerySemaphore.release();
-        }
+        CarEmbeddingDto dto = textConverterService.createCarEmbedding(carId);
         if (dto == null) {
             log.warn("[embedding] no car data: carId={}", carId);
             return null;
@@ -372,7 +218,15 @@ public class CarEmbeddingBatchService {
         params.add(cappedLimit);
 
         List<Long> carIds = jdbcTemplate.queryForList(sql.toString(), Long.class, params.toArray());
-        int totalCount = carIds.size();
+        return embedCarIdsParallel(
+                carIds,
+                "FILTER EMBEDDING",
+                "필터 임베딩 (limit=" + cappedLimit + ", maker=" + (maker != null ? maker : "") + ")"
+        );
+    }
+
+    private int embedCarIdsParallel(List<Long> carIds, String bannerTitle, String progressMsg) {
+        int totalCount = carIds != null ? carIds.size() : 0;
 
         progressRunning = true;
         progressTotal = totalCount;
@@ -380,18 +234,19 @@ public class CarEmbeddingBatchService {
         progressOk = 0;
         progressFail = 0;
         progressStartedAt = System.currentTimeMillis();
-        progressMessage = "필터 임베딩 (limit=" + cappedLimit + ", maker=" + (maker != null ? maker : "") + ")";
+        progressMessage = progressMsg;
 
         log.info("************************************");
-        log.info("***   FILTER EMBEDDING START     ***  total={}", totalCount);
+        log.info("***   {} START   ***  total={}", bannerTitle, totalCount);
         log.info("************************************");
 
-        if (carIds.isEmpty()) {
+        if (carIds == null || carIds.isEmpty()) {
             progressRunning = false;
-            log.info("[embedding] no cars match filter, skip.");
+            log.info("[embedding] no cars to process, skip.");
             return 0;
         }
 
+        textConverterService.clearModelBasicInfoCache();
         metadataLogCount.set(0);
         ExecutorService executor = Executors.newFixedThreadPool(WORKERS);
         AtomicInteger success = new AtomicInteger();
@@ -404,6 +259,7 @@ public class CarEmbeddingBatchService {
                 for (Long carId : chunk) {
                     futures.add(executor.submit(() -> buildEmbeddingDto(carId)));
                 }
+
                 List<CarEmbeddingDto> ready = new ArrayList<>();
                 for (Future<CarEmbeddingDto> f : futures) {
                     try {
@@ -414,6 +270,10 @@ public class CarEmbeddingBatchService {
                         } else {
                             fail.incrementAndGet();
                         }
+                    } catch (Exception e) {
+                        fail.incrementAndGet();
+                        log.warn("[embedding] dto build fail: {}", e.getMessage());
+                    } finally {
                         int cur = processed.incrementAndGet();
                         progressProcessed = cur;
                         progressOk = success.get();
@@ -421,14 +281,9 @@ public class CarEmbeddingBatchService {
                         if (cur % PROGRESS_LOG_INTERVAL == 0 || cur == totalCount) {
                             log.info("[embedding] 진행: {}/{} 건 (성공: {}, 실패: {})", cur, totalCount, success.get(), fail.get());
                         }
-                    } catch (Exception e) {
-                        fail.incrementAndGet();
-                        processed.incrementAndGet();
-                        progressProcessed = processed.get();
-                        progressFail = fail.get();
-                        log.warn("[embedding] fail: {}", e.getMessage());
                     }
                 }
+
                 for (List<CarEmbeddingDto> chromaBatch : partition(ready, BATCH_SIZE_CHROMA)) {
                     try {
                         vectorStoreService.addCarEmbeddingsBatch(chromaBatch);
@@ -448,10 +303,11 @@ public class CarEmbeddingBatchService {
             progressProcessed = processed.get();
             progressOk = success.get();
             progressFail = fail.get();
+            textConverterService.clearModelBasicInfoCache();
         }
 
         log.info("************************************");
-        log.info("***   FILTER EMBEDDING DONE      ***  ok={} fail={}", success.get(), fail.get());
+        log.info("***   {} DONE    ***  ok={} fail={}", bannerTitle, success.get(), fail.get());
         log.info("************************************");
         return success.get();
     }

@@ -15,6 +15,8 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.Matcher;
@@ -86,8 +88,6 @@ public class ChutchaCrawler {
         } catch (Exception e) {
             recordFail(runId, total, e.toString());
             log.error("[CHUTCHA] runOnceFull failed", e);
-        } finally {
-            detailPool.shutdown();
         }
     }
 
@@ -177,8 +177,16 @@ public class ChutchaCrawler {
 
         DetailSlim[] detailsByIndex = new DetailSlim[items.size()];
         for (CompletableFuture<DetailResult> f : futures) {
-            DetailResult r = f.get();
-            detailsByIndex[r.index()] = r.detail();
+            try {
+                DetailResult r = f.get();
+                detailsByIndex[r.index()] = r.detail();
+            } catch (InterruptedException ie) {
+                // HTTP 클라이언트 단절/스레드 인터럽트가 와도 크롤링 배치는 가능한 범위에서 진행
+                log.warn("[CHUTCHA] detail future interrupted, fallback to partial save");
+                Thread.interrupted(); // interrupt status clear
+            } catch (ExecutionException ee) {
+                log.warn("[CHUTCHA] detail future execution failed: {}", ee.getCause() != null ? ee.getCause().toString() : ee.toString());
+            }
         }
 
         List<Object[]> batch = new ArrayList<>(items.size());
@@ -200,13 +208,15 @@ public class ChutchaCrawler {
             String mergedPayload = mapper.writeValueAsString(merged);
             Map<String, Object> mergedMap = mapper.convertValue(merged, new TypeReference<Map<String, Object>>() {});
             String carImageUrl = buildChutchaImageUrl(mergedMap);
-            batch.add(new Object[]{ mergedPayload, hash, carImageUrl, Timestamp.from(Instant.now()) });
+            String optionArray = buildChutchaOptionArray(mergedMap);
+            Timestamp adDate = resolveChutchaAdDate(mergedMap);
+            batch.add(new Object[]{ mergedPayload, hash, carImageUrl, optionArray, adDate, Timestamp.from(Instant.now()) });
         }
 
         if (!batch.isEmpty()) {
             jdbc.batchUpdate(
-                    "INSERT INTO raw_chutcha(payload, share_hash, car_image_url, fetched_at) VALUES (CAST(? AS JSON), ?, ?, ?) " +
-                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload), car_image_url=VALUES(car_image_url), fetched_at=VALUES(fetched_at)",
+                    "INSERT INTO raw_chutcha(payload, share_hash, car_image_url, option_array, ad_date, fetched_at) VALUES (CAST(? AS JSON), ?, ?, ?, ?, ?) " +
+                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload), car_image_url=VALUES(car_image_url), option_array=VALUES(option_array), ad_date=VALUES(ad_date), fetched_at=VALUES(fetched_at)",
                     batch
             );
         }
@@ -342,6 +352,33 @@ public class ChutchaCrawler {
         return s.length() <= max ? s : s.substring(0, max);
     }
 
+    /** during_date_str(예: "3일전", "오늘")를 실제 ad_date(00:00:00)로 변환 */
+    private Timestamp resolveChutchaAdDate(Map<String, Object> payload) {
+        String raw = optStr(payload, "during_date_str");
+        if (raw == null || raw.isBlank()) raw = optStr(payload, "duringDateStr");
+        if (raw == null || raw.isBlank()) return null;
+
+        String compact = raw.replaceAll("\\s+", "");
+        LocalDate base = LocalDate.now();
+        LocalDateTime adDateTime;
+
+        if ("오늘".equals(compact) || "금일".equals(compact)) {
+            adDateTime = LocalDateTime.of(base, java.time.LocalTime.MIDNIGHT);
+        } else if ("어제".equals(compact)) {
+            adDateTime = LocalDateTime.of(base.minusDays(1), java.time.LocalTime.MIDNIGHT);
+        } else if (compact.matches("^\\d+시간전$")) {
+            long hours = Long.parseLong(compact.replace("시간전", ""));
+            // 요구사항: 오늘 00시를 기준으로 N시간 전 계산
+            adDateTime = LocalDateTime.of(base, java.time.LocalTime.MIDNIGHT).minusHours(hours);
+        } else {
+            Matcher m = Pattern.compile("(\\d+)일전").matcher(compact);
+            if (!m.find()) return null;
+            long days = Long.parseLong(m.group(1));
+            adDateTime = LocalDateTime.of(base.minusDays(days), java.time.LocalTime.MIDNIGHT);
+        }
+        return Timestamp.valueOf(adDateTime);
+    }
+
     private static final String CHUTCHA_IMG_BASE = "https://img.chutcha.kr";
 
     /**
@@ -375,6 +412,49 @@ public class ChutchaCrawler {
         Object first = ((List<?>) imgListObj).get(0);
         if (!(first instanceof Map)) return null;
         return optStr((Map<String, ?>) first, "img_path");
+    }
+
+    /** payload.detail.options에서 val=Y 항목의 kor_name을 "|" join */
+    @SuppressWarnings("unchecked")
+    private String buildChutchaOptionArray(Map<String, Object> payload) {
+        try {
+            Object detailObj = payload != null ? payload.get("detail") : null;
+            if (!(detailObj instanceof Map)) return null;
+            Map<String, Object> detail = (Map<String, Object>) detailObj;
+
+            Object optionsObj = detail.get("options");
+            if (!(optionsObj instanceof List<?> options)) return null;
+
+            LinkedHashSet<String> names = new LinkedHashSet<>();
+            for (Object item : options) {
+                if (!(item instanceof Map<?, ?> option)) continue;
+
+                Object val = option.get("val");
+                if (!isPositiveOptionValue(val)) continue;
+
+                String korName = null;
+                Object korNameObj = option.get("kor_name");
+                if (korNameObj != null) korName = String.valueOf(korNameObj).trim();
+                if (korName == null || korName.isBlank()) {
+                    Object korNameCamel = option.get("korName");
+                    if (korNameCamel != null) korName = String.valueOf(korNameCamel).trim();
+                }
+                if (korName != null && !korName.isBlank()) names.add(korName);
+            }
+
+            if (names.isEmpty()) return null;
+            return String.join("|", names);
+        } catch (Exception e) {
+            log.warn("[CHUTCHA] option_array build failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private boolean isPositiveOptionValue(Object val) {
+        if (val == null) return false;
+        String s = String.valueOf(val).trim();
+        if (s.isEmpty()) return false;
+        return "Y".equalsIgnoreCase(s) || "1".equals(s) || "TRUE".equalsIgnoreCase(s);
     }
 
     // --------------------- record types ---------------------

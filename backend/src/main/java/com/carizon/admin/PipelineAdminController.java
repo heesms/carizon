@@ -6,6 +6,7 @@ import com.carizon.common.dto.ApiResponse;
 import com.carizon.mapping.CodeMappingService;
 import com.carizon.mapping.MasterMergeService;
 import com.carizon.merge.MergeService;
+import com.carizon.rag.service.LikeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,7 @@ public class PipelineAdminController {
     private final MasterMergeService masterMergeService;
     private final BatchWorkflowService workflowService;
     private final ApiRunRecorder apiRunRecorder;
+    private final LikeService likeService;
 
     @PostMapping("/full")
     @Operation(summary = "전체 파이프라인 실행", 
@@ -44,6 +46,8 @@ public class PipelineAdminController {
         try {
             LocalDate date = bizDate != null ? bizDate : LocalDate.now();
             Map<String, Object> result = new HashMap<>();
+            long pipelineStart = System.currentTimeMillis();
+            log.info("[pipeline] full start bizDate={} skipCrawl={} stages=[merge,code-mapping,car-master]", date, skipCrawl);
             
             // 1. 크롤링 (선택적)
             if (!skipCrawl) {
@@ -56,47 +60,53 @@ public class PipelineAdminController {
             }
 
             // 2. 머지 (raw_* → platform_car)
-            log.info("[pipeline] merge start...");
+            log.info("[pipeline] stage 1/3 merge start (33%)");
             long mergeStart = System.currentTimeMillis();
             int merged = mergeService.mergeAllPlatforms(date);
             long mergeTime = System.currentTimeMillis() - mergeStart;
+            log.info("[pipeline] stage 1/3 merge done (33%) mergedCount={} durationMs={}", merged, mergeTime);
             result.put("merge", Map.of(
                     "mergedCount", merged,
                     "durationMs", mergeTime
             ));
 
             // 3. 코드 매핑 (platform_car → cz_code_map)
-            log.info("[pipeline] code mapping start...");
+            log.info("[pipeline] stage 2/3 code mapping start (67%)");
             long mappingStart = System.currentTimeMillis();
             int totalMapped = 0;
             String[] platforms = {"ENCAR", "KCAR", "CHACHACHA", "CHUTCHA", "CHARANCHA", "TCAR"};
-            for (String platform : platforms) {
+            for (int i = 0; i < platforms.length; i++) {
+                String platform = platforms[i];
                 try {
                     int mapped = codeMappingService.runAutoMapping(platform, CodeMappingService.Scope.TODAY);
                     totalMapped += mapped;
-                    log.info("[pipeline] {} mapping: {} rows", platform, mapped);
+                    int percent = (int) Math.round((i + 1) * 100.0 / platforms.length);
+                    log.info("[pipeline] stage 2/3 code mapping progress platform={}/{} ({}) mapped={} accumulated={}",
+                            (i + 1), platforms.length, percent + "%", mapped, totalMapped);
                 } catch (Exception e) {
                     log.error("[pipeline] {} mapping failed", platform, e);
                 }
             }
             long mappingTime = System.currentTimeMillis() - mappingStart;
+            log.info("[pipeline] stage 2/3 code mapping done (67%) mappedCount={} durationMs={}", totalMapped, mappingTime);
             result.put("codeMapping", Map.of(
                     "mappedCount", totalMapped,
                     "durationMs", mappingTime
             ));
 
             // 4. car_master 머지 (platform_car + cz_code_map → car_master)
-            log.info("[pipeline] car_master merge start...");
+            log.info("[pipeline] stage 3/3 car_master merge start (100%)");
             long masterStart = System.currentTimeMillis();
             int masterMerged = masterMergeService.upsertAliveToCarMaster(date);
             masterMergeService.updateCarMasterFromMapping();
             long masterTime = System.currentTimeMillis() - masterStart;
+            log.info("[pipeline] stage 3/3 car_master merge done (100%) mergedCount={} durationMs={}", masterMerged, masterTime);
             result.put("masterMerge", Map.of(
                     "mergedCount", masterMerged,
                     "durationMs", masterTime
             ));
 
-            long totalTime = System.currentTimeMillis() - mergeStart;
+            long totalTime = System.currentTimeMillis() - pipelineStart;
             result.put("totalDurationMs", totalTime);
             result.put("bizDate", date.toString());
 
@@ -247,10 +257,12 @@ public class PipelineAdminController {
             
             Map<String, Object> result = mergeService.rebuildFromScratch(date);
             long duration = System.currentTimeMillis() - start;
+            long likesCleared = clearLikesOnRebuild();
             
             int platformCarCount = (Integer) result.get("platformCarCount");
             Map<String, Object> response = Map.of(
                     "platformCarCount", platformCarCount,
+                    "likesCleared", likesCleared,
                     "durationMs", duration,
                     "bizDate", date.toString()
             );
@@ -280,10 +292,12 @@ public class PipelineAdminController {
             masterMergeService.updateCarMasterFromMapping();
             int linkedCount = mergeService.linkToMaster();
             long duration = System.currentTimeMillis() - start;
+            long likesCleared = clearLikesOnRebuild();
             
             Map<String, Object> result = Map.of(
                     "carMasterCount", carMasterCount,
                     "linkedCount", linkedCount,
+                    "likesCleared", likesCleared,
                     "durationMs", duration,
                     "bizDate", date.toString()
             );
@@ -332,6 +346,7 @@ public class PipelineAdminController {
             int linkedCount = mergeService.linkToMaster();
             long linkTime = System.currentTimeMillis() - linkStart;
             log.info("[pipeline] platform_car.car_id mapping done: {} rows ({}ms)", linkedCount, linkTime);
+            long likesCleared = clearLikesOnRebuild();
             
             long totalTime = System.currentTimeMillis() - start;
             
@@ -339,6 +354,7 @@ public class PipelineAdminController {
                     "platformCarCount", platformCarCount,
                     "carMasterCount", carMasterCount,
                     "linkedCount", linkedCount,
+                    "likesCleared", likesCleared,
                     "totalDurationMs", totalTime,
                     "mergeDurationMs", mergeTime,
                     "masterDurationMs", masterTime,
@@ -352,6 +368,22 @@ public class PipelineAdminController {
             log.error("[pipeline] rebuildFromScratch run failed", e);
             apiRunRecorder.recordFail(runId, 0, e);
             return ApiResponse.error("rebuildFromScratch 실행 실패: " + e.getMessage());
+        }
+    }
+
+    private long clearLikesOnRebuild() {
+        try {
+            Map<String, Long> cleared = likeService.clearAllLikes();
+            long total = 0L;
+            if (cleared != null) {
+                Long value = cleared.get("totalDeleted");
+                if (value != null) total = value;
+            }
+            log.warn("[pipeline] rebuild like cache cleared: {}", cleared);
+            return total;
+        } catch (Exception e) {
+            log.warn("[pipeline] rebuild like cache clear failed: {}", e.getMessage());
+            return -1L;
         }
     }
 }

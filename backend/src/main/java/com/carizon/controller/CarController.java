@@ -15,7 +15,7 @@ import java.util.Map;
 @RequestMapping("/api")
 @RequiredArgsConstructor
 @Tag(name = "차량 조회", description = "차량 목록 및 상세 조회 API")
-public class CarController {
+public class  CCarController {
     
   private final CarQueryService service;
   
@@ -49,6 +49,22 @@ public class CarController {
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.error("[car detail] error: carId={}, after {}ms", carId, System.currentTimeMillis() - apiStart, e);
+            throw e;
+        }
+    }
+
+  @GetMapping("/cars/{carId}/price-history")
+    @Operation(summary = "차량 가격 이력 조회", description = "차량 ID 기준 가격 변동 이력 조회")
+    public ApiResponse<Map<String, Object>> priceHistory(@PathVariable long carId) {
+        long apiStart = System.currentTimeMillis();
+        log.info("[car price-history] request start: carId={}", carId);
+        try {
+            Map<String, Object> result = service.priceHistory(carId);
+            long apiMs = System.currentTimeMillis() - apiStart;
+            log.info("[car price-history] request done: carId={}, total={}ms", carId, apiMs);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            log.error("[car price-history] error: carId={}, after {}ms", carId, System.currentTimeMillis() - apiStart, e);
             throw e;
         }
     }

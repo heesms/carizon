@@ -3,6 +3,7 @@ package com.carizon.service;
 
 import com.carizon.domain.mapper.CarMapper;
 import com.carizon.dto.CarDetailRow;
+import com.carizon.dto.PricePoint;
 import com.carizon.search.service.ElasticsearchCarSearchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 차량 검색/상세 조회 서비스.
@@ -48,6 +50,10 @@ public class CarQueryService {
     try {
       // 파라미터 정규화 (yearFrom -> yearMin 등)
       Map<String, Object> normalizedQuery = normalizeQueryParams(query);
+      if (normalizedQuery.containsKey("kmMin") || normalizedQuery.containsKey("kmMax")) {
+        log.info("[CarQueryService] km filter input: kmMin={}, kmMax={}",
+            normalizedQuery.get("kmMin"), normalizedQuery.get("kmMax"));
+      }
       
       // Elasticsearch로 검색
       long startTime = System.currentTimeMillis();
@@ -120,6 +126,33 @@ public class CarQueryService {
     }
     long totalMs = System.currentTimeMillis() - start;
     log.info("[CarQueryService.detail] carId={}, totalMs={}ms", carId, totalMs);
+    return res;
+  }
+
+  /**
+   * 차량 가격 이력 조회.
+   * - 동일 carId 내 임의의 platform_car_id 1개를 기준으로 car_price_history 조회
+   */
+  public Map<String, Object> priceHistory(long carId) {
+    long start = System.currentTimeMillis();
+    Long platformCarId = mapper.selectAnyPlatformCarId(carId);
+
+    List<Map<String, Object>> points = List.of();
+    if (platformCarId != null) {
+      List<PricePoint> rows = mapper.selectPriceHistory(platformCarId);
+      points = rows.stream().map(p -> {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("checkedAt", p.ts() != null ? p.ts().toString() : null);
+        m.put("price", p.price());
+        return m;
+      }).collect(Collectors.toList());
+    }
+
+    Map<String, Object> res = new LinkedHashMap<>();
+    res.put("carId", carId);
+    res.put("points", points);
+    log.info("[CarQueryService.priceHistory] carId={}, platformCarId={}, points={}, totalMs={}ms",
+        carId, platformCarId, points.size(), System.currentTimeMillis() - start);
     return res;
   }
 

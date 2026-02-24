@@ -47,7 +47,7 @@ crawler:
       # 필요 시 DevTools에서 복사한 Cookie 전체 문자열 주입
       cookie: ${ENCAR_COOKIE:}
     truck:
-      list-url-template: ${ENCAR_TRUCK_LIST_URL_TEMPLATE:https://api.encar.com/search/car/list/truck?count=true&q=(And.Hidden.N._)&sr=%7CModifiedDate%7C{offset}%7C{size}&inav=%7CMetadata%7CSort}
+      list-url-template: ${ENCAR_TRUCK_LIST_URL_TEMPLATE:https://api.encar.com/search/truck/list/mobile?count=true&q=Hidden.N.&sr=%7CMobileModifiedDate%7C{offset}%7C{size}&inav=%7CMetadata%7CSort}
 
 mybatis:
   mapper-locations: classpath:/mapper/**/*.xml

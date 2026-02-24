@@ -79,7 +79,7 @@ public class ForcedMappingAdminController {
 
             // depth 계산 (1=maker만, 2=maker+group, 3=maker+group+model, 4=+trim, 5=+grade)
             int depth = 1;
-            if (modelGroupCode != null) depth = 2;
+            if (pModelGroupCode != null) depth = 2;
             if (pModelCode != null && modelCode != null) depth = 3;
             if (pTrimCode != null && trimCode != null) depth = 4;
             if (pGradeCode != null && gradeCode != null) depth = 5;
@@ -133,7 +133,7 @@ public class ForcedMappingAdminController {
             String gradeCode = (String) request.get("grade_code");
 
             int depth = 1;
-            if (modelGroupCode != null) depth = 2;
+            if (pModelGroupCode != null) depth = 2;
             if (pModelCode != null && modelCode != null) depth = 3;
             if (pTrimCode != null && trimCode != null) depth = 4;
             if (pGradeCode != null && gradeCode != null) depth = 5;

@@ -34,12 +34,14 @@ public class BatchJobService {
     private final ModelNewPriceService modelNewPriceService;
     private final CarIndexingService indexingService;
     private final CarEmbeddingBatchService embeddingBatchService;
+    private final ApiRunRecorder apiRunRecorder;
 
     /**
      * 배치 작업 실행
      */
     @Transactional
     public String executeJob(String jobId, Map<String, Object> config) {
+        long jobStart = System.currentTimeMillis();
         // 작업 정의 조회
         Map<String, Object> jobDef = jdbc.queryForMap(
             "SELECT * FROM batch_job_definition WHERE job_id = ?", jobId);
@@ -49,6 +51,7 @@ public class BatchJobService {
         
         // 실행 이력 생성
         Long executionId = createJobExecution(jobId, jobName, config);
+        log.info("[batch] job start: {} type={} executionId={} config={}", jobId, jobType, executionId, config);
         
         try {
             // 작업 실행
@@ -68,13 +71,15 @@ public class BatchJobService {
             
             // 성공 처리
             updateJobExecutionSuccess(executionId, result);
-            log.info("[batch] job done: {} (executionId: {})", jobId, executionId);
+            log.info("[batch] job done: {} (executionId: {}, elapsedMs={}, result={})",
+                    jobId, executionId, System.currentTimeMillis() - jobStart, result);
             
             return String.valueOf(executionId);
         } catch (Exception e) {
             // 실패 처리
             updateJobExecutionFailure(executionId, e.getMessage());
-            log.error("[batch] job failed: {} (executionId: {})", jobId, executionId, e);
+            log.error("[batch] job failed: {} (executionId: {}, elapsedMs={})",
+                    jobId, executionId, System.currentTimeMillis() - jobStart, e);
             throw new RuntimeException("배치 작업 실패: " + jobId, e);
         }
     }
@@ -110,7 +115,11 @@ public class BatchJobService {
             ? LocalDate.parse((String) config.get("bizDate"))
             : LocalDate.now();
         
+        long stageStart = System.currentTimeMillis();
+        log.info("[batch][MERGE] stage 1/1 start (0%) raw_* -> platform_car bizDate={}", bizDate);
         int merged = mergeService.mergeAllPlatforms(bizDate);
+        log.info("[batch][MERGE] stage 1/1 done (100%) mergedCount={} durationMs={}",
+                merged, System.currentTimeMillis() - stageStart);
         return Map.of("mergedCount", merged, "bizDate", bizDate.toString());
     }
 
@@ -128,17 +137,28 @@ public class BatchJobService {
         
         if (platform != null) {
             // 특정 플랫폼만
+            long start = System.currentTimeMillis();
+            log.info("[batch][CODE_MAPPING] stage 1/1 start (0%) platform={} scope={}", platform, scope);
             int mapped = codeMappingService.runAutoMapping(platform, scope);
+            log.info("[batch][CODE_MAPPING] stage 1/1 done (100%) platform={} mapped={} durationMs={}",
+                    platform, mapped, System.currentTimeMillis() - start);
             return Map.of("mappedCount", mapped, "platform", platform, "scope", scope.toString());
         } else {
             // 모든 플랫폼
             int total = 0;
             String[] platforms = {"ENCAR", "KCAR", "CHACHACHA", "CHUTCHA", "CHARANCHA", "TCAR"};
-            for (String p : platforms) {
+            for (int i = 0; i < platforms.length; i++) {
+                String p = platforms[i];
+                int stepNo = i + 1;
+                int percent = (int) Math.round(stepNo * 100.0 / platforms.length);
+                long stepStart = System.currentTimeMillis();
+                log.info("[batch][CODE_MAPPING] stage {}/{} start ({}%) platform={} scope={}",
+                        stepNo, platforms.length, percent, p, scope);
                 try {
                     int mapped = codeMappingService.runAutoMapping(p, scope);
                     total += mapped;
-                    log.info("[code mapping] {}: {} rows", p, mapped);
+                    log.info("[batch][CODE_MAPPING] stage {}/{} done ({}%) platform={} mapped={} accumulated={} durationMs={}",
+                            stepNo, platforms.length, percent, p, mapped, total, System.currentTimeMillis() - stepStart);
                 } catch (Exception e) {
                     log.error("[code mapping] {} failed", p, e);
                 }
@@ -156,10 +176,18 @@ public class BatchJobService {
             : LocalDate.now();
         
         // 1. car_master 생성/업데이트
+        long stage1Start = System.currentTimeMillis();
+        log.info("[batch][MASTER] stage 1/2 start (0%) upsertAliveToCarMaster bizDate={}", bizDate);
         int upserted = masterMergeService.upsertAliveToCarMaster(bizDate);
+        log.info("[batch][MASTER] stage 1/2 done (50%) upsertedCount={} durationMs={}",
+                upserted, System.currentTimeMillis() - stage1Start);
         
         // 2. 우선순위 기반 최종 업데이트
+        long stage2Start = System.currentTimeMillis();
+        log.info("[batch][MASTER] stage 2/2 start (50%) updateCarMasterFromMapping");
         int updated = masterMergeService.updateCarMasterFromMapping();
+        log.info("[batch][MASTER] stage 2/2 done (100%) updatedCount={} durationMs={}",
+                updated, System.currentTimeMillis() - stage2Start);
         
         return Map.of(
             "upsertedCount", upserted,
@@ -180,47 +208,91 @@ public class BatchJobService {
      * 인덱싱 작업 실행
      */
     private Map<String, Object> executeIndexingJob(String jobId, Map<String, Object> config) throws Exception {
-        if ("indexing_incremental".equals(jobId)) {
-            LocalDateTime since = config != null && config.containsKey("since")
-                ? LocalDateTime.parse((String) config.get("since"))
-                : LocalDateTime.now().minusHours(1);
-            
-            indexingService.incrementalIndex(since);
-            return Map.of("message", "증분 인덱싱 완료", "since", since.toString());
-        } else if ("indexing_batch".equals(jobId)) {
-            int limit = config != null && config.containsKey("limit")
-                ? (Integer) config.get("limit")
-                : 1000;
-            
-            int count = indexingService.batchIndex(limit);
-            return Map.of("indexedCount", count);
-        } else if ("indexing_reindex".equals(jobId)) {
-            indexingService.reindexAllCars();
-            return Map.of("message", "전체 재인덱싱 완료");
+        long start = System.currentTimeMillis();
+        String runId = apiRunRecorder.recordStart("/batch/jobs/" + jobId, "BATCH", jobId);
+        int processed = 0;
+        log.info("[batch][SEARCH_INDEX] start jobId={} config={}", jobId, config);
+        try {
+            Map<String, Object> result;
+            if ("indexing_incremental".equals(jobId)) {
+                LocalDateTime since = config != null && config.containsKey("since")
+                    ? LocalDateTime.parse((String) config.get("since"))
+                    : LocalDateTime.now().minusHours(1);
+
+                int indexed = indexingService.incrementalIndex(since);
+                processed = indexed;
+                log.info("[batch][SEARCH_INDEX] done jobId={} indexedCount={} elapsedMs={}",
+                        jobId, indexed, System.currentTimeMillis() - start);
+                result = Map.of("message", "증분 인덱싱 완료", "since", since.toString(), "indexedCount", indexed);
+            } else if ("indexing_batch".equals(jobId)) {
+                int limit = config != null && config.containsKey("limit")
+                    ? (Integer) config.get("limit")
+                    : 1000;
+
+                int count = indexingService.batchIndex(limit);
+                processed = count;
+                log.info("[batch][SEARCH_INDEX] done jobId={} indexedCount={} elapsedMs={}",
+                        jobId, count, System.currentTimeMillis() - start);
+                result = Map.of("indexedCount", count);
+            } else if ("indexing_reindex".equals(jobId)) {
+                int indexed = indexingService.reindexAllCars();
+                processed = indexed;
+                log.info("[batch][SEARCH_INDEX] done jobId={} indexedCount={} elapsedMs={}",
+                        jobId, indexed, System.currentTimeMillis() - start);
+                result = Map.of("message", "전체 재인덱싱 완료", "indexedCount", indexed);
+            } else {
+                throw new IllegalArgumentException("Unknown indexing job: " + jobId);
+            }
+            apiRunRecorder.recordSuccess(runId, processed, result);
+            return result;
+        } catch (Exception e) {
+            apiRunRecorder.recordFail(runId, processed, e);
+            throw e;
         }
-        throw new IllegalArgumentException("Unknown indexing job: " + jobId);
     }
 
     /**
      * 임베딩 작업 실행
      */
     private Map<String, Object> executeEmbeddingJob(String jobId, Map<String, Object> config) throws Exception {
-        if ("embedding_incremental".equals(jobId)) {
-            LocalDateTime since = config != null && config.containsKey("since")
-                ? LocalDateTime.parse((String) config.get("since"))
-                : LocalDateTime.now().minusHours(1);
-            
-            int count = embeddingBatchService.incrementalEmbed(since);
-            return Map.of("embeddedCount", count, "since", since.toString());
-        } else if ("embedding_all".equals(jobId)) {
-            embeddingBatchService.embedAllCars();
-            return Map.of("message", "전체 임베딩 완료");
-        } else if (jobId.startsWith("embedding_car_")) {
-            Long carId = Long.parseLong(jobId.replace("embedding_car_", ""));
-            embeddingBatchService.embedCar(carId);
-            return Map.of("carId", carId);
+        long start = System.currentTimeMillis();
+        String runId = apiRunRecorder.recordStart("/batch/jobs/" + jobId, "BATCH", jobId);
+        int processed = 0;
+        log.info("[batch][EMBEDDING] start jobId={} config={}", jobId, config);
+        try {
+            Map<String, Object> result;
+            if ("embedding_incremental".equals(jobId)) {
+                LocalDateTime since = config != null && config.containsKey("since")
+                    ? LocalDateTime.parse((String) config.get("since"))
+                    : LocalDateTime.now().minusHours(1);
+
+                int count = embeddingBatchService.incrementalEmbed(since);
+                processed = count;
+                log.info("[batch][EMBEDDING] done jobId={} embeddedCount={} elapsedMs={}",
+                        jobId, count, System.currentTimeMillis() - start);
+                result = Map.of("embeddedCount", count, "since", since.toString());
+            } else if ("embedding_all".equals(jobId)) {
+                int count = embeddingBatchService.embedAllCars();
+                processed = count;
+                log.info("[batch][EMBEDDING] done jobId={} embeddedCount={} elapsedMs={}",
+                        jobId, count, System.currentTimeMillis() - start);
+                result = Map.of("message", "전체 임베딩 완료", "embeddedCount", count);
+            } else if (jobId.startsWith("embedding_car_")) {
+                Long carId = Long.parseLong(jobId.replace("embedding_car_", ""));
+                embeddingBatchService.embedCar(carId);
+                processed = 1;
+                log.info("[batch][EMBEDDING] done jobId={} carId={} elapsedMs={}",
+                        jobId, carId, System.currentTimeMillis() - start);
+                result = Map.of("carId", carId);
+            } else {
+                throw new IllegalArgumentException("Unknown embedding job: " + jobId);
+            }
+            apiRunRecorder.recordSuccess(runId, processed, result);
+            return result;
+        } catch (Exception e) {
+            apiRunRecorder.recordFail(runId, processed, e);
+            throw e;
         }
-        throw new IllegalArgumentException("Unknown embedding job: " + jobId);
     }
 
     /**
@@ -250,11 +322,15 @@ public class BatchJobService {
      * 작업 실행 성공 처리
      */
     private void updateJobExecutionSuccess(Long executionId, Map<String, Object> result) {
-        Integer processedCount = result.containsKey("processedCount") 
-            ? (Integer) result.get("processedCount") 
-            : (result.containsKey("indexedCount") ? (Integer) result.get("indexedCount") : null);
-        Integer successCount = result.containsKey("successCount") 
-            ? (Integer) result.get("successCount") 
+        Integer processedCount = result.containsKey("processedCount")
+            ? toInteger(result.get("processedCount"))
+            : (result.containsKey("indexedCount")
+                ? toInteger(result.get("indexedCount"))
+                : (result.containsKey("embeddedCount")
+                    ? toInteger(result.get("embeddedCount"))
+                    : null));
+        Integer successCount = result.containsKey("successCount")
+            ? toInteger(result.get("successCount"))
             : processedCount;
         
         jdbc.update("""
@@ -269,6 +345,16 @@ public class BatchJobService {
             processedCount,
             successCount,
             executionId);
+    }
+
+    private Integer toInteger(Object value) {
+        if (value == null) return null;
+        if (value instanceof Number n) return n.intValue();
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

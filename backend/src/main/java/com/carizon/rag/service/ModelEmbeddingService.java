@@ -63,11 +63,17 @@ public class ModelEmbeddingService {
      * 전체: cz_model_embedding_source 전건 조회 후 모델 컬렉션에 임베딩 저장.
      */
     public int embedAllFromSource() throws IOException {
+        long start = System.currentTimeMillis();
         List<Map<String, Object>> rows = jdbc.queryForList(
                 "SELECT model_code, model_name, embed_text_1, embed_text_2, embed_text_3 " +
                         "FROM cz_model_embedding_source");
+        int totalRows = rows.size();
+        log.info("[model embedding] start totalRows={}", totalRows);
         int count = 0;
+        int processed = 0;
+        int progressUnit = Math.max(100, totalRows / 20); // 약 5% 단위
         for (Map<String, Object> row : rows) {
+            processed++;
             String modelCode = nullableString(row.get("model_code"));
             if (modelCode == null || modelCode.isBlank()) continue;
             String document = buildDocument(
@@ -90,8 +96,13 @@ public class ModelEmbeddingService {
             } catch (Exception e) {
                 log.warn("[model embedding] failed model_code={}: {}", modelCode, e.getMessage());
             }
+            if (processed % progressUnit == 0 || processed == totalRows) {
+                int percent = totalRows == 0 ? 100 : (int) Math.round(processed * 100.0 / totalRows);
+                log.info("[model embedding] progress {}/{} ({}%) embedded={}", processed, totalRows, percent, count);
+            }
         }
-        log.info("[model embedding] batch done, embedded {} models", count);
+        log.info("[model embedding] batch done, embedded {} models (elapsedMs={})",
+                count, System.currentTimeMillis() - start);
         return count;
     }
 

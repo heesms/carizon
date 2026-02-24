@@ -112,12 +112,13 @@ public class KcarCrawler {
                     }
                     emptyCount = 0;
 
-                    // UPSERT (car_cd UNIQUE) + car_image_url은 main_img 컬럼에서 추출 (머지 시 처리)
-                    String sql = "INSERT INTO raw_kcar(payload) VALUES (CAST(? AS JSON)) " +
-                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload), fetched_at=CURRENT_TIMESTAMP";
+                    // UPSERT (car_cd UNIQUE) + option_array(optnNm) 저장
+                    String sql = "INSERT INTO raw_kcar(payload, option_array) VALUES (CAST(? AS JSON), ?) " +
+                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload), option_array=VALUES(option_array), fetched_at=CURRENT_TIMESTAMP";
                     List<Object[]> params = new ArrayList<>(rows.size());
                     for (Map<String, Object> r : rows) {
-                        params.add(new Object[]{ mapper.writeValueAsString(r) });
+                        String optionArray = extractOptionArray(r);
+                        params.add(new Object[]{ mapper.writeValueAsString(r), optionArray });
                     }
                     int[] res = jdbc.batchUpdate(sql, params);
                     totalInserted += res.length;
@@ -133,5 +134,13 @@ public class KcarCrawler {
             recorder.recordFail(runId, totalInserted, Instant.now(), e.toString());
             log.error("[KCAR] runOnceFull failed", e);
         }
+    }
+
+    private String extractOptionArray(Map<String, Object> row) {
+        if (row == null) return null;
+        Object optnNm = row.get("optnNm");
+        if (optnNm == null) return null;
+        String value = String.valueOf(optnNm).trim();
+        return value.isEmpty() ? null : value;
     }
 }

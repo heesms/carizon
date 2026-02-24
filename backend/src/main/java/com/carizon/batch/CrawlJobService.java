@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -136,6 +137,34 @@ public class CrawlJobService {
         log.info("[CRAWL] manual runNowEncarTruck run start");
         encarTruck.runOnce();
         log.info("[CRAWL] manual runNowEncarTruck run end");
+    }
+
+    public Map<String, Object> runNowEncarPagingTest(Integer maxPages) {
+        log.info("[CRAWL] manual runNowEncarPagingTest start maxPages={}", maxPages);
+        Map<String, Object> result = encar.runPagingCountOnly(maxPages);
+        log.info("[CRAWL] manual runNowEncarPagingTest end result={}", result);
+        return result;
+    }
+
+    public Map<String, Object> runNowEncarTruckPagingTest(Integer maxPages) {
+        log.info("[CRAWL] manual runNowEncarTruckPagingTest start maxPages={}", maxPages);
+        Map<String, Object> result = encarTruck.runPagingCountOnly(maxPages);
+        log.info("[CRAWL] manual runNowEncarTruckPagingTest end result={}", result);
+        return result;
+    }
+
+    public Map<String, Object> runNowEncarUseYnOnly() {
+        log.info("[CRAWL] manual runNowEncarUseYnOnly start");
+        Map<String, Object> result = encar.refreshUseYnOnly();
+        log.info("[CRAWL] manual runNowEncarUseYnOnly end result={}", result);
+        return result;
+    }
+
+    public Map<String, Object> runNowEncarTruckUseYnOnly() {
+        log.info("[CRAWL] manual runNowEncarTruckUseYnOnly start");
+        Map<String, Object> result = encarTruck.refreshUseYnOnly();
+        log.info("[CRAWL] manual runNowEncarTruckUseYnOnly end result={}", result);
+        return result;
     }
 
     public void runNowCha() {

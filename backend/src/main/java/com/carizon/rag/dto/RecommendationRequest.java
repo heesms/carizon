@@ -8,7 +8,7 @@ import lombok.Data;
 @Data
 public class RecommendationRequest {
     private String query; // 사용자 요구사항 (예: "가족용 SUV", "XC60 추천")
-    /** RAG 검색용 해석 쿼리. 명시적 조건 없을 때 LLM이 먼저 해석해 세팅 (백엔드 전용) */
+    /** 검색엔진 질의에 우선 적용할 텍스트 쿼리 (백엔드 전용) */
     private String searchQuery;
     private Integer maxResults; // 최대 추천 개수 (기본값: 5)
     private Integer minPrice; // 최소 가격 (선택)
@@ -19,6 +19,12 @@ public class RecommendationRequest {
     private String modelFilter;
     /** 차종 필터 (소형, 경차, SUV, 세단 등) - bodyTypeCategory 메타데이터 */
     private String bodyTypeFilter;
+    /** 옵션 필터 (예: 선루프, 통풍시트) - optionArray/selOptionArray 매칭 */
+    private String optionFilter;
+    /** 무사고 우선 여부 (true면 사고 이력 차량 제외) */
+    private Boolean noAccident;
+    /** 무침수 우선 여부 (true면 침수전손 이력 차량 제외) */
+    private Boolean noFloodDamage;
     /** 연식 상한 (오래된 거 → year <= maxYear) */
     private Integer maxYear;
     /** 연식 하한 (최신/신형 → year >= minYear) */
@@ -27,4 +33,6 @@ public class RecommendationRequest {
     private Integer preferredYear;
     /** 추천 의도 (VALUE/SAFETY/DATE/FAMILY/COMMUTE/LOW_BUDGET/GENERAL) → 스코어 가중치용 */
     private String intent;
+    /** AI 추천(LLM/Ollama) 사용 여부. false면 팩터 추출 기반 검색만 수행 */
+    private Boolean useLlm;
 }

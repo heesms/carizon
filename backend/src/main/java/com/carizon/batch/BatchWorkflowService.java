@@ -29,6 +29,7 @@ public class BatchWorkflowService {
      */
     @Transactional
     public Long executeWorkflow(String workflowId, Map<String, Object> config) {
+        long workflowStart = System.currentTimeMillis();
         // 워크플로우 정의 조회
         Map<String, Object> workflowDef = jdbc.queryForMap(
             "SELECT * FROM batch_workflow_definition WHERE workflow_id = ?", workflowId);
@@ -45,24 +46,35 @@ public class BatchWorkflowService {
             // 작업 순서 파싱
             List<Map<String, Object>> jobSequence = objectMapper.readValue(
                 jobSequenceJson, new TypeReference<List<Map<String, Object>>>() {});
+            int totalSteps = jobSequence.size();
+            log.info("[workflow] start: {} (executionId: {}, totalSteps={})", workflowId, executionId, totalSteps);
             
             // 순차 실행
-            for (Map<String, Object> jobStep : jobSequence) {
+            for (int i = 0; i < jobSequence.size(); i++) {
+                Map<String, Object> jobStep = jobSequence.get(i);
+                long stepStart = System.currentTimeMillis();
                 String jobId = (String) jobStep.get("jobId");
                 @SuppressWarnings("unchecked")
                 List<String> dependsOn = (List<String>) jobStep.get("dependsOn");
+                int stepNo = i + 1;
+                int percent = totalSteps == 0 ? 100 : (int) Math.round(stepNo * 100.0 / totalSteps);
                 
                 // 의존성 확인 (간단한 구현)
                 if (dependsOn != null && !dependsOn.isEmpty()) {
                     log.info("[workflow] job {} waiting deps: {}", jobId, dependsOn);
                 }
                 
-                log.info("[workflow] job run: {}", jobId);
+                log.info("[workflow] step {}/{} start ({}%) job={}", stepNo, totalSteps, percent, jobId);
                 batchJobService.executeJob(jobId, config);
+                long stepMs = System.currentTimeMillis() - stepStart;
+                long elapsedMs = System.currentTimeMillis() - workflowStart;
+                log.info("[workflow] step {}/{} done ({}%) job={} stepMs={} elapsedMs={}",
+                        stepNo, totalSteps, percent, jobId, stepMs, elapsedMs);
             }
             
             updateWorkflowExecutionStatus(executionId, "SUCCESS");
-            log.info("[workflow] done: {} (executionId: {})", workflowId, executionId);
+            log.info("[workflow] done: {} (executionId: {}, elapsedMs={})",
+                    workflowId, executionId, System.currentTimeMillis() - workflowStart);
             
             return executionId;
         } catch (Exception e) {

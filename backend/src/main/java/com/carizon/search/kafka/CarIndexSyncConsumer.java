@@ -33,12 +33,18 @@ public class CarIndexSyncConsumer {
         }
         List<Long> carIds = message.getCarIds();
         log.info("[CarIndexSync] received carIds count={}", carIds.size());
-        for (Long carId : carIds) {
-            try {
-                indexingService.indexCar(carId);
-            } catch (Exception e) {
-                log.error("[CarIndexSync] index failed carId={}", carId, e);
-                // 계속 다음 차량 처리
+        try {
+            // 배치 인덱싱: 1건의 SQL로 다건 조회 후 한 번에 ES 벌크 인덱싱
+            indexingService.indexCars(carIds);
+        } catch (Exception e) {
+            log.error("[CarIndexSync] batch index failed, falling back to individual indexing. carIds={}", carIds.size(), e);
+            // 폴백: 개별 인덱싱
+            for (Long carId : carIds) {
+                try {
+                    indexingService.indexCar(carId);
+                } catch (Exception ex) {
+                    log.error("[CarIndexSync] individual index failed carId={}", carId, ex);
+                }
             }
         }
         log.debug("[CarIndexSync] done carIds count={}", carIds.size());

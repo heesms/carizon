@@ -26,7 +26,7 @@ public class ChachachaCrawler {
                     "warrantyYn,kbLeaseYn,orderDate,certifiedShopYn,kbCertifiedYn,hasOverThreeFileNames,diagYn," +
                     "diagGbn,lineAdYn,carAccidentNo,colorCodeName,gasName,homeserviceYn2,labsDanjiNo2,premiumYn," +
                     "t34SellGbn,t34MonthAmt,t34DiscountAmt,adState,paymentPremiumYn,contractingYn," +
-                    "makerCode,classCode,carCode,modelCode,gradeCode,useCodeName,autoGbnName,numCc,fileNameArray";
+                    "makerCode,classCode,carCode,modelCode,gradeCode,useCodeName,autoGbnName,numCc,fileNameArray,optionNameArray";
 
     private final OkHttpClient http = new OkHttpClient();
     private final ObjectMapper mapper = new ObjectMapper();
@@ -106,13 +106,14 @@ public class ChachachaCrawler {
                         break;
                     }
 
-                    // 원본 JSON 저장 + car_image_url 생성
-                    String sql = "INSERT INTO raw_chachacha(payload, car_image_url) VALUES (CAST(? AS JSON), ?)";
+                    // 원본 JSON 저장 + car_image_url 생성 + 옵션 문자열 저장
+                    String sql = "INSERT INTO raw_chachacha(payload, car_image_url, option_array) VALUES (CAST(? AS JSON), ?, ?)";
                     List<Object[]> params = new ArrayList<>(batchCount);
                     for (Map<String, Object> item : list) {
                         String payloadJson = mapper.writeValueAsString(item);
                         String carImageUrl = buildChachachaImageUrl(item);
-                        params.add(new Object[]{ payloadJson, carImageUrl });
+                        String optionArray = buildChachachaOptionArray(item);
+                        params.add(new Object[]{ payloadJson, carImageUrl, optionArray });
                     }
                     int[] res = jdbc.batchUpdate(sql, params);
                     log.debug("[CRAWL] page={} dbInserted={}", page, res.length);
@@ -188,5 +189,24 @@ public class ChachachaCrawler {
             log.warn("[CHACHACHA] car_image_url build failed: {}", e.getMessage());
             return null;
         }
+    }
+
+    private String buildChachachaOptionArray(Map<String, Object> item) {
+        if (item == null) return null;
+        Object optionsObj = item.get("optionNameArray");
+        if (optionsObj instanceof List<?> list) {
+            List<String> tokens = new ArrayList<>();
+            for (Object option : list) {
+                if (option == null) continue;
+                String token = String.valueOf(option).trim();
+                if (!token.isEmpty()) tokens.add(token);
+            }
+            return tokens.isEmpty() ? null : String.join("|", tokens);
+        }
+        if (optionsObj != null) {
+            String raw = String.valueOf(optionsObj).trim();
+            return raw.isEmpty() ? null : raw;
+        }
+        return null;
     }
 }

@@ -24,6 +24,7 @@ public class ChromaVectorStoreService {
     private final RagProperties ragProperties;
     private final HttpClientService httpClientService;
     private final ObjectMapper objectMapper;
+    private static final int MAX_METADATA_VALUE_LEN = 1000;
 
     /** 모델 전용 컬렉션 ID 캐시 (전체 임베딩 시 매 건마다 HTTP 조회 방지) */
     private volatile String modelCollectionIdCache;
@@ -154,33 +155,7 @@ public class ChromaVectorStoreService {
         body.put("ids", Collections.singletonList("car_" + carEmbedding.getCarId()));
         body.put("embeddings", Collections.singletonList(Arrays.asList(convertToDoubleArray(carEmbedding.getEmbedding()))));
         body.put("documents", Collections.singletonList(carEmbedding.getText()));
-        
-        Map<String, String> metadata = new HashMap<>();
-        metadata.put("carId", String.valueOf(carEmbedding.getCarId()));
-        metadata.put("platformCarId", String.valueOf(carEmbedding.getPlatformCarId()));
-        
-        // JSON 문자열을 파싱해서 개별 필드로 추가 (모든 필드 포함)
-        if (carEmbedding.getMetadata() != null && !carEmbedding.getMetadata().isEmpty()) {
-            try {
-                JsonNode metadataJson = objectMapper.readTree(carEmbedding.getMetadata());
-                // JSON의 모든 필드를 metadata에 추가
-                metadataJson.fields().forEachRemaining(entry -> {
-                    String key = entry.getKey();
-                    JsonNode value = entry.getValue();
-                    if (!value.isNull()) {
-                        if (value.isTextual()) {
-                            metadata.put(key, value.asText());
-                        } else if (value.isNumber()) {
-                            metadata.put(key, String.valueOf(value.asInt()));
-                        } else {
-                            metadata.put(key, value.asText());
-                        }
-                    }
-                });
-            } catch (Exception e) {
-                log.warn("Failed to parse metadata JSON: {}", carEmbedding.getMetadata(), e);
-            }
-        }
+        Map<String, String> metadata = buildMetadataMap(carEmbedding);
         body.put("metadatas", Collections.singletonList(metadata));
         
         try (Response response = httpClientService.postJson(url, body)) {
@@ -402,7 +377,15 @@ public class ChromaVectorStoreService {
      * @param modelGroup 모델그룹 필터 - null 가능
      * @return id, carId, maker, model, status, platformName 등 메타데이터 + document 요약
      */
-    public List<Map<String, Object>> listEmbeddings(int limit, String maker, String model, String modelGroup) throws IOException {
+    public List<Map<String, Object>> listEmbeddings(
+            int limit,
+            String maker,
+            String model,
+            String modelGroup,
+            String platformName,
+            String status,
+            String bodyType,
+            Long carId) throws IOException {
         String collectionId = getOrCreateCollectionId();
         String tenant = ragProperties.getChroma().getTenant();
         String database = ragProperties.getChroma().getDatabase();
@@ -413,7 +396,7 @@ public class ChromaVectorStoreService {
         Map<String, Object> body = new HashMap<>();
         body.put("limit", cappedLimit);
         body.put("include", Arrays.asList("metadatas", "documents"));
-        Map<String, Object> where = buildWhereForList(maker, model, modelGroup);
+        Map<String, Object> where = buildWhereForList(maker, model, modelGroup, platformName, status, bodyType, carId);
         if (where != null && !where.isEmpty()) {
             body.put("where", where);
         }
@@ -459,13 +442,82 @@ public class ChromaVectorStoreService {
                     results.add(item);
                 }
             }
-            log.info("[ChromaDB] listEmbeddings: limit={}, maker={}, model={}, modelGroup={}, returned={}", cappedLimit, maker, model, modelGroup, results.size());
+            log.info("[ChromaDB] listEmbeddings: limit={}, maker={}, model={}, modelGroup={}, platformName={}, status={}, bodyType={}, carId={}, returned={}",
+                    cappedLimit, maker, model, modelGroup, platformName, status, bodyType, carId, results.size());
+            return results;
+        }
+    }
+
+    /**
+     * Chroma metadata where 조건으로 직접 조회 (디버깅/운영 확인용).
+     * 예: {"$and":[{"platformName":{"$eq":"ENCAR"}},{"status":{"$eq":"ONSALE"}}]}
+     */
+    public List<Map<String, Object>> searchEmbeddingsByMetadata(Map<String, Object> where, int limit) throws IOException {
+        String collectionId = getOrCreateCollectionId();
+        String tenant = ragProperties.getChroma().getTenant();
+        String database = ragProperties.getChroma().getDatabase();
+        String baseUrl = ragProperties.getChroma().getBaseUrl();
+        String url = baseUrl + "/api/v2/tenants/" + tenant + "/databases/" + database + "/collections/" + collectionId + "/get";
+
+        int cappedLimit = Math.min(Math.max(limit, 1), 2000);
+        Map<String, Object> body = new HashMap<>();
+        body.put("limit", cappedLimit);
+        body.put("include", Arrays.asList("metadatas", "documents"));
+        if (where != null && !where.isEmpty()) {
+            body.put("where", where);
+        }
+
+        try (Response response = httpClientService.postJson(url, body)) {
+            if (!response.isSuccessful()) {
+                throw new IOException("Chroma metadata search failed: " + response.code() + " " + response.message());
+            }
+            JsonNode jsonNode = objectMapper.readTree(response.body().string());
+            List<Map<String, Object>> results = new ArrayList<>();
+            if (jsonNode.has("ids") && jsonNode.has("metadatas") && jsonNode.has("documents")) {
+                JsonNode ids = jsonNode.get("ids");
+                JsonNode metadatas = jsonNode.get("metadatas");
+                JsonNode documents = jsonNode.get("documents");
+                for (int i = 0; i < ids.size(); i++) {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("id", ids.get(i).asText());
+                    if (metadatas.has(i)) {
+                        JsonNode meta = metadatas.get(i);
+                        if (meta.isObject()) {
+                            Map<String, Object> flat = new LinkedHashMap<>();
+                            meta.fields().forEachRemaining(e -> {
+                                String k = e.getKey();
+                                JsonNode v = e.getValue();
+                                flat.put(k, v.isTextual() ? v.asText() : v.isNumber() ? v.asInt() : v.toString());
+                            });
+                            item.put("metadata", flat);
+                            item.put("carId", flat.get("carId"));
+                            item.put("maker", flat.get("maker"));
+                            item.put("model", flat.get("model"));
+                            item.put("status", flat.get("status"));
+                            item.put("platformName", flat.get("platformName"));
+                        }
+                    }
+                    if (documents.has(i)) {
+                        String doc = documents.get(i).asText();
+                        item.put("documentPreview", doc.length() > 200 ? doc.substring(0, 200) + "..." : doc);
+                    }
+                    results.add(item);
+                }
+            }
+            log.info("[ChromaDB] metadata search: limit={}, where={}, returned={}", cappedLimit, where, results.size());
             return results;
         }
     }
 
     /** listEmbeddings용 where 조건 (maker / model / modelGroup 조합) */
-    private Map<String, Object> buildWhereForList(String maker, String model, String modelGroup) {
+    private Map<String, Object> buildWhereForList(
+            String maker,
+            String model,
+            String modelGroup,
+            String platformName,
+            String status,
+            String bodyType,
+            Long carId) {
         List<Map<String, Object>> conditions = new ArrayList<>();
         if (maker != null && !maker.isBlank()) {
             conditions.add(Map.of("maker", Map.of("$eq", maker.trim())));
@@ -475,6 +527,18 @@ public class ChromaVectorStoreService {
         }
         if (modelGroup != null && !modelGroup.isBlank()) {
             conditions.add(Map.of("modelGroup", Map.of("$eq", modelGroup.trim())));
+        }
+        if (platformName != null && !platformName.isBlank()) {
+            conditions.add(Map.of("platformName", Map.of("$eq", platformName.trim())));
+        }
+        if (status != null && !status.isBlank()) {
+            conditions.add(Map.of("status", Map.of("$eq", status.trim())));
+        }
+        if (bodyType != null && !bodyType.isBlank()) {
+            conditions.add(Map.of("bodyType", Map.of("$eq", bodyType.trim())));
+        }
+        if (carId != null) {
+            conditions.add(Map.of("carId", Map.of("$eq", String.valueOf(carId))));
         }
         if (conditions.isEmpty()) return null;
         if (conditions.size() == 1) return conditions.get(0);
@@ -590,6 +654,18 @@ public class ChromaVectorStoreService {
                 } else if (metadata.has("representativeImageUrl")) {
                     result.setImageUrl(metadata.get("representativeImageUrl").asText());
                 }
+                if (metadata.has("optionArray")) {
+                    result.setOptionArray(metadata.get("optionArray").asText());
+                }
+                if (metadata.has("selOptionArray")) {
+                    result.setSelOptionArray(metadata.get("selOptionArray").asText());
+                }
+                if (metadata.has("myAccidentCnt")) {
+                    result.setMyAccidentCnt(metadata.get("myAccidentCnt").asInt());
+                }
+                if (metadata.has("floodTotalLossCnt")) {
+                    result.setFloodTotalLossCnt(metadata.get("floodTotalLossCnt").asInt());
+                }
                 
                 results.add(result);
             }
@@ -610,11 +686,7 @@ public class ChromaVectorStoreService {
         String baseUrl = ragProperties.getChroma().getBaseUrl();
         String url = baseUrl + "/api/v2/tenants/" + tenant + "/databases/" + database + "/collections/" + collectionId + "/add";
 
-        log.info("[ChromaDB] batch save start: {}", items.size());
-        if (!items.isEmpty()) {
-            CarEmbeddingDto first = items.get(0);
-            log.info("   - first item [carId={}] Metadata: {}", first.getCarId(), first.getMetadata());
-        }
+        log.debug("[ChromaDB] batch save start: {}", items.size());
 
         List<String> ids = new ArrayList<>(items.size());
         List<List<Double>> embeddings = new ArrayList<>(items.size());
@@ -626,33 +698,7 @@ public class ChromaVectorStoreService {
             embeddings.add(Arrays.asList(convertToDoubleArray(dto.getEmbedding())));
             documents.add(dto.getText());
 
-            Map<String, String> metadata = new HashMap<>();
-            metadata.put("carId", String.valueOf(dto.getCarId()));
-            metadata.put("platformCarId", String.valueOf(dto.getPlatformCarId()));
-            
-            // JSON 문자열을 파싱해서 개별 필드로 추가 (모든 필드 포함)
-            if (dto.getMetadata() != null && !dto.getMetadata().isEmpty()) {
-                try {
-                    JsonNode metadataJson = objectMapper.readTree(dto.getMetadata());
-                    // JSON의 모든 필드를 metadata에 추가
-                    metadataJson.fields().forEachRemaining(entry -> {
-                        String key = entry.getKey();
-                        JsonNode value = entry.getValue();
-                        if (!value.isNull()) {
-                            if (value.isTextual()) {
-                                metadata.put(key, value.asText());
-                            } else if (value.isNumber()) {
-                                metadata.put(key, String.valueOf(value.asInt()));
-                            } else {
-                                metadata.put(key, value.asText());
-                            }
-                        }
-                    });
-                } catch (Exception e) {
-                    log.warn("Failed to parse metadata JSON for carId {}: {}", dto.getCarId(), dto.getMetadata(), e);
-                }
-            }
-            metadatas.add(metadata);
+            metadatas.add(buildMetadataMap(dto));
         }
 
         Map<String, Object> body = new HashMap<>();
@@ -666,8 +712,56 @@ public class ChromaVectorStoreService {
                 String errorBody = response.body() != null ? response.body().string() : "";
                 throw new IOException("Failed to add embeddings batch: " + response.code() + " " + errorBody);
             }
-            log.info("[ChromaDB] batch save done: {}", items.size());
+            log.debug("[ChromaDB] batch save done: {}", items.size());
         }
+    }
+
+    private Map<String, String> buildMetadataMap(CarEmbeddingDto dto) {
+        Map<String, String> metadata = new HashMap<>();
+        if (dto.getCarId() != null) {
+            metadata.put("carId", String.valueOf(dto.getCarId()));
+        }
+        if (dto.getPlatformCarId() != null) {
+            metadata.put("platformCarId", String.valueOf(dto.getPlatformCarId()));
+        }
+
+        Map<String, String> flatMap = dto.getMetadataMap();
+        if (flatMap != null && !flatMap.isEmpty()) {
+            flatMap.forEach((k, v) -> {
+                if (k != null && v != null && !v.isBlank()) {
+                    metadata.put(k, truncateMetadataValue(v));
+                }
+            });
+            return metadata;
+        }
+
+        if (dto.getMetadata() != null && !dto.getMetadata().isEmpty()) {
+            try {
+                JsonNode metadataJson = objectMapper.readTree(dto.getMetadata());
+                metadataJson.fields().forEachRemaining(entry -> {
+                    String key = entry.getKey();
+                    JsonNode value = entry.getValue();
+                    if (key == null || value == null || value.isNull()) return;
+                    if (value.isTextual()) {
+                        metadata.put(key, truncateMetadataValue(value.asText()));
+                    } else if (value.isNumber()) {
+                        metadata.put(key, String.valueOf(value.numberValue()));
+                    } else {
+                        metadata.put(key, truncateMetadataValue(value.asText()));
+                    }
+                });
+            } catch (Exception e) {
+                log.warn("Failed to parse metadata JSON for carId {}: {}", dto.getCarId(), dto.getMetadata(), e);
+            }
+        }
+        return metadata;
+    }
+
+    private String truncateMetadataValue(String value) {
+        if (value == null || value.length() <= MAX_METADATA_VALUE_LEN) {
+            return value;
+        }
+        return value.substring(0, MAX_METADATA_VALUE_LEN);
     }
     
     private Double[] convertToDoubleArray(float[] floatArray) {
@@ -708,6 +802,10 @@ public class ChromaVectorStoreService {
         private String pcUrl;
         private String mUrl;
         private String imageUrl;
+        private String optionArray;
+        private String selOptionArray;
+        private Integer myAccidentCnt;
+        private Integer floodTotalLossCnt;
         
         // Getters and Setters
         public String getId() { return id; }
@@ -759,5 +857,13 @@ public class ChromaVectorStoreService {
         public void setMUrl(String mUrl) { this.mUrl = mUrl; }
         public String getImageUrl() { return imageUrl; }
         public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
+        public String getOptionArray() { return optionArray; }
+        public void setOptionArray(String optionArray) { this.optionArray = optionArray; }
+        public String getSelOptionArray() { return selOptionArray; }
+        public void setSelOptionArray(String selOptionArray) { this.selOptionArray = selOptionArray; }
+        public Integer getMyAccidentCnt() { return myAccidentCnt; }
+        public void setMyAccidentCnt(Integer myAccidentCnt) { this.myAccidentCnt = myAccidentCnt; }
+        public Integer getFloodTotalLossCnt() { return floodTotalLossCnt; }
+        public void setFloodTotalLossCnt(Integer floodTotalLossCnt) { this.floodTotalLossCnt = floodTotalLossCnt; }
     }
 }

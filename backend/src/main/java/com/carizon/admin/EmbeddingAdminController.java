@@ -1,5 +1,6 @@
 package com.carizon.admin;
 
+import com.carizon.batch.ApiRunRecorder;
 import com.carizon.common.dto.ApiResponse;
 import com.carizon.rag.config.RagProperties;
 import com.carizon.rag.service.CarEmbeddingBatchService;
@@ -10,9 +11,11 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -30,42 +33,84 @@ public class EmbeddingAdminController {
     private final ChromaVectorStoreService vectorStoreService;
     private final RagProperties ragProperties;
     private final ModelEmbeddingService modelEmbeddingService;
+    private final ApiRunRecorder apiRunRecorder;
+    private final JdbcTemplate jdbc;
     
     @PostMapping("/all")
     @Operation(summary = "전체 차량 임베딩", description = "DB 기준 ONSALE/ADVERTISE 차량을 Chroma에 임베딩 저장. 기존 데이터는 덮어쓰기(같은 car_id 업서트). 삭제/판매된 차량 ID는 Chroma에 남을 수 있음. '전체 날리고 다시'는 POST /admin/embedding/reset-and-all 사용.")
-    public ResponseEntity<ApiResponse<String>> embedAllCars() throws Exception {
-        embeddingBatchService.embedAllCars();
-        return ResponseEntity.ok(ApiResponse.success("Embedding completed"));
+    public ResponseEntity<ApiResponse<Map<String, Object>>> embedAllCars() {
+        String runId = apiRunRecorder.recordStart("/admin/embedding/all", "POST", "embedding-all");
+        try {
+            int count = embeddingBatchService.embedAllCars();
+            Map<String, Object> result = Map.of(
+                    "message", "Embedding completed",
+                    "embeddedCount", count
+            );
+            apiRunRecorder.recordSuccess(runId, count, result);
+            return ResponseEntity.ok(ApiResponse.success(result));
+        } catch (Exception e) {
+            log.error("[embedding] all failed", e);
+            apiRunRecorder.recordFail(runId, 0, e);
+            return ResponseEntity.ok(ApiResponse.error("실패: " + e.getMessage()));
+        }
     }
 
     @PostMapping("/reset-and-all")
     @Operation(summary = "Chroma 전체 삭제 후 전체 재임베딩", description = "1) Chroma 컬렉션(car_listings) 삭제 2) DB 기준 전체 차량 임베딩. 10만 건은 Ollama 속도에 따라 수 시간 걸릴 수 있음.")
-    public ResponseEntity<ApiResponse<String>> resetAndEmbedAll() {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> resetAndEmbedAll() {
+        String runId = apiRunRecorder.recordStart("/admin/embedding/reset-and-all", "POST", "embedding-reset-and-all");
         try {
             vectorStoreService.deleteCollection();
-            embeddingBatchService.embedAllCars();
-            return ResponseEntity.ok(ApiResponse.success("Reset and embedding completed"));
+            int count = embeddingBatchService.embedAllCars();
+            Map<String, Object> result = Map.of(
+                    "message", "Reset and embedding completed",
+                    "embeddedCount", count
+            );
+            apiRunRecorder.recordSuccess(runId, count, result);
+            return ResponseEntity.ok(ApiResponse.success(result));
         } catch (Exception e) {
             log.error("[embedding] reset-and-all failed", e);
+            apiRunRecorder.recordFail(runId, 0, e);
             return ResponseEntity.ok(ApiResponse.error("실패: " + e.getMessage()));
         }
     }
     
     @PostMapping("/car/{carId}")
     @Operation(summary = "단일 차량 임베딩", description = "특정 차량을 벡터 DB에 임베딩으로 저장")
-    public ResponseEntity<ApiResponse<String>> embedCar(@PathVariable Long carId) throws Exception {
-        embeddingBatchService.embedCar(carId);
-        return ResponseEntity.ok(ApiResponse.success("Car embedded: " + carId));
+    public ResponseEntity<ApiResponse<String>> embedCar(@PathVariable Long carId) {
+        String runId = apiRunRecorder.recordStart("/admin/embedding/car/" + carId, "POST", "embedding-car");
+        try {
+            embeddingBatchService.embedCar(carId);
+            apiRunRecorder.recordSuccess(runId, 1, Map.of("carId", carId));
+            return ResponseEntity.ok(ApiResponse.success("Car embedded: " + carId));
+        } catch (Exception e) {
+            log.error("[embedding] car {} failed", carId, e);
+            apiRunRecorder.recordFail(runId, 0, e);
+            return ResponseEntity.ok(ApiResponse.error("단일 임베딩 실패: " + e.getMessage()));
+        }
     }
     
     @PostMapping("/range")
     @Operation(summary = "범위 차량 임베딩", description = "특정 범위의 차량만 임베딩")
-    public ResponseEntity<ApiResponse<String>> embedCarsInRange(
+    public ResponseEntity<ApiResponse<Map<String, Object>>> embedCarsInRange(
             @RequestParam Long fromCarId,
-            @RequestParam Long toCarId) throws Exception {
-        embeddingBatchService.embedCarsInRange(fromCarId, toCarId);
-        return ResponseEntity.ok(ApiResponse.success(
-                "Embedding completed for range: " + fromCarId + " - " + toCarId));
+            @RequestParam Long toCarId) {
+        String runId = apiRunRecorder.recordStart("/admin/embedding/range", "POST", "embedding-range");
+        try {
+            int count = embeddingBatchService.embedCarsInRange(fromCarId, toCarId);
+            Map<String, Object> result = Map.of(
+                    "message", "Embedding completed for range: " + fromCarId + " - " + toCarId,
+                    "embeddedCount", count,
+                    "fromCarId", fromCarId,
+                    "toCarId", toCarId
+            );
+            apiRunRecorder.recordSuccess(runId, count, result);
+            return ResponseEntity.ok(ApiResponse.success(result));
+        } catch (Exception e) {
+            log.error("[embedding] range failed from={} to={}", fromCarId, toCarId, e);
+            apiRunRecorder.recordFail(runId, 0, e);
+            return ResponseEntity.ok(ApiResponse.error("범위 임베딩 실패: " + e.getMessage()));
+        }
     }
 
     @PostMapping("/filter")
@@ -74,17 +119,21 @@ public class EmbeddingAdminController {
             @RequestParam(defaultValue = "100") int limit,
             @RequestParam(required = false) String makerCode,
             @RequestParam(required = false) String maker) {
+        String runId = apiRunRecorder.recordStart("/admin/embedding/filter", "POST", "embedding-filter");
         try {
             int embeddedCount = embeddingBatchService.embedByFilter(limit, makerCode, maker);
-            return ResponseEntity.ok(ApiResponse.success(Map.of(
+            Map<String, Object> result = Map.of(
                     "message", "조건별 임베딩 완료",
                     "embeddedCount", embeddedCount,
                     "limit", limit,
                     "makerCode", makerCode != null ? makerCode : "",
                     "maker", maker != null ? maker : ""
-            )));
+            );
+            apiRunRecorder.recordSuccess(runId, embeddedCount, result);
+            return ResponseEntity.ok(ApiResponse.success(result));
         } catch (Exception e) {
             log.error("[embedding] filter failed", e);
+            apiRunRecorder.recordFail(runId, 0, e);
             return ResponseEntity.ok(ApiResponse.error("조건별 임베딩 실패: " + e.getMessage()));
         }
     }
@@ -93,19 +142,23 @@ public class EmbeddingAdminController {
     @Operation(summary = "증분 임베딩", description = "지정된 시간 이후에 업데이트된 차량만 임베딩합니다.")
     public ResponseEntity<ApiResponse<Map<String, Object>>> incrementalEmbed(
             @RequestParam(required = false) String since) {
+        String runId = apiRunRecorder.recordStart("/admin/embedding/incremental", "POST", "embedding-incremental");
         try {
             java.time.LocalDateTime sinceTime = since != null && !since.isEmpty() 
                 ? java.time.LocalDateTime.parse(since) 
                 : java.time.LocalDateTime.now().minusHours(1); // 기본값: 1시간 전
             
             int count = embeddingBatchService.incrementalEmbed(sinceTime);
-            return ResponseEntity.ok(ApiResponse.success(Map.of(
+            Map<String, Object> result = Map.of(
                 "message", "증분 임베딩 완료",
                 "embeddedCount", count,
                 "since", sinceTime.toString()
-            )));
+            );
+            apiRunRecorder.recordSuccess(runId, count, result);
+            return ResponseEntity.ok(ApiResponse.success(result));
         } catch (Exception e) {
             log.error("[embedding] incremental embedding failed", e);
+            apiRunRecorder.recordFail(runId, 0, e);
             return ResponseEntity.ok(ApiResponse.error("증분 임베딩 실패: " + e.getMessage()));
         }
     }
@@ -144,6 +197,22 @@ public class EmbeddingAdminController {
                 log.debug("Sample data fetch failed (ignorable): {}", e.getMessage());
                 status.put("samples", List.of());
             }
+
+            List<Map<String, Object>> recentApiRuns = jdbc.queryForList("""
+                SELECT id, run_id, source, status, total_items, started_at, ended_at, duration_ms, message
+                FROM api_run
+                WHERE source IN (
+                    'embedding-all', 'embedding-reset-and-all', 'embedding-car',
+                    'embedding-range', 'embedding-filter', 'embedding-incremental', 'embedding-metadata-search',
+                    'embedding-model', 'embedding-model-all',
+                    'embedding_incremental', 'embedding_all'
+                )
+                   OR source LIKE 'embedding_car_%'
+                ORDER BY started_at DESC
+                LIMIT 20
+                """);
+            status.put("recentApiRuns", recentApiRuns);
+            status.put("latestApiRun", recentApiRuns.isEmpty() ? null : recentApiRuns.get(0));
             
             return ResponseEntity.ok(ApiResponse.success(status));
         } catch (Exception e) {
@@ -169,13 +238,17 @@ public class EmbeddingAdminController {
     @PostMapping("/model/{modelCode}")
     @Operation(summary = "모델코드별 임베딩 1건", description = "cz_model_embedding_source에서 해당 model_code의 3개 텍스트 컬럼을 합쳐 모델 전용 Chroma 컬렉션에 임베딩 저장.")
     public ResponseEntity<ApiResponse<String>> embedModel(@PathVariable String modelCode) {
+        String runId = apiRunRecorder.recordStart("/admin/embedding/model/" + modelCode, "POST", "embedding-model");
         try {
             modelEmbeddingService.embedByModelCode(modelCode);
+            apiRunRecorder.recordSuccess(runId, 1, Map.of("modelCode", modelCode));
             return ResponseEntity.ok(ApiResponse.success("모델 임베딩 완료: " + modelCode));
         } catch (IllegalArgumentException e) {
+            apiRunRecorder.recordFail(runId, 0, e.getMessage());
             return ResponseEntity.ok(ApiResponse.error(e.getMessage()));
         } catch (Exception e) {
             log.error("[embedding] model {} failed", modelCode, e);
+            apiRunRecorder.recordFail(runId, 0, e);
             return ResponseEntity.ok(ApiResponse.error("모델 임베딩 실패: " + e.getMessage()));
         }
     }
@@ -183,14 +256,18 @@ public class EmbeddingAdminController {
     @PostMapping("/model/all")
     @Operation(summary = "모델 임베딩 전체", description = "cz_model_embedding_source 전건을 읽어 모델 전용 Chroma 컬렉션에 임베딩 저장. DDD.txt 데이터 적재 후 실행.")
     public ResponseEntity<ApiResponse<Map<String, Object>>> embedAllModels() {
+        String runId = apiRunRecorder.recordStart("/admin/embedding/model/all", "POST", "embedding-model-all");
         try {
             int count = modelEmbeddingService.embedAllFromSource();
-            return ResponseEntity.ok(ApiResponse.success(Map.of(
+            Map<String, Object> result = Map.of(
                     "message", "모델 임베딩 전체 완료",
                     "embeddedCount", count
-            )));
+            );
+            apiRunRecorder.recordSuccess(runId, count, result);
+            return ResponseEntity.ok(ApiResponse.success(result));
         } catch (Exception e) {
             log.error("[embedding] model all failed", e);
+            apiRunRecorder.recordFail(runId, 0, e);
             return ResponseEntity.ok(ApiResponse.error("모델 전체 임베딩 실패: " + e.getMessage()));
         }
     }
@@ -201,9 +278,15 @@ public class EmbeddingAdminController {
             @RequestParam(defaultValue = "100") int limit,
             @RequestParam(required = false) String maker,
             @RequestParam(required = false) String model,
-            @RequestParam(required = false) String modelGroup) {
+            @RequestParam(required = false) String modelGroup,
+            @RequestParam(required = false) String platformName,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String bodyType,
+            @RequestParam(required = false) Long carId) {
         try {
-            List<Map<String, Object>> list = vectorStoreService.listEmbeddings(limit, maker, model, modelGroup);
+            List<Map<String, Object>> list = vectorStoreService.listEmbeddings(
+                    limit, maker, model, modelGroup, platformName, status, bodyType, carId
+            );
             long totalInCollection = vectorStoreService.getCollectionCount();
             return ResponseEntity.ok(ApiResponse.success(Map.of(
                     "totalInCollection", totalInCollection,
@@ -211,11 +294,53 @@ public class EmbeddingAdminController {
                     "makerFilter", maker != null ? maker : "",
                     "modelFilter", model != null ? model : "",
                     "modelGroupFilter", modelGroup != null ? modelGroup : "",
+                    "platformNameFilter", platformName != null ? platformName : "",
+                    "statusFilter", status != null ? status : "",
+                    "bodyTypeFilter", bodyType != null ? bodyType : "",
+                    "carIdFilter", carId != null ? carId : "",
                     "items", list
             )));
         } catch (Exception e) {
             log.error("[embedding list] failed", e);
             return ResponseEntity.ok(ApiResponse.error("목록 조회 실패: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/metadata-search")
+    @Operation(summary = "메타데이터 where 검색", description = "Chroma where JSON을 그대로 전달해 임베딩 메타데이터를 직접 조회합니다.")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> metadataSearch(
+            @RequestBody(required = false) Map<String, Object> body) {
+        String runId = apiRunRecorder.recordStart("/admin/embedding/metadata-search", "POST", "embedding-metadata-search");
+        try {
+            int limit = 100;
+            Map<String, Object> where = null;
+            if (body != null) {
+                Object l = body.get("limit");
+                if (l instanceof Number n) {
+                    limit = n.intValue();
+                } else if (l instanceof String s && !s.isBlank()) {
+                    limit = Integer.parseInt(s);
+                }
+                Object w = body.get("where");
+                if (w instanceof Map<?, ?> wm) {
+                    Map<String, Object> whereMap = new LinkedHashMap<>();
+                    wm.forEach((k, v) -> whereMap.put(String.valueOf(k), v));
+                    where = whereMap;
+                }
+            }
+
+            List<Map<String, Object>> list = vectorStoreService.searchEmbeddingsByMetadata(where, limit);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("returned", list.size());
+            result.put("limit", limit);
+            result.put("where", where != null ? where : Map.of());
+            result.put("items", list);
+            apiRunRecorder.recordSuccess(runId, list.size(), Map.of("returned", list.size(), "limit", limit));
+            return ResponseEntity.ok(ApiResponse.success(result));
+        } catch (Exception e) {
+            log.error("[embedding metadata-search] failed", e);
+            apiRunRecorder.recordFail(runId, 0, e);
+            return ResponseEntity.ok(ApiResponse.error("메타데이터 where 검색 실패: " + e.getMessage()));
         }
     }
 }

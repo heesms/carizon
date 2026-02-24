@@ -28,6 +28,14 @@ public class RagSearchService {
     private final ChromaVectorStoreService vectorStoreService;
     private final CarMapper carMapper;
     private final LlmConfigService llmConfigService;
+
+    // 모델 컬렉션 fallback은 "충분히 유사"할 때만 사용 (낮은 점수 전부 매칭되는 오탐 방지)
+    private static final double MODEL_COLLECTION_MIN_SCORE = 0.01;
+    private static final int MODEL_COLLECTION_MAX_CODES = 12;
+    private static final Set<String> GENERIC_MODEL_FILTERS = Set.of(
+            "소형", "중형", "대형", "경차", "준중형", "기타", "suv", "스포츠카", "상용", "rv", "트럭", "승합", "화물",
+            "세단", "해치백", "왜건", "쿠페", "컨버터블", "픽업", "미니밴", "밴"
+    );
     
     /**
      * 사용자 쿼리로 유사한 차량 검색
@@ -51,15 +59,24 @@ public class RagSearchService {
         Set<String> queryMatchedModelCodes = new HashSet<>();
         try {
             List<SearchResult> modelResults = vectorStoreService.searchSimilarInModelCollection(queryEmbedding, 25, null);
+            double topModelScore = 0.0;
             for (SearchResult mr : modelResults) {
+                double score = mr.getScore() != null ? mr.getScore() : 0.0;
+                if (score > topModelScore) topModelScore = score;
+                if (score < MODEL_COLLECTION_MIN_SCORE) continue;
                 String id = mr.getId();
                 if (id != null && id.startsWith("model_")) {
                     String modelCode = id.substring(6).trim();
-                    if (!modelCode.isEmpty()) queryMatchedModelCodes.add(modelCode);
+                    if (!modelCode.isEmpty()) {
+                        queryMatchedModelCodes.add(modelCode);
+                        if (queryMatchedModelCodes.size() >= MODEL_COLLECTION_MAX_CODES) break;
+                    }
                 }
             }
             if (!queryMatchedModelCodes.isEmpty()) {
-                log.info("[RAG] model_descriptions matched: {} modelCodes (e.g. 스포츠카→911 등)", queryMatchedModelCodes.size());
+                log.info("[RAG] model_descriptions matched(reliable): {} modelCodes, minScore={}", queryMatchedModelCodes.size(), MODEL_COLLECTION_MIN_SCORE);
+            } else if (!modelResults.isEmpty()) {
+                log.info("[RAG] model_descriptions skipped: no reliable match (topScore={})", topModelScore);
             }
         } catch (Exception e) {
             log.debug("[RAG] model collection search skipped: {}", e.getMessage());
@@ -80,10 +97,30 @@ public class RagSearchService {
         Map<String, Object> chromaWhere = buildChromaWhere(request);
         if (modelFilter != null || (request.getMaker() != null && !request.getMaker().isBlank())
                 || (request.getBodyTypeFilter() != null && !request.getBodyTypeFilter().isBlank())
+                || (request.getOptionFilter() != null && !request.getOptionFilter().isBlank())
+                || Boolean.TRUE.equals(request.getNoAccident())
+                || Boolean.TRUE.equals(request.getNoFloodDamage())
                 || (request.getFuel() != null && !request.getFuel().isBlank())
                 || request.getMaxYear() != null || request.getMinYear() != null) {
             searchCount = Math.max(searchCount, 200);
         }
+        log.info(
+                "[RAG] request filters: query='{}', searchQuery='{}', maker='{}', modelFilter='{}', bodyType='{}', option='{}', fuel='{}', price=[{},{}], year=[{},{}], noAccident={}, noFloodDamage={}, searchCount={}",
+                request.getQuery(),
+                request.getSearchQuery(),
+                request.getMaker(),
+                request.getModelFilter(),
+                request.getBodyTypeFilter(),
+                request.getOptionFilter(),
+                request.getFuel(),
+                request.getMinPrice(),
+                request.getMaxPrice(),
+                request.getMinYear(),
+                request.getMaxYear(),
+                request.getNoAccident(),
+                request.getNoFloodDamage(),
+                searchCount
+        );
         long vecStart = System.currentTimeMillis();
         List<SearchResult> searchResults = vectorStoreService.searchSimilar(queryEmbedding, searchCount, chromaWhere, chromaWhereDocument);
         log.info("[RAG] vector search: {}ms, results={}, where={}, where_doc={}", System.currentTimeMillis() - vecStart, searchResults.size(), chromaWhere, chromaWhereDocument);
@@ -93,12 +130,25 @@ public class RagSearchService {
         long loopStart = System.currentTimeMillis();
         List<RecommendationResponse.RecommendedCar> candidates = new ArrayList<>();
         Set<Long> seenCarIds = new LinkedHashSet<>();
+        int skippedNullCarId = 0;
+        int skippedDuplicateCarId = 0;
+        Map<FilterRejectReason, Integer> rejectCounts = new EnumMap<>(FilterRejectReason.class);
         
         for (SearchResult result : searchResults) {
-            if (result.getCarId() == null) continue;
-            if (seenCarIds.contains(result.getCarId())) continue;
+            if (result.getCarId() == null) {
+                skippedNullCarId++;
+                continue;
+            }
+            if (seenCarIds.contains(result.getCarId())) {
+                skippedDuplicateCarId++;
+                continue;
+            }
             seenCarIds.add(result.getCarId());
-            if (!matchesFilters(result, request)) continue;
+            FilterRejectReason rejectReason = evaluateFilterRejection(result, request);
+            if (rejectReason != null) {
+                rejectCounts.merge(rejectReason, 1, Integer::sum);
+                continue;
+            }
             
             String pcUrl = null;
             String mUrl = null;
@@ -147,9 +197,11 @@ public class RagSearchService {
             if (candidates.size() >= candidateCap) break;
         }
         // 모델 컬렉션 매칭 시 해당 모델 매물을 후보에 추가 (스포츠카 요청 시 911 등이 벡터 검색에 안 걸려도 포함)
-        if (!queryMatchedModelCodes.isEmpty()) {
+        if (shouldUseModelFallback(request, candidates.size(), maxResults, queryMatchedModelCodes)) {
             try {
-                List<Map<String, Object>> byModel = carMapper.selectCarsByModelCodes(new ArrayList<>(queryMatchedModelCodes), 35);
+                int fallbackLimit = Math.max(maxResults * 4, 20);
+                List<Map<String, Object>> byModel = carMapper.selectCarsByModelCodes(new ArrayList<>(queryMatchedModelCodes), fallbackLimit);
+                int addedByModel = 0;
                 for (Map<String, Object> row : byModel != null ? byModel : List.<Map<String, Object>>of()) {
                     Object cidObj = row.get("carId");
                     if (cidObj == null) continue;
@@ -186,17 +238,29 @@ public class RagSearchService {
                             .relevanceScore(0.5)
                             .build();
                     candidates.add(car);
-                    if (candidates.size() >= candidateCap + 30) break;
+                    addedByModel++;
+                    if (candidates.size() >= candidateCap + fallbackLimit) break;
                 }
-                if (byModel != null && !byModel.isEmpty()) {
-                    log.info("[RAG] candidates +{} from modelCodes (e.g. 스포츠카→911)", byModel.size());
+                if (addedByModel > 0) {
+                    log.info("[RAG] candidates +{} from model fallback", addedByModel);
                 }
             } catch (Exception e) {
                 log.warn("[RAG] selectCarsByModelCodes failed: {}", e.getMessage());
             }
+        } else if (!queryMatchedModelCodes.isEmpty()) {
+            log.info("[RAG] model fallback skipped: candidates={}, maxResults={}, modelFilter={}",
+                    candidates.size(), maxResults, request.getModelFilter());
         }
 
         long loopMs = System.currentTimeMillis() - loopStart;
+        log.info(
+                "[RAG] filter summary: totalResults={}, passed={}, skippedNullCarId={}, skippedDuplicateCarId={}, rejected={}",
+                searchResults.size(),
+                candidates.size(),
+                skippedNullCarId,
+                skippedDuplicateCarId,
+                rejectCounts
+        );
         log.info("[RAG] candidates: {} (filter+url) {}ms", candidates.size(), loopMs);
 
         // 후보 차량의 model_code 항상 조회 (모델 컬렉션 매칭 보너스·추후 활용용. 스포츠카뿐 아니라 모든 쿼리에서 모델 쪽 계속 참고)
@@ -338,43 +402,43 @@ public class RagSearchService {
     /**
      * 필터 조건 확인 (metadata 기반, DB 조회 없음)
      */
-    private boolean matchesFilters(SearchResult result, RecommendationRequest request) {
+    private FilterRejectReason evaluateFilterRejection(SearchResult result, RecommendationRequest request) {
         // 가격 필터
         if (request.getMinPrice() != null && result.getPrice() != null && result.getPrice() < request.getMinPrice()) {
-            return false;
+            return FilterRejectReason.PRICE_MIN;
         }
         if (request.getMaxPrice() != null && result.getPrice() != null && result.getPrice() > request.getMaxPrice()) {
-            return false;
+            return FilterRejectReason.PRICE_MAX;
         }
         
         // 제조사 필터 (표준명/영문 동시 허용: "볼보" 요청 시 "VOLVO" 메타데이터도 통과)
         if (request.getMaker() != null && !request.getMaker().isBlank()) {
             String reqMaker = request.getMaker().trim();
             String resMaker = result.getMaker() != null ? result.getMaker().trim() : "";
-            if (resMaker.isEmpty()) return false;
+            if (resMaker.isEmpty()) return FilterRejectReason.MAKER;
             if (resMaker.equalsIgnoreCase(reqMaker)) { /* 통과 */ }
             else if ("볼보".equalsIgnoreCase(reqMaker) && "VOLVO".equalsIgnoreCase(resMaker)) { /* 통과 */ }
             else if ("VOLVO".equalsIgnoreCase(reqMaker) && "볼보".equalsIgnoreCase(resMaker)) { /* 통과 */ }
-            else return false;
+            else return FilterRejectReason.MAKER;
         }
         
         // 연료 타입 필터 (가솔린 ↔ 휘발유 동의어 처리)
         if (request.getFuel() != null && !request.getFuel().isBlank()) {
             String want = request.getFuel().trim();
             String res = result.getFuel() != null ? result.getFuel().trim() : "";
-            if (res.isEmpty()) return false;
+            if (res.isEmpty()) return FilterRejectReason.FUEL;
             boolean match = want.equalsIgnoreCase(res);
             if (!match && "가솔린".equalsIgnoreCase(want)) match = "휘발유".equalsIgnoreCase(res);
             if (!match && "휘발유".equalsIgnoreCase(want)) match = "가솔린".equalsIgnoreCase(res);
-            if (!match) return false;
+            if (!match) return FilterRejectReason.FUEL;
         }
         
         // 연식: 기존 메타데이터 year 그대로 활용
         if (request.getMaxYear() != null && result.getYear() != null && result.getYear() > request.getMaxYear()) {
-            return false;
+            return FilterRejectReason.YEAR_MAX;
         }
         if (request.getMinYear() != null && result.getYear() != null && result.getYear() < request.getMinYear()) {
-            return false;
+            return FilterRejectReason.YEAR_MIN;
         }
         
         // 차종 필터 (소형, 경차 등)
@@ -383,22 +447,127 @@ public class RagSearchService {
             String cat = result.getBodyTypeCategory();
             String raw = result.getBodyType();
             if ((cat == null || !want.equalsIgnoreCase(cat)) && (raw == null || !raw.toLowerCase().contains(want.toLowerCase()))) {
-                return false;
+                return FilterRejectReason.BODY_TYPE;
+            }
+        }
+
+        // 옵션 필터 (optionArray / selOptionArray 포함)
+        if (request.getOptionFilter() != null && !request.getOptionFilter().isBlank()) {
+            if (!hasOptionMatch(result, request.getOptionFilter())) {
+                return FilterRejectReason.OPTION;
+            }
+        }
+
+        // 사고/침수 이력 필터
+        if (Boolean.TRUE.equals(request.getNoAccident())) {
+            if (result.getMyAccidentCnt() != null && result.getMyAccidentCnt() > 0) {
+                return FilterRejectReason.ACCIDENT_HISTORY;
+            }
+            if (result.getFloodTotalLossCnt() != null && result.getFloodTotalLossCnt() > 0) {
+                return FilterRejectReason.FLOOD_HISTORY;
+            }
+        }
+        if (Boolean.TRUE.equals(request.getNoFloodDamage())) {
+            if (result.getFloodTotalLossCnt() != null && result.getFloodTotalLossCnt() > 0) {
+                return FilterRejectReason.FLOOD_HISTORY;
             }
         }
         
         // 판매 중인 차량만 (임베딩 조건과 동일: ONSALE 또는 ENCAR+ADVERTISE)
         if (result.getStatus() == null || result.getStatus().isBlank()) {
-            return false;
+            return FilterRejectReason.STATUS_EMPTY;
         }
         boolean onSale = "ONSALE".equalsIgnoreCase(result.getStatus());
         boolean encarAdvertise = "ADVERTISE".equalsIgnoreCase(result.getStatus())
             && "ENCAR".equalsIgnoreCase(result.getPlatformName());
         if (!onSale && !encarAdvertise) {
-            return false;
+            return FilterRejectReason.STATUS_NOT_ONSALE;
         }
         
+        return null;
+    }
+
+    private boolean shouldUseModelFallback(RecommendationRequest request,
+                                           int candidateSize,
+                                           int maxResults,
+                                           Set<String> queryMatchedModelCodes) {
+        if (queryMatchedModelCodes == null || queryMatchedModelCodes.isEmpty()) return false;
+        if (candidateSize >= maxResults) return false;
+        if (hasHardFilters(request)) return false;
+        String modelFilter = request.getModelFilter();
+        if (!hasText(modelFilter)) return false;
+        return !isGenericModelFilter(modelFilter);
+    }
+
+    private boolean hasHardFilters(RecommendationRequest request) {
+        return hasText(request.getMaker())
+                || hasText(request.getFuel())
+                || hasText(request.getBodyTypeFilter())
+                || hasText(request.getOptionFilter())
+                || Boolean.TRUE.equals(request.getNoAccident())
+                || Boolean.TRUE.equals(request.getNoFloodDamage())
+                || request.getMinPrice() != null
+                || request.getMaxPrice() != null
+                || request.getMinYear() != null
+                || request.getMaxYear() != null;
+    }
+
+    private boolean isGenericModelFilter(String modelFilter) {
+        String normalized = modelFilter.trim().toLowerCase();
+        return GENERIC_MODEL_FILTERS.contains(normalized);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private enum FilterRejectReason {
+        PRICE_MIN,
+        PRICE_MAX,
+        MAKER,
+        FUEL,
+        YEAR_MAX,
+        YEAR_MIN,
+        BODY_TYPE,
+        OPTION,
+        ACCIDENT_HISTORY,
+        FLOOD_HISTORY,
+        STATUS_EMPTY,
+        STATUS_NOT_ONSALE
+    }
+
+    private boolean hasOptionMatch(SearchResult result, String optionFilterRaw) {
+        String optionFilter = optionFilterRaw == null ? "" : optionFilterRaw.trim().toLowerCase();
+        if (optionFilter.isEmpty()) return true;
+        String optionSource = ((result.getSelOptionArray() != null ? result.getSelOptionArray() : "")
+                + " "
+                + (result.getOptionArray() != null ? result.getOptionArray() : "")).toLowerCase();
+        if (optionSource.isBlank()) return false;
+
+        String[] tokens = optionFilter.split(",");
+        for (String token : tokens) {
+            String t = token == null ? "" : token.trim();
+            if (t.isEmpty()) continue;
+            if (!optionSource.contains(t)) {
+                return false;
+            }
+        }
         return true;
+    }
+
+    private static List<String> normalizeBodyTypeFilterTokens(String raw) {
+        if (raw == null || raw.isBlank()) return List.of();
+        LinkedHashSet<String> tokens = new LinkedHashSet<>();
+        for (String part : raw.split(",")) {
+            String token = part == null ? "" : part.trim();
+            if (token.isEmpty()) continue;
+            tokens.add(token);
+            if ("스포츠카".equalsIgnoreCase(token) || "sportscar".equalsIgnoreCase(token) || "sports car".equalsIgnoreCase(token)) {
+                tokens.add("쿠페");
+                tokens.add("컨버터블");
+            }
+        }
+        return new ArrayList<>(tokens);
     }
     
     /** Chroma where: 기존 메타데이터 전부 활용 (maker, bodyTypeCategory, year) - 스키마 변경 없음 */
@@ -413,7 +582,12 @@ public class RagSearchService {
             }
         }
         if (request.getBodyTypeFilter() != null && !request.getBodyTypeFilter().isBlank()) {
-            conditions.add(Map.of("bodyTypeCategory", Map.of("$eq", request.getBodyTypeFilter().trim())));
+            List<String> bodyTypeTokens = normalizeBodyTypeFilterTokens(request.getBodyTypeFilter());
+            if (bodyTypeTokens.size() == 1) {
+                conditions.add(Map.of("bodyTypeCategory", Map.of("$eq", bodyTypeTokens.get(0))));
+            } else if (!bodyTypeTokens.isEmpty()) {
+                conditions.add(Map.of("bodyTypeCategory", Map.of("$in", bodyTypeTokens)));
+            }
         }
         if (request.getMaxYear() != null) {
             conditions.add(Map.of("year", Map.of("$lte", request.getMaxYear())));

@@ -1,12 +1,14 @@
 package com.carizon.admin;
 
 import com.carizon.common.dto.ApiResponse;
+import com.carizon.rag.service.CarEmbeddingBatchService;
 import com.carizon.rag.service.ChromaVectorStoreService;
 import com.carizon.search.service.ElasticsearchCarSearchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,6 +30,7 @@ public class AdminDashboardController {
     private final JdbcTemplate jdbc;
     private final ChromaVectorStoreService vectorStoreService;
     private final ElasticsearchCarSearchService elasticsearchCarSearchService;
+    private final CarEmbeddingBatchService embeddingBatchService;
 
     @GetMapping("/stats")
     @Operation(summary = "시스템 통계", description = "전체 시스템 현황 통계 조회")
@@ -65,6 +68,12 @@ public class AdminDashboardController {
                 LIMIT 10
                 """);
             stats.put("recentCrawls", recentCrawls);
+            long crawlRunningCount = recentCrawls.stream().filter(r -> "RUNNING".equals(String.valueOf(r.get("status")))).count();
+            long crawlSuccessCount = recentCrawls.stream().filter(r -> "SUCCESS".equals(String.valueOf(r.get("status")))).count();
+            long crawlFailCount = recentCrawls.stream().filter(r -> "FAIL".equals(String.valueOf(r.get("status")))).count();
+            stats.put("crawlRunningCount", crawlRunningCount);
+            stats.put("crawlSuccessCount", crawlSuccessCount);
+            stats.put("crawlFailCount", crawlFailCount);
             
             // Elasticsearch 인덱스 개수
             try {
@@ -86,6 +95,31 @@ public class AdminDashboardController {
                 // Chroma 서비스가 없거나 컬렉션이 없는 경우 정상적으로 처리
                 log.debug("Chroma stats fetch failed (ignorable): {}", e.getMessage());
                 stats.put("embeddingCount", 0);
+            }
+
+            // 임베딩 진행 현황
+            stats.put("embeddingProgress", embeddingBatchService.getProgress());
+
+            // 최근 인덱싱 작업
+            List<Map<String, Object>> recentIndexJobs;
+            try {
+                recentIndexJobs = jdbc.queryForList("""
+                    SELECT execution_id, job_id, status, started_at, ended_at, duration_ms,
+                           COALESCE(processed_items, 0) AS processed_items,
+                           COALESCE(success_items, 0) AS success_items,
+                           COALESCE(failed_items, 0) AS failed_items
+                    FROM batch_job_execution
+                    WHERE job_id IN ('indexing_incremental', 'indexing_batch', 'indexing_reindex')
+                    ORDER BY started_at DESC
+                    LIMIT 5
+                    """);
+            } catch (BadSqlGrammarException e) {
+                log.warn("[dashboard] batch_job_execution table missing, recentIndexJobs empty");
+                recentIndexJobs = List.of();
+            }
+            stats.put("recentIndexJobs", recentIndexJobs);
+            if (!recentIndexJobs.isEmpty()) {
+                stats.put("latestIndexJob", recentIndexJobs.get(0));
             }
             
             return ApiResponse.success(stats);

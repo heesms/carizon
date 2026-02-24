@@ -1,7 +1,9 @@
 package com.carizon.rag.service;
 
+import com.carizon.domain.mapper.CarMapper;
 import com.carizon.rag.config.RagProperties;
 import com.carizon.rag.dto.RecommendationIntent;
+import com.carizon.rag.dto.RecommendationQueryPlan;
 import com.carizon.rag.dto.RecommendationRequest;
 import com.carizon.rag.dto.RecommendationResponse;
 import lombok.RequiredArgsConstructor;
@@ -9,81 +11,167 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
- * LLM 기반 차량 추천 서비스
+ * 팩터 추출 + 검색엔진(ES) 기반 차량 추천 서비스
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class CarRecommendationService {
+    private static final Pattern ALPHA_NUMERIC_MODEL_PATTERN = Pattern.compile("(?i).*([a-z]+\\d+|\\d+[a-z]+).*");
+    private static final Set<String> KNOWN_MODEL_TOKENS = Set.of(
+            "GV80", "GV70", "GV60", "G80", "G70", "G90", "XC90", "XC60", "XC40", "XC30", "S90", "V90", "S60", "V60", "C40"
+    );
+    private static final String[] OPTION_QUERY_KEYWORDS = {
+            "선루프", "썬루프", "파노라마", "통풍시트", "열선시트", "전동시트", "메모리시트",
+            "후방카메라", "어라운드뷰", "내비", "네비", "hud", "헤드업", "스마트크루즈",
+            "크루즈", "차선이탈", "반자율", "파워트렁크", "전동트렁크", "4wd", "4륜"
+    };
+    private static final Set<String> GENERIC_MODEL_FILTERS = Set.of(
+            "소형", "중형", "대형", "경차", "준중형", "기타", "suv", "스포츠카", "상용", "rv", "트럭", "승합", "화물",
+            "세단", "해치백", "왜건", "쿠페", "컨버터블", "픽업", "미니밴", "밴"
+    );
     
     private final RagSearchService ragSearchService;
     private final LlmService llmService;
     private final RagProperties ragProperties;
     private final LlmConfigService llmConfigService;
     private final RecommendationPhraseService recommendationPhraseService;
+    private final RecommendationQueryPlannerService queryPlannerService;
+    private final RecommendationElasticsearchService recommendationElasticsearchService;
+    private final CarMapper carMapper;
     
     /**
-     * 사용자 요구사항을 기반으로 차량 추천
+     * 사용자 요구사항을 기반으로 차량 추천 (retrieval-only)
      */
     public RecommendationResponse recommendCars(RecommendationRequest request) throws IOException {
         long totalStart = System.currentTimeMillis();
         log.info("[recommendation] service start");
         log.info("[recommendation] request: {}", request);
+        boolean useLlm = request.getUseLlm() == null || request.getUseLlm();
         
         // 기본값 설정
         if (request.getMaxResults() == null) {
             request.setMaxResults(5);
         }
-        // 명시적 메이커/모델/연료/연식 없으면 LLM이 먼저 의도 해석 → RAG 검색용 searchQuery 생성
+        int maxResults = request.getMaxResults() != null ? request.getMaxResults() : 5;
+
+        // 1) Query Planner (휴리스틱 구조화 플랜)
+        RecommendationQueryPlan queryPlan = null;
+        if (request.getQuery() != null && !request.getQuery().isBlank()) {
+            long plannerStart = System.currentTimeMillis();
+            queryPlan = queryPlannerService.plan(request.getQuery(), useLlm);
+            applyPlannedFields(request, queryPlan);
+            log.info("[recommendation] query planner done: {}ms, plan={}", System.currentTimeMillis() - plannerStart, queryPlan);
+        }
+
+        // 2) 질의에서 팩터 추출 (메이커/차종/연료/연식/의도)
         if (request.getQuery() != null && !request.getQuery().isBlank()) {
             String userQuery = request.getQuery().trim();
-            if (isVagueQuery(userQuery)) {
+            if (useLlm
+                    && isPlanTooSparse(queryPlan)
+                    && (request.getSearchQuery() == null || request.getSearchQuery().isBlank())
+                    && isVagueQuery(userQuery)) {
                 try {
                     String interpreted = interpretQueryForSearch(userQuery);
                     if (interpreted != null && !interpreted.isBlank()) {
                         request.setSearchQuery(interpreted.trim());
-                        log.info("[recommendation] vague query → LLM interpreted: {}", request.getSearchQuery());
+                        log.info("[recommendation] LLM interpreted search query: {}", request.getSearchQuery());
                     }
                 } catch (Exception e) {
-                    log.warn("[recommendation] LLM interpret failed, using original query: {}", e.getMessage());
+                    log.warn("[recommendation] LLM query interpretation failed, fallback heuristic extraction: {}", e.getMessage());
                 }
             }
-            // RAG 검색·필터에 쓸 쿼리: 해석된 searchQuery 우선
-            String effectiveQuery = (request.getSearchQuery() != null && !request.getSearchQuery().isBlank())
-                ? request.getSearchQuery().trim() : userQuery;
+            String effectiveQuery;
+            if (useLlm) {
+                // LLM 추천에서는 원문을 우선 보존해 자연어 신호를 최대한 유지한다.
+                effectiveQuery = userQuery;
+            } else {
+                effectiveQuery = (request.getSearchQuery() != null && !request.getSearchQuery().isBlank())
+                    ? request.getSearchQuery().trim() : userQuery;
+            }
             applyQueryExtractions(request, effectiveQuery);
+            log.info(
+                    "[recommendation] extracted filters: query='{}', searchQuery='{}', maker='{}', modelFilter='{}', bodyType='{}', option='{}', fuel='{}', price=[{},{}], year=[{},{}], noAccident={}, noFloodDamage={}, intent={}",
+                    request.getQuery(),
+                    request.getSearchQuery(),
+                    request.getMaker(),
+                    request.getModelFilter(),
+                    request.getBodyTypeFilter(),
+                    request.getOptionFilter(),
+                    request.getFuel(),
+                    request.getMinPrice(),
+                    request.getMaxPrice(),
+                    request.getMinYear(),
+                    request.getMaxYear(),
+                    request.getNoAccident(),
+                    request.getNoFloodDamage(),
+                    request.getIntent()
+            );
         }
-        
-        // RAG 검색으로 유사한 차량 찾기
+
+        // 3) RAG(Chroma) 후보 검색
         long ragStart = System.currentTimeMillis();
-        List<RecommendationResponse.RecommendedCar> cars = ragSearchService.searchSimilarCars(request);
+        List<RecommendationResponse.RecommendedCar> ragCars = List.of();
+        try {
+            ragCars = ragSearchService.searchSimilarCars(request);
+        } catch (Exception e) {
+            log.warn("[recommendation] RAG search failed, fallback to ES only: {}", e.getMessage());
+        }
         long ragMs = System.currentTimeMillis() - ragStart;
-        log.info("[recommendation] RAG search done: {}ms, cars={}", ragMs, cars.size());
-        
+        log.info("[recommendation] RAG candidate search done: {}ms, cars={}", ragMs, ragCars.size());
+
+        // 4) 안전한 DSL 빌더 기반 ES 후보 검색
+        long esStart = System.currentTimeMillis();
+        int esCandidateSize = Math.max(40, maxResults * 10);
+        List<RecommendationResponse.RecommendedCar> esCars =
+                recommendationElasticsearchService.searchCandidates(request, queryPlan, esCandidateSize);
+        long esMs = System.currentTimeMillis() - esStart;
+        log.info("[recommendation] ES candidate search done: {}ms, cars={}", esMs, esCars.size());
+
+        // 5) 하이브리드 결합 (RAG 0.65 + ES 0.35)
+        List<RecommendationResponse.RecommendedCar> cars = mergeHybridCars(ragCars, esCars, maxResults);
+        log.info("[recommendation] hybrid merge done: ragCars={}, esCars={}, merged={}",
+                ragCars.size(), esCars.size(), cars.size());
+
+        // 명시 모델어가 있으면 해당 모델이 먼저 보이도록 우선 정렬
+        cars = prioritizeModelMatches(cars, request);
+
+        if (!isModelExplicitlyRequested(request, queryPlan)) {
+            cars = diversifyByModel(cars, maxResults);
+            log.info("[recommendation] diversified by model (model unspecified): cars={}", cars.size());
+        }
+        if (cars.size() > maxResults) {
+            cars = new ArrayList<>(cars.subList(0, maxResults));
+        }
+
+        // 표시용 이름 보정: RAG/ES 일부 경로에서 maker/model/trim 누락된 경우 DB 메타데이터로 채움
+        backfillDisplayNames(cars);
+
         if (cars.isEmpty()) {
-            log.warn("[recommendation] no cars - LLM으로 안내 문구 생성 시도");
+            log.warn("[recommendation] no cars after ES search/fallback");
             String noCarsMessage = generateNoCarsMessage(request.getQuery());
             return RecommendationResponse.builder()
                     .recommendation(noCarsMessage)
                     .cars(List.of())
                     .build();
         }
-        
-        // LLM: 전반적 추천 설명만 생성. 차량별 한 줄 이유는 문구 뱅크(조건·조합)로 부여.
-        long llmStart = System.currentTimeMillis();
-        log.info("[LLM] recommendation description gen start");
-        String recommendation = generateOverallRecommendation(request, cars);
-        long llmMs = System.currentTimeMillis() - llmStart;
-        log.info("[LLM] recommendation description done: {}ms", llmMs);
-        
+
+        // 차량별 한 줄 이유는 문구 뱅크(조건·조합)로 부여.
         long reasonsStart = System.currentTimeMillis();
         cars = applyPhraseReasonsToCars(cars);
         long reasonsMs = System.currentTimeMillis() - reasonsStart;
+        String recommendation = generateOverallRecommendation(request, cars, useLlm);
         long totalMs = System.currentTimeMillis() - totalStart;
-        log.info("[recommendation] total: {}ms (RAG={}ms, LLM={}ms, reasons={}ms)", totalMs, ragMs, llmMs, reasonsMs);
+        log.info("[recommendation] total: {}ms (RAG={}ms, ES={}ms, reasons={}ms)", totalMs, ragMs, esMs, reasonsMs);
         
         RecommendationResponse response = RecommendationResponse.builder()
                 .recommendation(recommendation)
@@ -104,73 +192,78 @@ public class CarRecommendationService {
         
         return response;
     }
-    
-    /**
-     * 매물 0건일 때: 사용자 질의를 LLM에 넘겨 한두 문장 안내 생성. 실패/헛소리면 기본 문구 반환.
-     */
-    private String generateNoCarsMessage(String query) {
-        String defaultMessage = "요청하신 조건에 맞는 차량을 찾을 수 없습니다. 다른 조건으로 검색해 보시거나, 가격·연식·차종 조건을 완화해 보시겠어요?";
-        if (query == null || query.isBlank()) {
-            return defaultMessage;
+
+    private List<RecommendationResponse.RecommendedCar> prioritizeModelMatches(
+            List<RecommendationResponse.RecommendedCar> cars,
+            RecommendationRequest request
+    ) {
+        if (cars == null || cars.isEmpty() || request == null) return cars;
+        String token = trimOrNull(request.getModelFilter());
+        if (token == null) return cars;
+        String lowerToken = token.toLowerCase();
+        if (GENERIC_MODEL_FILTERS.contains(lowerToken)) return cars;
+
+        List<RecommendationResponse.RecommendedCar> matched = new ArrayList<>();
+        List<RecommendationResponse.RecommendedCar> others = new ArrayList<>();
+        for (RecommendationResponse.RecommendedCar car : cars) {
+            String model = trimOrNull(car.getModel());
+            String trim = trimOrNull(car.getTrim());
+            boolean hit =
+                    (model != null && model.toLowerCase().contains(lowerToken)) ||
+                    (trim != null && trim.toLowerCase().contains(lowerToken));
+            if (hit) matched.add(car);
+            else others.add(car);
         }
-        try {
-            String prompt = "사용자가 중고차 추천을 요청했는데, 조건에 맞는 매물이 한 대도 없습니다.\n\n"
-                + "사용자 검색어: \"" + query.trim() + "\"\n\n"
-                + "위 검색어를 반영해서, 한두 문장으로 친절히 안내해 주세요. (예: 조건을 완화해 보시거나, 다른 키워드로 검색해 보시라고 권유). 한국어로만 답하고, 100자 이내로 짧게.";
-            String response = llmService.generateResponse(prompt);
-            if (response != null && !response.isBlank()) {
-                String trimmed = response.trim();
-                if (trimmed.length() >= 10 && trimmed.length() <= 500) {
-                    return trimmed;
-                }
+        if (matched.isEmpty()) return cars;
+
+        List<RecommendationResponse.RecommendedCar> reordered = new ArrayList<>(cars.size());
+        reordered.addAll(matched);
+        reordered.addAll(others);
+        return reordered;
+    }
+
+    private void backfillDisplayNames(List<RecommendationResponse.RecommendedCar> cars) {
+        if (cars == null || cars.isEmpty()) return;
+        for (RecommendationResponse.RecommendedCar car : cars) {
+            if (car == null || car.getCarId() == null) continue;
+            boolean needMaker = trimOrNull(car.getMaker()) == null;
+            boolean needModel = trimOrNull(car.getModel()) == null;
+            boolean needTrim = trimOrNull(car.getTrim()) == null;
+            if (!needMaker && !needModel && !needTrim) continue;
+            try {
+                Map<String, Object> p = new LinkedHashMap<>();
+                p.put("carId", car.getCarId());
+                List<Map<String, Object>> rows = carMapper.selectCarsForIndexingById(p);
+                if (rows == null || rows.isEmpty()) continue;
+                Map<String, Object> row = rows.get(0);
+                if (needMaker) car.setMaker(firstNonBlank(car.getMaker(), str(row.get("makerName"))));
+                if (needModel) car.setModel(firstNonBlank(car.getModel(), str(row.get("modelName"))));
+                if (needTrim) car.setTrim(firstNonBlank(car.getTrim(), str(row.get("trimName"))));
+            } catch (Exception e) {
+                log.debug("[recommendation] display name backfill skipped for carId={}: {}", car.getCarId(), e.getMessage());
             }
-        } catch (Exception e) {
-            log.warn("[recommendation] no-cars LLM failed, using default: {}", e.getMessage());
         }
-        return defaultMessage;
     }
     
     /**
-     * LLM 1회 호출: 사용자 검색에 대한 전반적 추천 사유(2~4문장)만 생성.
-     * 차량별 한 줄 이유는 RecommendationPhraseService(문구 뱅크)에서 조건·조합으로 부여.
+     * 매물 0건일 때: 고정 안내 문구 반환.
+     */
+    private String generateNoCarsMessage(String query) {
+        String q = query != null ? query.trim() : "";
+        if (!q.isEmpty()) {
+            return "텍스트 검색 결과가 없어 조건 기반으로 재검색했지만 매물을 찾지 못했습니다. 검색어를 더 짧게 입력하거나 가격·연식·차종 조건을 완화해 주세요.";
+        }
+        return "요청하신 조건에 맞는 차량을 찾지 못했습니다. 가격·연식·차종 조건을 완화해 다시 검색해 주세요.";
+    }
+    
+    /**
+     * 결과 요약 안내 문구(비생성, 고정 템플릿)
      */
     private String generateOverallRecommendation(RecommendationRequest request,
-                                                 List<RecommendationResponse.RecommendedCar> cars) throws IOException {
-        String carListTitle = llmConfigService.getPrompt("car-list-title");
-        String carFormat = llmConfigService.getPrompt("car-format");
-        String defaultRecommendation = llmConfigService.getPrompt("default-recommendation");
-        
-        StringBuilder prompt = new StringBuilder();
-        prompt.append("당신은 이미 선정된 추천 차량 목록에 대해 '전반적인 추천 사유'만 작성합니다. 차량을 고르거나 추가하지 마세요.\n\n");
-        prompt.append("사용자 요청: ").append(request.getQuery()).append("\n\n");
-        prompt.append(carListTitle).append("\n");
-        for (int i = 0; i < cars.size(); i++) {
-            RecommendationResponse.RecommendedCar car = cars.get(i);
-            String carInfo = carFormat
-                .replace("${index}", String.valueOf(i + 1))
-                .replace("${maker}", car.getMaker() != null ? car.getMaker() : "")
-                .replace("${model}", car.getModel() != null ? car.getModel() : "")
-                .replace("${trim}", car.getTrim() != null ? car.getTrim() : "")
-                .replace("${year}", car.getYear() != null ? String.valueOf(car.getYear()) : "")
-                .replace("${mileage}", car.getMileage() != null ? String.format("%,d", car.getMileage()) : "")
-                .replace("${price}", car.getPrice() != null ? String.format("%,d", car.getPrice()) : "");
-            prompt.append(carInfo).append("\n");
-        }
-        prompt.append("\n[출력]\n");
-        prompt.append("사용자 검색에 대한 '전반적인 추천 사유'만 2~4문장으로 작성하세요. ");
-        prompt.append("개별 차량을 하나씩 나열하지 말고, 왜 이런 추천 결과가 나왔는지 전체적인 답변만 적으세요. ");
-        prompt.append("한국어로만, 목록 밖 정보나 새 사실을 만들지 마세요.\n");
-        
-        try {
-            String raw = llmService.generateResponse(prompt.toString());
-            if (raw != null && !raw.isBlank()) {
-                String trimmed = raw.replace("\r\n", "\n").trim();
-                if (!trimmed.isEmpty()) return trimmed;
-            }
-        } catch (Exception e) {
-            log.warn("Failed to generate LLM recommendation", e);
-        }
-        return defaultRecommendation;
+                                                 List<RecommendationResponse.RecommendedCar> cars,
+                                                 boolean useLlm) throws IOException {
+        int count = cars != null ? cars.size() : 0;
+        return "Carizon AI 매물 추천 결과입니다. 총 " + count + "건을 확인해 보세요.";
     }
     
     /** 차량별 추천 이유는 문구 뱅크(조건·조합)로 부여. 없으면 default-message 사용 */
@@ -182,6 +275,191 @@ public class CarRecommendationService {
             car.setReason(reason != null && !reason.isBlank() ? reason.trim() : defaultMessage);
         }
         return cars;
+    }
+
+    /**
+     * Query Planner 결과를 RecommendationRequest에 반영.
+     * 기존 사용자가 명시한 필드가 있으면 덮어쓰지 않는다.
+     */
+    private static void applyPlannedFields(RecommendationRequest request, RecommendationQueryPlan plan) {
+        if (request == null || plan == null) return;
+        if ((request.getSearchQuery() == null || request.getSearchQuery().isBlank())
+                && plan.getTextQuery() != null && !plan.getTextQuery().isBlank()) {
+            request.setSearchQuery(plan.getTextQuery().trim());
+        }
+        if ((request.getMaker() == null || request.getMaker().isBlank())
+                && plan.getMaker() != null && !plan.getMaker().isBlank()) {
+            request.setMaker(plan.getMaker().trim());
+        }
+        if ((request.getModelFilter() == null || request.getModelFilter().isBlank())
+                && plan.getModel() != null && !plan.getModel().isBlank()) {
+            request.setModelFilter(plan.getModel().trim());
+        }
+        if ((request.getBodyTypeFilter() == null || request.getBodyTypeFilter().isBlank())
+                && plan.getBodyTypes() != null && !plan.getBodyTypes().isEmpty()) {
+            request.setBodyTypeFilter(String.join(",", plan.getBodyTypes()));
+        }
+        if ((request.getFuel() == null || request.getFuel().isBlank())
+                && plan.getFuel() != null && !plan.getFuel().isBlank()) {
+            request.setFuel(plan.getFuel());
+        }
+        if (request.getMinPrice() == null && plan.getMinPrice() != null) request.setMinPrice(plan.getMinPrice());
+        if (request.getMaxPrice() == null && plan.getMaxPrice() != null) request.setMaxPrice(plan.getMaxPrice());
+        if (request.getMinYear() == null && plan.getMinYear() != null) request.setMinYear(plan.getMinYear());
+        if (request.getMaxYear() == null && plan.getMaxYear() != null) request.setMaxYear(plan.getMaxYear());
+        if ((request.getIntent() == null || request.getIntent().isBlank())
+                && plan.getIntent() != null && !plan.getIntent().isBlank()) {
+            request.setIntent(plan.getIntent());
+        }
+    }
+
+    /**
+     * 하이브리드 결합:
+     * - 동일 carId 병합
+     * - RAG 점수 + ES 점수 가중합 (둘 다 있으면 0.65/0.35)
+     * - maxResults 개수로 자름
+     */
+    private List<RecommendationResponse.RecommendedCar> mergeHybridCars(
+            List<RecommendationResponse.RecommendedCar> ragCars,
+            List<RecommendationResponse.RecommendedCar> esCars,
+            int maxResults
+    ) {
+        Map<Long, HybridAccumulator> acc = new LinkedHashMap<>();
+
+        if (ragCars != null) {
+            int size = Math.max(1, ragCars.size());
+            for (int i = 0; i < ragCars.size(); i++) {
+                RecommendationResponse.RecommendedCar car = ragCars.get(i);
+                if (car == null || car.getCarId() == null) continue;
+                HybridAccumulator a = acc.computeIfAbsent(car.getCarId(), k -> new HybridAccumulator(copyCar(car)));
+                a.ragScore = clampScore(firstNonNull(car.getRelevanceScore(), rankScore(i, size)));
+                a.car = mergeCarInfo(a.car, car);
+            }
+        }
+
+        if (esCars != null) {
+            int size = Math.max(1, esCars.size());
+            for (int i = 0; i < esCars.size(); i++) {
+                RecommendationResponse.RecommendedCar car = esCars.get(i);
+                if (car == null || car.getCarId() == null) continue;
+                HybridAccumulator a = acc.computeIfAbsent(car.getCarId(), k -> new HybridAccumulator(copyCar(car)));
+                a.esScore = clampScore(firstNonNull(car.getRelevanceScore(), rankScore(i, size)));
+                a.car = mergeCarInfo(a.car, car);
+            }
+        }
+
+        List<HybridAccumulator> merged = new ArrayList<>(acc.values());
+        merged.forEach(HybridAccumulator::finalizeScore);
+        merged.sort((a, b) -> Double.compare(b.finalScore, a.finalScore));
+
+        List<RecommendationResponse.RecommendedCar> out = new ArrayList<>();
+        int limit = Math.max(1, maxResults);
+        for (HybridAccumulator h : merged) {
+            if (out.size() >= limit) break;
+            h.car.setRelevanceScore(h.finalScore);
+            out.add(h.car);
+        }
+        return out;
+    }
+
+    private static RecommendationResponse.RecommendedCar mergeCarInfo(
+            RecommendationResponse.RecommendedCar base,
+            RecommendationResponse.RecommendedCar incoming
+    ) {
+        if (base == null) return copyCar(incoming);
+        if (incoming == null) return base;
+        base.setMaker(firstNonBlank(base.getMaker(), incoming.getMaker()));
+        base.setModel(firstNonBlank(base.getModel(), incoming.getModel()));
+        base.setTrim(firstNonBlank(base.getTrim(), incoming.getTrim()));
+        base.setYear(firstNonNull(base.getYear(), incoming.getYear()));
+        base.setMileage(firstNonNull(base.getMileage(), incoming.getMileage()));
+        base.setPrice(firstNonNull(base.getPrice(), incoming.getPrice()));
+        base.setFuel(firstNonBlank(base.getFuel(), incoming.getFuel()));
+        base.setTransmission(firstNonBlank(base.getTransmission(), incoming.getTransmission()));
+        base.setColor(firstNonBlank(base.getColor(), incoming.getColor()));
+        base.setRegion(firstNonBlank(base.getRegion(), incoming.getRegion()));
+        base.setPcUrl(firstNonBlank(base.getPcUrl(), incoming.getPcUrl()));
+        base.setMUrl(firstNonBlank(base.getMUrl(), incoming.getMUrl()));
+        base.setUrl(firstNonBlank(base.getUrl(), incoming.getUrl()));
+        base.setImageUrl(firstNonBlank(base.getImageUrl(), incoming.getImageUrl()));
+        return base;
+    }
+
+    private static RecommendationResponse.RecommendedCar copyCar(RecommendationResponse.RecommendedCar c) {
+        if (c == null) return null;
+        return RecommendationResponse.RecommendedCar.builder()
+                .carId(c.getCarId())
+                .maker(c.getMaker())
+                .model(c.getModel())
+                .trim(c.getTrim())
+                .year(c.getYear())
+                .mileage(c.getMileage())
+                .price(c.getPrice())
+                .fuel(c.getFuel())
+                .transmission(c.getTransmission())
+                .color(c.getColor())
+                .region(c.getRegion())
+                .url(c.getUrl())
+                .pcUrl(c.getPcUrl())
+                .mUrl(c.getMUrl())
+                .imageUrl(c.getImageUrl())
+                .relevanceScore(c.getRelevanceScore())
+                .reason(c.getReason())
+                .build();
+    }
+
+    private static double rankScore(int index, int size) {
+        if (size <= 1) return 1.0;
+        return Math.max(0.05, 1.0 - ((double) index / (double) size));
+    }
+
+    private static double clampScore(Double v) {
+        if (v == null || v.isNaN() || v.isInfinite()) return 0.0;
+        return Math.max(0.0, Math.min(1.0, v));
+    }
+
+    private static <T> T firstNonNull(T a, T b) {
+        return a != null ? a : b;
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        String aa = trimOrNull(a);
+        return aa != null ? aa : trimOrNull(b);
+    }
+
+    private static String trimOrNull(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    private static String str(Object o) {
+        return o == null ? null : o.toString();
+    }
+
+    private static class HybridAccumulator {
+        private RecommendationResponse.RecommendedCar car;
+        private double ragScore;
+        private double esScore;
+        private double finalScore;
+
+        private HybridAccumulator(RecommendationResponse.RecommendedCar car) {
+            this.car = car;
+        }
+
+        private void finalizeScore() {
+            boolean hasRag = ragScore > 0;
+            boolean hasEs = esScore > 0;
+            if (hasRag && hasEs) {
+                this.finalScore = (ragScore * 0.65) + (esScore * 0.35);
+            } else if (hasRag) {
+                this.finalScore = ragScore;
+            } else if (hasEs) {
+                this.finalScore = esScore;
+            } else {
+                this.finalScore = 0.0;
+            }
+        }
     }
     
     /** 쿼리 한 번에 전부 반영: 문서키워드, 차종, 연식, 메이커 등 (기존 메타데이터·임베딩 전부 활용) */
@@ -196,6 +474,18 @@ public class CarRecommendationService {
         if (request.getBodyTypeFilter() == null || request.getBodyTypeFilter().isBlank()) {
             String body = extractBodyTypeFilter(query);
             if (body != null) request.setBodyTypeFilter(body);
+        }
+        // 2-1) 옵션 필터 (optionArray / selOptionArray)
+        if (request.getOptionFilter() == null || request.getOptionFilter().isBlank()) {
+            String option = extractOptionFilter(query);
+            if (option != null) request.setOptionFilter(option);
+        }
+        // 2-2) 사고/침수 선호
+        if (request.getNoAccident() == null) {
+            request.setNoAccident(extractNoAccidentPreference(query));
+        }
+        if (request.getNoFloodDamage() == null) {
+            request.setNoFloodDamage(extractNoFloodPreference(query));
         }
         // 3) 연식: "22년식", "2022년" 등 구체적 연도 → preferredYear(해당 연도 우선 노출, 스코어 보너스)
         Integer explicitYear = extractExplicitYear(query);
@@ -260,9 +550,9 @@ public class CarRecommendationService {
         if (query == null || query.isBlank()) return RecommendationIntent.GENERAL;
         String lower = query.toLowerCase();
         if (lower.contains("가성비") || lower.contains("연식 오래") || lower.contains("오래된") || lower.contains("구형") || lower.contains("가격 대비")) return RecommendationIntent.VALUE;
-        if (lower.contains("안전") || lower.contains("신생아") || lower.contains("아기") || lower.contains("가족") || lower.contains("패밀리") || lower.contains("아이")) return RecommendationIntent.SAFETY;
-        if (lower.contains("데이트") || lower.contains("연인") || lower.contains("20대") || lower.contains("연비") || lower.contains("유지비")) return RecommendationIntent.DATE;
         if (lower.contains("패밀리") || lower.contains("가족") || lower.contains("캠핑") || lower.contains("공간")) return RecommendationIntent.FAMILY;
+        if (lower.contains("안전") || lower.contains("신생아") || lower.contains("아기") || lower.contains("아이")) return RecommendationIntent.SAFETY;
+        if (lower.contains("데이트") || lower.contains("연인") || lower.contains("20대") || lower.contains("연비") || lower.contains("유지비")) return RecommendationIntent.DATE;
         if (lower.contains("출퇴근") || lower.contains("통근") || lower.contains("연비")) return RecommendationIntent.COMMUTE;
         if (lower.contains("저예산") || lower.contains("싼") || lower.contains("저렴") || lower.contains("예산 적")) return RecommendationIntent.LOW_BUDGET;
         return RecommendationIntent.GENERAL;
@@ -300,14 +590,62 @@ public class CarRecommendationService {
         if (lower.contains("lpg") || lower.contains("엘피지")) return "LPG";
         return null;
     }
+
+    private static String extractOptionFilter(String query) {
+        if (query == null || query.isBlank()) return null;
+        String lower = query.toLowerCase();
+        LinkedHashSet<String> options = new LinkedHashSet<>();
+        for (String keyword : OPTION_QUERY_KEYWORDS) {
+            if (lower.contains(keyword.toLowerCase())) {
+                options.add(keyword);
+            }
+        }
+        if (options.isEmpty()) return null;
+        return String.join(",", options);
+    }
+
+    private static boolean extractNoAccidentPreference(String query) {
+        if (query == null || query.isBlank()) return false;
+        String lower = query.toLowerCase();
+        if (lower.contains("사고차") || lower.contains("사고 있는")) return false;
+        return lower.contains("무사고")
+                || lower.contains("사고없")
+                || lower.contains("사고 없음")
+                || lower.contains("사고없는");
+    }
+
+    private static boolean extractNoFloodPreference(String query) {
+        if (query == null || query.isBlank()) return false;
+        String lower = query.toLowerCase();
+        if (lower.contains("침수차")) return false;
+        return lower.contains("무침수")
+                || lower.contains("침수없")
+                || lower.contains("침수 없음")
+                || lower.contains("침수없는");
+    }
     
     /** 차종 필터 - 메타데이터 bodyTypeCategory와 동일한 값 사용 (소형, 경차, SUV, 세단, 미니밴, 해치백, 왜건) */
     private static String extractBodyTypeFilter(String query) {
         if (query == null || query.isBlank()) return null;
         String lower = query.toLowerCase();
-        if (lower.contains("경차") || lower.contains("케이카")) return "경차";
+        boolean hasSuv = lower.contains("suv") || lower.contains("에스유비") || lower.contains("스포츠유틸리티");
+        boolean hasRv = lower.contains("rv");
+        // 패밀리/가족 계열은 차종 미지정 또는 LLM 편향으로 한쪽만 추출되더라도 SUV+RV를 기본값으로 사용
+        if (lower.contains("패밀리") || lower.contains("가족")) return "SUV,RV";
+        if (hasSuv && hasRv) return "SUV,RV";
+        if (hasSuv) return "SUV";
+        if (hasRv) return "RV";
+        if (lower.contains("대형")) return "대형";
+        if (lower.contains("준중형")) return "준중형";
+        if (lower.contains("중형")) return "중형";
         if (lower.contains("소형차") || lower.contains("소형")) return "소형";
-        if (lower.contains("suv") || lower.contains("에스유비") || lower.contains("스포츠유틸리티")) return "SUV";
+        if (lower.contains("경차")) return "경차";
+        if (lower.contains("스포츠카")) return "스포츠카";
+        if (lower.contains("상용")) return "상용";
+        if (lower.contains("트럭")) return "트럭";
+        if (lower.contains("화물")) return "화물";
+        if (lower.contains("승합")) return "승합";
+        if (lower.contains("기타")) return "기타";
         if (lower.contains("세단")) return "세단";
         if (lower.contains("미니밴") || lower.contains("승합차") || lower.contains("밴")) return "미니밴";
         if (lower.contains("해치백") || lower.contains("해치")) return "해치백";
@@ -352,5 +690,114 @@ public class CarRecommendationService {
             return 2024;
         }
         return null;
+    }
+
+    private static boolean isModelExplicitlyRequested(RecommendationRequest request, RecommendationQueryPlan queryPlan) {
+        if (queryPlan != null) {
+            if (trimOrNull(queryPlan.getModelCode()) != null) return true;
+            if (trimOrNull(queryPlan.getModel()) != null) return true;
+        }
+
+        String modelFilter = trimOrNull(request != null ? request.getModelFilter() : null);
+        if (isLikelyModelToken(modelFilter)) return true;
+
+        String query = trimOrNull(request != null ? request.getQuery() : null);
+        return isLikelyModelToken(query);
+    }
+
+    private static boolean isLikelyModelToken(String raw) {
+        String token = trimOrNull(raw);
+        if (token == null) return false;
+        String upper = token.toUpperCase();
+        for (String known : KNOWN_MODEL_TOKENS) {
+            if (upper.contains(known)) return true;
+        }
+        return ALPHA_NUMERIC_MODEL_PATTERN.matcher(token).matches();
+    }
+
+    private static List<RecommendationResponse.RecommendedCar> diversifyByModel(
+            List<RecommendationResponse.RecommendedCar> cars,
+            int maxResults
+    ) {
+        if (cars == null || cars.isEmpty()) return List.of();
+
+        int limit = Math.max(1, maxResults);
+        List<RecommendationResponse.RecommendedCar> selected = new ArrayList<>(limit);
+        Set<Long> selectedCarIds = new LinkedHashSet<>();
+        Map<String, Integer> selectedModelCount = new LinkedHashMap<>();
+
+        // 1차: 모델 중복 없이 최대한 다양하게 선별
+        for (RecommendationResponse.RecommendedCar car : cars) {
+            if (car == null || car.getCarId() == null) continue;
+            if (selected.size() >= limit) break;
+
+            String modelKey = modelDiversityKey(car);
+            if (selectedModelCount.containsKey(modelKey)) continue;
+
+            selected.add(car);
+            selectedCarIds.add(car.getCarId());
+            selectedModelCount.put(modelKey, 1);
+        }
+
+        // 2차: 결과가 너무 적으면 모델당 최대 2개까지 허용
+        if (selected.size() < limit) {
+            for (RecommendationResponse.RecommendedCar car : cars) {
+                if (car == null || car.getCarId() == null) continue;
+                if (selected.size() >= limit) break;
+                if (selectedCarIds.contains(car.getCarId())) continue;
+
+                String modelKey = modelDiversityKey(car);
+                int modelCount = selectedModelCount.getOrDefault(modelKey, 0);
+                if (modelCount >= 2) continue;
+
+                selected.add(car);
+                selectedCarIds.add(car.getCarId());
+                selectedModelCount.put(modelKey, modelCount + 1);
+            }
+        }
+
+        // 3차: 여전히 부족하면 남은 후보를 순서대로 채움
+        if (selected.size() < limit) {
+            for (RecommendationResponse.RecommendedCar car : cars) {
+                if (car == null || car.getCarId() == null) continue;
+                if (selected.size() >= limit) break;
+                if (selectedCarIds.contains(car.getCarId())) continue;
+
+                selected.add(car);
+                selectedCarIds.add(car.getCarId());
+            }
+        }
+        return selected;
+    }
+
+    private static String modelDiversityKey(RecommendationResponse.RecommendedCar car) {
+        if (car == null) return "";
+        String model = trimOrNull(car.getModel());
+        String maker = trimOrNull(car.getMaker());
+        if (model == null) {
+            if (maker != null) {
+                return "maker:" + maker.toUpperCase(java.util.Locale.ROOT);
+            }
+            return "carId:" + (car.getCarId() != null ? car.getCarId() : "unknown");
+        }
+        String normalizedModel = model
+                .toUpperCase(java.util.Locale.ROOT)
+                .replaceAll("[^\\p{L}\\p{N}]+", "");
+        String makerKey = maker != null ? maker.toUpperCase(java.util.Locale.ROOT) : "UNKNOWN";
+        return "model:" + makerKey + ":" + normalizedModel;
+    }
+
+    private static boolean isPlanTooSparse(RecommendationQueryPlan plan) {
+        if (plan == null) return true;
+        if (trimOrNull(plan.getMakerCode()) != null) return false;
+        if (trimOrNull(plan.getMaker()) != null) return false;
+        if (trimOrNull(plan.getModelCode()) != null) return false;
+        if (trimOrNull(plan.getModel()) != null) return false;
+        if (plan.getBodyTypes() != null && !plan.getBodyTypes().isEmpty()) return false;
+        if (trimOrNull(plan.getFuel()) != null) return false;
+        if (plan.getMinPrice() != null || plan.getMaxPrice() != null) return false;
+        if (plan.getMinYear() != null || plan.getMaxYear() != null) return false;
+        if (plan.getMaxKm() != null) return false;
+        return trimOrNull(plan.getIntent()) == null;
     }
 }
