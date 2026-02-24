@@ -103,7 +103,7 @@ export default function Recommendation() {
   }, [queryParam, loading])
 
   return (
-    <div className="max-w-3xl mx-auto animate-fade-in">
+    <div className="max-w-3xl mx-auto animate-fade-in pb-40">
       {/* 헤더 */}
       <div className="mb-4 sm:mb-5">
         <div className="flex items-center gap-3 mb-1">
@@ -115,86 +115,72 @@ export default function Recommendation() {
         </div>
       </div>
 
-      {/* 채팅 컨테이너 */}
-      <div
-        className="card overflow-hidden flex flex-col"
-        style={{ height: 'calc(100dvh - 200px)', minHeight: 400 }}
-      >
-        {/* 메시지 영역 */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-4 sm:space-y-5">
-          {/* 빠른 프롬프트 (초기 상태) */}
-          {messages.length === 1 && (
-            <div className="space-y-2">
-              <p className="text-xs text-gray-400 font-medium">빠른 질문</p>
-              <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                {QUICK_PROMPTS.map(p => (
-                  <button
-                    key={p}
-                    onClick={() => { trackAiPromptClick(p); handleSend(p) }}
-                    className="text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 rounded-full bg-brand-50 text-brand-700 border border-brand-100 hover:bg-brand-100 transition-colors font-medium"
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
+      {/* 메시지 영역 - 페이지 스크롤 사용 */}
+      <div className="space-y-4 sm:space-y-5">
+        {/* 빠른 프롬프트 (초기 상태) */}
+        {messages.length === 1 && (
+          <div className="space-y-2">
+            <p className="text-xs text-gray-400 font-medium">빠른 질문</p>
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
+              {QUICK_PROMPTS.map(p => (
+                <button
+                  key={p}
+                  onClick={() => { trackAiPromptClick(p); handleSend(p) }}
+                  className="text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 rounded-full bg-brand-50 text-brand-700 border border-brand-100 hover:bg-brand-100 transition-colors font-medium"
+                >
+                  {p}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
+        )}
 
-          {messages.map((msg, i) => {
-            if (msg.role === 'loading') return (
-              <LoadingBubble key={i} />
-            )
+        {messages.map((msg, i) => {
+          if (msg.role === 'loading') return <LoadingBubble key={i} />
 
-            if (msg.role === 'user') return (
-              <div key={i} className="flex justify-end gap-2 sm:gap-3">
-                <div className="max-w-[85%] sm:max-w-[80%] bg-brand-600 text-white rounded-2xl rounded-tr-sm px-3 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed">
+          if (msg.role === 'user') return (
+            <div key={i} className="flex justify-end gap-2 sm:gap-3">
+              <div className="max-w-[85%] sm:max-w-[80%] bg-brand-600 text-white rounded-2xl rounded-tr-sm px-3 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed">
+                {msg.text}
+              </div>
+              <div className="w-7 h-7 sm:w-8 sm:h-8 bg-gray-200 rounded-full flex items-center justify-center text-sm shrink-0">👤</div>
+            </div>
+          )
+
+          return (
+            <div key={i} className="flex gap-2 sm:gap-3">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 bg-brand-100 rounded-full flex items-center justify-center text-sm shrink-0">🤖</div>
+              <div className="flex-1 space-y-2 sm:space-y-3 max-w-[90%] sm:max-w-[85%]">
+                <div className="bg-gray-50 border border-gray-100 rounded-2xl rounded-tl-sm px-3 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed whitespace-pre-wrap text-gray-700">
                   {msg.text}
                 </div>
-                <div className="w-7 h-7 sm:w-8 sm:h-8 bg-gray-200 rounded-full flex items-center justify-center text-sm shrink-0">👤</div>
-              </div>
-            )
-
-            // assistant
-            return (
-              <div key={i} className="flex gap-2 sm:gap-3">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 bg-brand-100 rounded-full flex items-center justify-center text-sm shrink-0">🤖</div>
-                <div className="flex-1 space-y-2 sm:space-y-3 max-w-[90%] sm:max-w-[85%]">
-                  {/* 텍스트 */}
-                  <div className="bg-gray-50 border border-gray-100 rounded-2xl rounded-tl-sm px-3 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed whitespace-pre-wrap text-gray-700">
-                    {msg.text}
+                {msg.cars && msg.cars.length > 0 && (
+                  <div className="space-y-2 sm:space-y-3">
+                    {msg.cars
+                      .filter((car, i, arr) => arr.findIndex(c => c.carId === car.carId) === i)
+                      .map((car, ci) => (
+                        <RecommendedCarCard
+                          key={car.carId ?? ci}
+                          car={car}
+                          isMobile={isMobile}
+                          rank={ci + 1}
+                          fromLocation={fromLocation}
+                        />
+                      ))}
                   </div>
-
-                  {/* 추천 차량 카드 */}
-                  {msg.cars && msg.cars.length > 0 && (
-                    <div className="space-y-2 sm:space-y-3">
-                      {msg.cars
-                        .filter((car, i, arr) => arr.findIndex(c => c.carId === car.carId) === i)
-                        .map((car, ci) => (
-                          <RecommendedCarCard
-                            key={car.carId ?? ci}
-                            car={car}
-                            isMobile={isMobile}
-                            rank={ci + 1}
-                            fromLocation={fromLocation}
-                          />
-                        ))}
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
-            )
-          })}
-          <div ref={bottomRef} />
-        </div>
+            </div>
+          )
+        })}
+        <div ref={bottomRef} />
+      </div>
 
-        {/* 광고 (채팅창 위) */}
-        <div className="border-t border-gray-100 px-3 sm:px-5 pt-2 sm:pt-3">
+      {/* 하단 고정: 광고 + 입력창 */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.07)]">
+        <div className="max-w-3xl mx-auto px-4 pt-2">
           <AdSlot id="recommendation-banner" variant="leaderboard" />
-        </div>
-
-        {/* 입력창 */}
-        <div className="border-t border-gray-100 p-3 sm:p-4">
-          <div className="flex gap-2 items-end">
+          <div className="flex gap-2 items-end py-2">
             <textarea
               ref={inputRef}
               value={input}
@@ -215,7 +201,7 @@ export default function Recommendation() {
               </svg>
             </button>
           </div>
-          <p className="text-[10px] text-gray-300 mt-1 sm:mt-1.5 text-center">
+          <p className="text-[10px] text-gray-300 pb-2 text-center">
             AI 추천은 참고용이며, 실제 거래 전 반드시 직접 확인하세요
           </p>
         </div>
