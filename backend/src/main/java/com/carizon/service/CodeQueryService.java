@@ -79,7 +79,7 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.makers",
-        List.of("makerCode.keyword", "makerCode"),
+        List.of("makerCode.keyword"),
         Collections.emptyMap(),
         Function.identity(),
         ctx
@@ -125,7 +125,7 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.body-types",
-        List.of("bodyType.keyword", "bodyType"),
+        List.of("bodyType.keyword"),
         Collections.emptyMap(),
         CodeQueryService::normalizeBodyType,
         ctx
@@ -154,7 +154,7 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.fuels",
-        List.of("fuel.keyword", "fuel"),
+        List.of("fuel.keyword"),
         Collections.emptyMap(),
         CodeQueryService::normalizeFuelType,
         ctx
@@ -213,7 +213,7 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.colors",
-        List.of("color.keyword", "color"),
+        List.of("color.keyword"),
         Collections.emptyMap(),
         CodeQueryService::normalizeColorType,
         ctx
@@ -265,8 +265,8 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.model-groups",
-        List.of("modelGroupCode.keyword", "modelGroupCode"),
-        Map.of("makerCode", key),
+        List.of("modelGroupCode.keyword"),
+        Map.of("makerCode.keyword", key),
         Function.identity(),
         ctx
     );
@@ -310,8 +310,8 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.models",
-        List.of("modelCode.keyword", "modelCode"),
-        Map.of("makerCode", makerKey, "modelGroupCode", modelGroupKey),
+        List.of("modelCode.keyword"),
+        Map.of("makerCode.keyword", makerKey, "modelGroupCode.keyword", modelGroupKey),
         Function.identity(),
         ctx
     );
@@ -346,8 +346,8 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.trims",
-        List.of("trimCode.keyword", "trimCode"),
-        Map.of("makerCode", makerKey, "modelGroupCode", modelGroupKey, "modelCode", modelKey),
+        List.of("trimCode.keyword"),
+        Map.of("makerCode.keyword", makerKey, "modelGroupCode.keyword", modelGroupKey, "modelCode.keyword", modelKey),
         Function.identity(),
         ctx
     );
@@ -524,10 +524,10 @@ public class CodeQueryService {
     if (context == null || context.isEmpty()) return List.of();
     List<Map<String, Object>> filters = new ArrayList<>();
 
-    addTermFilter(filters, "makerCode", context.get("makerCode"));
-    addTermFilter(filters, "modelGroupCode", context.get("modelGroupCode"));
-    addTermsShouldFilter(filters, "modelCode", context.get("modelCode"));
-    addTermFilter(filters, "trimCode", context.get("trimCode"));
+    addTermFilter(filters, "makerCode.keyword", context.get("makerCode"));
+    addTermFilter(filters, "modelGroupCode.keyword", context.get("modelGroupCode"));
+    addTermsShouldFilter(filters, "modelCode.keyword", context.get("modelCode"));
+    addTermFilter(filters, "trimCode.keyword", context.get("trimCode"));
     addRangeGte(filters, "year", parseInteger(context.get("yearMin")));
     addRangeLte(filters, "year", parseInteger(context.get("yearMax")));
     addRangeGte(filters, "km", parseInteger(context.get("kmMin")));
