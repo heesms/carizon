@@ -84,7 +84,10 @@ function DetailModal() {
     dragStartY.current = e.touches[0].clientY
     isDragging.current = true
     dragDeltaY.current = 0
-    if (sheetRef.current) sheetRef.current.style.transition = 'none'
+    if (sheetRef.current) {
+      sheetRef.current.style.animation = 'none'
+      sheetRef.current.style.transition = 'none'
+    }
   }, [])
 
   const onTouchMove = useCallback((e: ReactTouchEvent<HTMLDivElement>) => {
@@ -135,7 +138,10 @@ function DetailModal() {
     dragStartY.current = e.clientY
     isDragging.current = true
     dragDeltaY.current = 0
-    if (sheetRef.current) sheetRef.current.style.transition = 'none'
+    if (sheetRef.current) {
+      sheetRef.current.style.animation = 'none'
+      sheetRef.current.style.transition = 'none'
+    }
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
   }, [onMouseMove, onMouseUp])
@@ -152,7 +158,7 @@ function DetailModal() {
       <Route
         path="/cars/:id"
         element={
-          <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-6">
+          <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4 lg:p-6">
             {/* 반투명 배경 */}
             <div
               className="absolute inset-0 bg-black/50 animate-fade-in"
@@ -165,9 +171,9 @@ function DetailModal() {
               className="relative bg-white
                 rounded-t-2xl sm:rounded-2xl
                 shadow-2xl flex flex-col
-                w-full sm:max-w-2xl
+                w-full sm:max-w-4xl
                 animate-sheet-up sm:animate-fade-in"
-              style={{ maxHeight: '92dvh' }}
+              style={{ maxHeight: '94dvh' }}
               onClick={e => e.stopPropagation()}
             >
               {/* 드래그 핸들 (모바일 전용) */}

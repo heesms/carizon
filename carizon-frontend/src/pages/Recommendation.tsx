@@ -276,7 +276,6 @@ function RecommendedCarCard({
     if (res) { setLiked(res.liked); setCount(res.count) }
   }
 
-  const url = isMobile ? car.mUrl : car.pcUrl
   const cfg = RANK_STYLES[rank]
 
   // ── 1~3위: 메달 헤더 강조 카드 ──────────────────────────────────────────────
@@ -334,12 +333,6 @@ function RecommendedCarCard({
                 className={`text-[10px] sm:text-xs px-2 py-1 rounded-lg font-bold transition-colors ${cfg.btnClass}`}>
                 상세보기
               </Link>
-            )}
-            {url && (
-              <a href={url} target="_blank" rel="noopener noreferrer"
-                className="text-[10px] sm:text-xs px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-brand-300 hover:text-brand-600 font-semibold transition-colors">
-                {isMobile ? '모바일' : 'PC'}
-              </a>
             )}
             {car.carId && (
               <button onClick={handleLike}
@@ -404,12 +397,6 @@ function RecommendedCarCard({
             className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-lg bg-brand-50 text-brand-600 hover:bg-brand-100 font-semibold transition-colors">
             상세보기
           </Link>
-        )}
-        {url && (
-          <a href={url} target="_blank" rel="noopener noreferrer"
-            className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-brand-300 hover:text-brand-600 font-semibold transition-colors">
-            {isMobile ? '모바일' : 'PC'}
-          </a>
         )}
         {car.carId && (
           <button onClick={handleLike}

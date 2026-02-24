@@ -217,7 +217,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
         </button>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4 sm:gap-6">
+      <div className={`grid grid-cols-1 gap-4 sm:gap-6 ${isModal ? 'md:grid-cols-[320px_1fr]' : 'lg:grid-cols-[380px_1fr]'}`}>
         {/* 좌측: 이미지 + 가격 */}
         <div className="space-y-4">
           <div className="card overflow-hidden">
