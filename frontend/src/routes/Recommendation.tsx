@@ -6,8 +6,6 @@ import SeoMeta from '@/components/SeoMeta'
 import { getCachedImageSource } from '@/utils/imageCache'
 
 const MOBILE_MEDIA = '(max-width: 767px)'
-const RECOMMENDATION_CACHE_KEY = 'carizon_recommendation'
-const CACHE_MAX_AGE_MS = 10 * 60 * 1000 // 10분
 
 function useIsMobile() {
     const [isMobile, setIsMobile] = useState(false)
@@ -42,7 +40,7 @@ export default function Recommendation({ simplified = false }: RecommendationPro
         ? '한 줄 검색으로 중고차를 추천받고, 조건별로 가격과 매물을 비교해보세요.'
         : '입력한 조건(예산, 연식, 연료, 차종) 기반으로 중고차를 AI 추천해줍니다.'
 
-    // 메인에서 넘어온 경우 URL 쿼리로 폼 채우고, 캐시 있으면 복원 / 없으면 자동 요청 (뒤로가기 시 재조회 방지)
+    // 메인에서 넘어온 경우 URL 쿼리로 폼 채우고 자동 요청
     useEffect(() => {
         if (simplified) return
         const q = searchParams.get('query')?.trim()
@@ -55,19 +53,6 @@ export default function Recommendation({ simplified = false }: RecommendationPro
         if (max != null) setMaxPrice(max)
         const minNum = min ? parseInt(min) : undefined
         const maxNum = max ? parseInt(max) : undefined
-
-        try {
-            const raw = sessionStorage.getItem(RECOMMENDATION_CACHE_KEY)
-            if (raw) {
-                const cached = JSON.parse(raw) as { query: string; minPrice?: number; maxPrice?: number; result: RecommendationResponse; timestamp: number }
-                const sameParams = cached.query === q && cached.minPrice === minNum && cached.maxPrice === maxNum
-                const notStale = Date.now() - cached.timestamp < CACHE_MAX_AGE_MS
-                if (sameParams && notStale && cached.result) {
-                    setResult(cached.result)
-                    return
-                }
-            }
-        } catch (_) { /* ignore */ }
         runRecommendation(q, minNum, maxNum)
     }, [simplified, searchParams])
 
@@ -84,15 +69,6 @@ export default function Recommendation({ simplified = false }: RecommendationPro
                 maxPrice: max,
             })
             setResult(response)
-            try {
-                sessionStorage.setItem(RECOMMENDATION_CACHE_KEY, JSON.stringify({
-                    query: q,
-                    minPrice: min,
-                    maxPrice: max,
-                    result: response,
-                    timestamp: Date.now(),
-                }))
-            } catch (_) { /* ignore */ }
             setTimeout(() => {
                 if (resultRef.current) {
                     resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
