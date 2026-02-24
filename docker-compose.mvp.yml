@@ -164,6 +164,7 @@ services:
       SPRING_DATA_REDIS_PORT: "6379"
       ELASTICSEARCH_URIS: http://elasticsearch:9200
       KAFKA_ENABLED: "false"
+      APP_SCHEDULING_ENABLED: "false"
       RAG_CHROMA_BASE_URL: http://chroma:8000
       RAG_LLM_PROVIDER: ollama
       RAG_EMBEDDING_PROVIDER: ollama
