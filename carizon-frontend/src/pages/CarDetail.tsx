@@ -5,6 +5,7 @@ import PriceChart from '@/components/PriceChart'
 import LikeButton from '@/components/LikeButton'
 import AdSlot from '@/components/AdSlot'
 import { trackViewItem, trackPlatformLinkClick } from '@/lib/analytics'
+import { applyCarDetailSeo, clearCarDetailSeo } from '@/utils/seo'
 
 const NO_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><text fill="#9ca3af" font-family="sans-serif" font-size="13" x="200" y="158" text-anchor="middle">이미지 없음</text><rect fill="#e5e7eb" x="170" y="110" width="60" height="38" rx="4"/></svg>')}`
 
@@ -121,9 +122,30 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
       .then(data => {
         setDetail(data)
         const url = data.car.representativeImageUrl
+        const modelImgUrl = data.car.modelCode ? `/image/car/model/${data.car.modelCode}.webp` : undefined
         if (url) setImgSrc(url)
-        else if (data.car.modelCode) setImgSrc(`/image/car/model/${data.car.modelCode}.webp`)
-        trackViewItem(Number(id), data.car.maker ?? '', data.car.model ?? '', data.car.price ?? data.car.priceMin)
+        else if (modelImgUrl) setImgSrc(modelImgUrl)
+
+        const activePrices = (data.platformRows ?? [])
+          .filter(p => p.price != null && p.price > 0 && p.status !== 'SOLD')
+          .map(p => p.price!)
+        const minPriceForSeo = activePrices.length > 0 ? Math.min(...activePrices) : undefined
+
+        trackViewItem(Number(id), data.car.maker ?? '', data.car.model ?? '', minPriceForSeo)
+
+        if (!isModal) {
+          applyCarDetailSeo({
+            id,
+            maker: data.car.maker,
+            model: data.car.model,
+            trim: data.car.trim,
+            year: data.car.year,
+            mileage: data.car.mileage,
+            fuel: data.car.fuel,
+            price: minPriceForSeo,
+            imageUrl: url || modelImgUrl,
+          })
+        }
       })
       .catch(() => setError('차량 정보를 불러올 수 없습니다.'))
       .finally(() => setLoading(false))
@@ -131,7 +153,11 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
     getPriceHistory(id)
       .then(res => setHistory(res.points ?? []))
       .catch(() => {})
-  }, [id])
+
+    return () => {
+      if (!isModal) clearCarDetailSeo()
+    }
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return (
     <div className={`animate-fade-in ${isModal ? 'pb-4' : ''}`}>

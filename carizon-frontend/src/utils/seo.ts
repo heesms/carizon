@@ -134,6 +134,104 @@ const getCanonicalUrl = (pathname: string, search = '') => {
   return `${origin}${pathname}${search}`
 }
 
+// ─── JSON-LD helpers ────────────────────────────────────────────────────────
+
+const setJsonLd = (data: object) => {
+  let script = document.querySelector<HTMLScriptElement>('script[type="application/ld+json"][data-car]')
+  if (!script) {
+    script = document.createElement('script')
+    script.type = 'application/ld+json'
+    script.setAttribute('data-car', '1')
+    document.head.appendChild(script)
+  }
+  script.textContent = JSON.stringify(data)
+}
+
+const removeJsonLd = () => {
+  document.querySelector('script[type="application/ld+json"][data-car]')?.remove()
+}
+
+// ─── Car detail dynamic SEO ─────────────────────────────────────────────────
+
+export type CarSeoData = {
+  id: number | string
+  maker?: string | null
+  model?: string | null
+  trim?: string | null
+  year?: number | null
+  mileage?: number | null
+  fuel?: string | null
+  price?: number | null
+  imageUrl?: string | null
+}
+
+export const applyCarDetailSeo = (car: CarSeoData) => {
+  const name = [car.maker, car.model].filter(Boolean).join(' ')
+  const titleLabel = [name, car.year ? `${car.year}년식` : ''].filter(Boolean).join(' ')
+  const title = `${titleLabel || '차량 상세'} | ${SITE_NAME}`
+  const canonicalOrigin = SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
+  const canonical = `${canonicalOrigin}/cars/${car.id}`
+
+  const descParts: string[] = []
+  if (car.price) descParts.push(`${car.price.toLocaleString()}만원`)
+  if (car.year) descParts.push(`${car.year}년식`)
+  if (car.mileage) descParts.push(`${car.mileage.toLocaleString()}km`)
+  if (car.fuel) descParts.push(car.fuel)
+  const description = descParts.length > 0
+    ? `${name} ${descParts.join(' · ')} — 여러 중고차 플랫폼 매물을 한눈에 비교하세요.`
+    : `${name} 차량 상세 정보 — 플랫폼별 가격 비교, 스펙, 가격 변동을 확인하세요.`
+
+  const keywords = `${name}, 중고차${car.year ? `, ${car.year}년식 ${name}` : ''}, ${DEFAULT_KEYWORDS}`
+  const imageUrl = car.imageUrl || OG_IMAGE
+
+  document.title = title
+  setMetaByName('description', description)
+  setMetaByName('keywords', keywords)
+  setMetaByName('robots', 'index,follow')
+  setMetaByName('theme-color', '#0b101f')
+  setMetaProperty('og:type', 'product')
+  setMetaProperty('og:site_name', SITE_NAME)
+  setMetaProperty('og:title', title)
+  setMetaProperty('og:description', description)
+  setMetaProperty('og:image', imageUrl)
+  setMetaProperty('og:url', canonical)
+  setMetaProperty('twitter:card', 'summary_large_image')
+  setMetaProperty('twitter:title', title)
+  setMetaProperty('twitter:description', description)
+  setMetaProperty('twitter:image', imageUrl)
+  setCanonical(canonical)
+
+  // JSON-LD Vehicle structured data
+  const jsonLd: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'Vehicle',
+    name: name || '중고차',
+    url: canonical,
+    ...(imageUrl !== DEFAULT_OG_IMAGE ? { image: imageUrl } : {}),
+  }
+  if (car.maker) jsonLd.manufacturer = { '@type': 'Organization', name: car.maker }
+  if (car.model) jsonLd.model = car.model
+  if (car.year) jsonLd.modelDate = String(car.year)
+  if (car.mileage) jsonLd.mileageFromOdometer = { '@type': 'QuantitativeValue', value: car.mileage, unitCode: 'KMT' }
+  if (car.fuel) jsonLd.fuelType = car.fuel
+  if (car.price) {
+    jsonLd.offers = {
+      '@type': 'Offer',
+      priceCurrency: 'KRW',
+      price: car.price * 10000,
+      availability: 'https://schema.org/InStock',
+      url: canonical,
+    }
+  }
+  setJsonLd(jsonLd)
+}
+
+export const clearCarDetailSeo = () => {
+  removeJsonLd()
+}
+
+// ─── Route-based SEO ─────────────────────────────────────────────────────────
+
 export const applyRouteSeo = (pathname: string, search = ''): SeoMetadata => {
   const meta = getRouteMetadata(pathname, search)
 
