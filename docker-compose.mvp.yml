@@ -138,12 +138,7 @@ services:
       TZ: Asia/Seoul
     volumes:
       - ollama_data:/root/.ollama
-    command: >
-      sh -c "ollama serve &
-      sleep 3 &&
-      ollama pull ${OLLAMA_LLM_MODEL:-qwen2.5:1.5b} &&
-      ollama pull ${OLLAMA_EMBED_MODEL:-nomic-embed-text} &&
-      wait"
+    command: ["serve"]
 
   # ── Backend ─────────────────────────────────────
   app:
