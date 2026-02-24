@@ -251,9 +251,10 @@
            cm.model_code AS modelCode,
            cm.trim_code AS trimCode,
            cm.grade_code AS gradeCode,
-           m.maker_name AS makerName,
-           mo.model_name AS modelName,
-           t.trim_name AS trimName,
+           COALESCE(NULLIF(TRIM(MAX(m.maker_name)), ''), NULLIF(TRIM(MAX(pc.maker_name)), '')) AS makerName,
+           COALESCE(NULLIF(TRIM(MAX(mg.model_group_name)), ''), NULLIF(TRIM(MAX(pc.model_group_name)), '')) AS modelGroupName,
+           COALESCE(NULLIF(TRIM(MAX(mo.model_name)), ''), NULLIF(TRIM(MAX(pc.model_name)), '')) AS modelName,
+           COALESCE(NULLIF(TRIM(MAX(t.trim_name)), ''), NULLIF(TRIM(MAX(pc.trim_name)), '')) AS trimName,
            cm.year AS year,
            cm.mileage AS km,
            MIN(pc.price) AS priceMin,
@@ -277,6 +278,7 @@
         OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
       )
     LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
+    LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
     LEFT JOIN cz_model mo ON mo.maker_code = cm.maker_code AND mo.model_group_code = cm.model_group_code AND mo.model_code = cm.model_code
     LEFT JOIN cz_trim t ON t.maker_code = cm.maker_code AND t.model_group_code = cm.model_group_code AND t.model_code = cm.model_code AND t.trim_code = cm.trim_code
     WHERE cm.adv_status = 'ONSALE'
@@ -297,9 +299,10 @@
            cm.model_code AS modelCode,
            cm.trim_code AS trimCode,
            cm.grade_code AS gradeCode,
-           m.maker_name AS makerName,
-           mo.model_name AS modelName,
-           t.trim_name AS trimName,
+           COALESCE(NULLIF(TRIM(MAX(m.maker_name)), ''), NULLIF(TRIM(MAX(pc.maker_name)), '')) AS makerName,
+           COALESCE(NULLIF(TRIM(MAX(mg.model_group_name)), ''), NULLIF(TRIM(MAX(pc.model_group_name)), '')) AS modelGroupName,
+           COALESCE(NULLIF(TRIM(MAX(mo.model_name)), ''), NULLIF(TRIM(MAX(pc.model_name)), '')) AS modelName,
+           COALESCE(NULLIF(TRIM(MAX(t.trim_name)), ''), NULLIF(TRIM(MAX(pc.trim_name)), '')) AS trimName,
            cm.year AS year,
            cm.mileage AS km,
            MIN(pc.price) AS priceMin,
@@ -323,6 +326,7 @@
         OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
       )
     LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
+    LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
     LEFT JOIN cz_model mo ON mo.maker_code = cm.maker_code AND mo.model_group_code = cm.model_group_code AND mo.model_code = cm.model_code
     LEFT JOIN cz_trim t ON t.maker_code = cm.maker_code AND t.model_group_code = cm.model_group_code AND t.model_code = cm.model_code AND t.trim_code = cm.trim_code
     WHERE cm.adv_status = 'ONSALE'
@@ -343,9 +347,10 @@
            cm.model_code AS modelCode,
            cm.trim_code AS trimCode,
            cm.grade_code AS gradeCode,
-           m.maker_name AS makerName,
-           mo.model_name AS modelName,
-           t.trim_name AS trimName,
+           COALESCE(NULLIF(TRIM(MAX(m.maker_name)), ''), NULLIF(TRIM(MAX(pc.maker_name)), '')) AS makerName,
+           COALESCE(NULLIF(TRIM(MAX(mg.model_group_name)), ''), NULLIF(TRIM(MAX(pc.model_group_name)), '')) AS modelGroupName,
+           COALESCE(NULLIF(TRIM(MAX(mo.model_name)), ''), NULLIF(TRIM(MAX(pc.model_name)), '')) AS modelName,
+           COALESCE(NULLIF(TRIM(MAX(t.trim_name)), ''), NULLIF(TRIM(MAX(pc.trim_name)), '')) AS trimName,
            cm.year AS year,
            cm.mileage AS km,
            MIN(pc.price) AS priceMin,
@@ -369,6 +374,7 @@
         OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
       )
     LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
+    LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
     LEFT JOIN cz_model mo ON mo.maker_code = cm.maker_code AND mo.model_group_code = cm.model_group_code AND mo.model_code = cm.model_code
     LEFT JOIN cz_trim t ON t.maker_code = cm.maker_code AND t.model_group_code = cm.model_group_code AND t.model_code = cm.model_code AND t.trim_code = cm.trim_code
     WHERE cm.adv_status = 'ONSALE'
@@ -390,9 +396,10 @@
            cm.model_code AS modelCode,
            cm.trim_code AS trimCode,
            cm.grade_code AS gradeCode,
-           m.maker_name AS makerName,
-           mo.model_name AS modelName,
-           t.trim_name AS trimName,
+           COALESCE(NULLIF(TRIM(MAX(m.maker_name)), ''), NULLIF(TRIM(MAX(pc.maker_name)), '')) AS makerName,
+           COALESCE(NULLIF(TRIM(MAX(mg.model_group_name)), ''), NULLIF(TRIM(MAX(pc.model_group_name)), '')) AS modelGroupName,
+           COALESCE(NULLIF(TRIM(MAX(mo.model_name)), ''), NULLIF(TRIM(MAX(pc.model_name)), '')) AS modelName,
+           COALESCE(NULLIF(TRIM(MAX(t.trim_name)), ''), NULLIF(TRIM(MAX(pc.trim_name)), '')) AS trimName,
            cm.year AS year,
            cm.mileage AS km,
            MIN(pc.price) AS priceMin,
@@ -410,6 +417,7 @@
     FROM car_master cm
     LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
     LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
+    LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
     LEFT JOIN cz_model mo ON mo.maker_code = cm.maker_code AND mo.model_group_code = cm.model_group_code AND mo.model_code = cm.model_code
     LEFT JOIN cz_trim t ON t.maker_code = cm.maker_code AND t.model_group_code = cm.model_group_code AND t.model_code = cm.model_code AND t.trim_code = cm.trim_code
     LEFT JOIN (
@@ -438,9 +446,10 @@
            cm.model_code AS modelCode,
            cm.trim_code AS trimCode,
            cm.grade_code AS gradeCode,
-           m.maker_name AS makerName,
-           mo.model_name AS modelName,
-           t.trim_name AS trimName,
+           COALESCE(NULLIF(TRIM(MAX(m.maker_name)), ''), NULLIF(TRIM(MAX(pc.maker_name)), '')) AS makerName,
+           COALESCE(NULLIF(TRIM(MAX(mg.model_group_name)), ''), NULLIF(TRIM(MAX(pc.model_group_name)), '')) AS modelGroupName,
+           COALESCE(NULLIF(TRIM(MAX(mo.model_name)), ''), NULLIF(TRIM(MAX(pc.model_name)), '')) AS modelName,
+           COALESCE(NULLIF(TRIM(MAX(t.trim_name)), ''), NULLIF(TRIM(MAX(pc.trim_name)), '')) AS trimName,
            cm.year AS year,
            cm.mileage AS km,
            MIN(pc.price) AS priceMin,
@@ -458,6 +467,7 @@
     FROM car_master cm
     LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
     LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
+    LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
     LEFT JOIN cz_model mo ON mo.maker_code = cm.maker_code AND mo.model_group_code = cm.model_group_code AND mo.model_code = cm.model_code
     LEFT JOIN cz_trim t ON t.maker_code = cm.maker_code AND t.model_group_code = cm.model_group_code AND t.model_code = cm.model_code AND t.trim_code = cm.trim_code
     LEFT JOIN (
