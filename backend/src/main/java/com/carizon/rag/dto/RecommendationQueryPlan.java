@@ -27,14 +27,50 @@ public class RecommendationQueryPlan {
 
     /** 필터 계열 */
     private List<String> bodyTypes;
+    private List<String> excludeBodyTypes;
     private String fuel;
+    private String excludeFuel;
+    private String color;
+    private String excludeColor;
+    private String region;
+    private String excludeRegion;
     private Integer minPrice;
     private Integer maxPrice;
     private Integer minYear;
     private Integer maxYear;
+    private Integer minKm;
     private Integer maxKm;
 
     /** 정렬/의도 */
     private String sort;
     private String intent;
+    private Double confidence;
+    private List<String> askedFields;
+    private List<PreferenceSignal> preferences;
+    private List<EvidenceSpan> evidenceSpans;
+    private String parserSource;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PreferenceSignal {
+        private String field;
+        private List<String> values;
+        private Double weight;
+        private String evidence;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class EvidenceSpan {
+        private String field;
+        private String value;
+        private String text;
+        private Integer start;
+        private Integer end;
+        private String mode; // include|exclude|preference|unknown
+    }
 }

@@ -48,7 +48,10 @@ public class RecommendationElasticsearchService {
     private static final Set<String> RELAXABLE_FILTER_KEYS = Set.of(
             "makerCode", "makerCodes", "excludeMakerCodes",
             "modelCode",
-            "fuel", "bodyType",
+            "fuel", "excludeFuel",
+            "bodyType", "excludeBodyType",
+            "color", "excludeColor",
+            "region", "excludeRegion",
             "priceMin", "priceMax",
             "yearMin", "yearMax",
             "kmMin", "kmMax",
@@ -155,17 +158,11 @@ public class RecommendationElasticsearchService {
         p.put("size", Math.max(20, Math.min(candidateSize, 200)));
 
         boolean llmMode = request != null && Boolean.TRUE.equals(request.getUseLlm());
-        String q = llmMode
-                ? firstNonBlank(
-                    plan != null ? plan.getTextQuery() : null,
-                    request.getSearchQuery(),
-                    request.getQuery()
-                )
-                : firstNonBlank(
-                    plan != null ? plan.getTextQuery() : null,
-                    request.getSearchQuery(),
-                    request.getQuery()
-                );
+        String q = firstNonBlank(
+                plan != null ? plan.getTextQuery() : null,
+                request != null ? request.getSearchQuery() : null,
+                request != null ? request.getQuery() : null
+        );
         q = normalizeSearchTextQuery(q);
         if (llmMode && isBroadCategoryOnlyQuery(q) && hasStructuredFilters(plan, request)) {
             q = null;
@@ -187,26 +184,36 @@ public class RecommendationElasticsearchService {
         if (minPrice != null) p.put("priceMin", minPrice);
         if (maxPrice != null) p.put("priceMax", maxPrice);
 
-        Integer minYear = firstNonNull(request.getMinYear(), plan != null ? plan.getMinYear() : null);
-        Integer maxYear = firstNonNull(request.getMaxYear(), plan != null ? plan.getMaxYear() : null);
+        Integer minYear = firstNonNull(request != null ? request.getMinYear() : null, plan != null ? plan.getMinYear() : null);
+        Integer maxYear = firstNonNull(request != null ? request.getMaxYear() : null, plan != null ? plan.getMaxYear() : null);
         if (minYear != null) p.put("yearMin", clamp(minYear, 1990, 2030));
         if (maxYear != null) p.put("yearMax", clamp(maxYear, 1990, 2030));
 
-        Integer maxKm = plan != null ? plan.getMaxKm() : null;
+        Integer minKm = firstNonNull(request != null ? request.getMinKm() : null, plan != null ? plan.getMinKm() : null);
+        Integer maxKm = firstNonNull(request != null ? request.getMaxKm() : null, plan != null ? plan.getMaxKm() : null);
+        if (minKm != null) p.put("kmMin", clamp(minKm, 0, 300000));
         if (maxKm != null) {
             int kmMax = clamp(maxKm, 0, 300000);
             p.put("kmMax", kmMax);
-            if (kmMax > 0 && kmMax <= 30000) {
+            if (kmMax > 0 && kmMax <= 30000 && minKm == null) {
                 // "주행거리 짧다" 계열은 비정상 0km 매물을 제외
                 p.put("kmMin", 1);
             }
         }
 
-        String fuel = firstNonBlank(request.getFuel(), plan != null ? plan.getFuel() : null);
-        if (fuel != null) p.put("fuel", normalizeFuel(fuel));
+        String fuel = firstNonBlank(
+                request != null ? request.getFuel() : null,
+                plan != null ? plan.getFuel() : null
+        );
+        if (fuel != null) p.put("fuel", normalizeFuelCsv(fuel));
+        String excludeFuel = firstNonBlank(
+                request != null ? request.getExcludeFuel() : null,
+                plan != null ? plan.getExcludeFuel() : null
+        );
+        if (excludeFuel != null) p.put("excludeFuel", normalizeFuelCsv(excludeFuel));
 
         String bodyType = firstNonBlank(
-                request.getBodyTypeFilter(),
+                request != null ? request.getBodyTypeFilter() : null,
                 planBodyTypesCsv(plan)
         );
         if (bodyType == null) {
@@ -219,6 +226,33 @@ public class RecommendationElasticsearchService {
             }
         }
         if (bodyType != null) p.put("bodyType", normalizeBodyType(bodyType));
+        String excludeBodyType = firstNonBlank(
+                request != null ? request.getExcludeBodyTypeFilter() : null,
+                planExcludeBodyTypesCsv(plan)
+        );
+        if (excludeBodyType != null) p.put("excludeBodyType", normalizeBodyType(excludeBodyType));
+
+        String color = firstNonBlank(
+                request != null ? request.getColorFilter() : null,
+                plan != null ? plan.getColor() : null
+        );
+        if (color != null) p.put("color", color);
+        String excludeColor = firstNonBlank(
+                request != null ? request.getExcludeColorFilter() : null,
+                plan != null ? plan.getExcludeColor() : null
+        );
+        if (excludeColor != null) p.put("excludeColor", excludeColor);
+
+        String region = firstNonBlank(
+                request != null ? request.getRegionFilter() : null,
+                plan != null ? plan.getRegion() : null
+        );
+        if (region != null) p.put("region", region);
+        String excludeRegion = firstNonBlank(
+                request != null ? request.getExcludeRegionFilter() : null,
+                plan != null ? plan.getExcludeRegion() : null
+        );
+        if (excludeRegion != null) p.put("excludeRegion", excludeRegion);
 
         String sort = firstNonBlank(
                 trimOrNull(plan != null ? plan.getSort() : null),
@@ -296,13 +330,58 @@ public class RecommendationElasticsearchService {
         String primaryQ = trimOrNull(primaryParams.get("q") != null ? String.valueOf(primaryParams.get("q")) : null);
         String modelFilter = trimOrNull(request != null ? request.getModelFilter() : null);
 
+        // 1) 색상 완화: 색상은 선호 성격이 강해 0건 완화 1순위
+        if (primaryParams.containsKey("color") || primaryParams.containsKey("excludeColor")) {
+            Map<String, Object> m = new LinkedHashMap<>(primaryParams);
+            m.remove("color");
+            m.remove("excludeColor");
+            addFallbackParam(out, m);
+            log.info("[RecommendationES] fallback relax: drop color filters");
+        }
+
+        // 2) 지역 완화: 지역은 보조 제약으로 간주
+        if (primaryParams.containsKey("region") || primaryParams.containsKey("excludeRegion")) {
+            Map<String, Object> m = new LinkedHashMap<>(primaryParams);
+            m.remove("region");
+            m.remove("excludeRegion");
+            addFallbackParam(out, m);
+            log.info("[RecommendationES] fallback relax: drop region filters");
+        }
+
+        // 3) 연식/주행거리 소폭 완화
+        Map<String, Object> widened = widenYearAndKm(primaryParams);
+        if (!widened.equals(primaryParams)) {
+            addFallbackParam(out, widened);
+            log.info("[RecommendationES] fallback relax: widen year/km bounds");
+        }
+
+        // 4) 예산 소폭 완화
+        Map<String, Object> relaxedPrice = widenPrice(primaryParams);
+        if (!relaxedPrice.equals(primaryParams)) {
+            addFallbackParam(out, relaxedPrice);
+            log.info("[RecommendationES] fallback relax: widen price bounds");
+        }
+
+        // 5) 모델 키워드 직접 탐색
         if (primaryQ != null && modelFilter != null && !primaryQ.equalsIgnoreCase(modelFilter)) {
             Map<String, Object> m = new LinkedHashMap<>(primaryParams);
             m.put("q", modelFilter);
             addFallbackParam(out, m);
         }
 
-        // 0건일 때는 LLM이 과하게 건 구조화 필터를 풀고 text query 중심으로 재시도한다.
+        // 6) 연료/차종은 의도가 강해서 마지막 단계에서만 완화
+        if (primaryParams.containsKey("fuel") || primaryParams.containsKey("excludeFuel")
+                || primaryParams.containsKey("bodyType") || primaryParams.containsKey("excludeBodyType")) {
+            Map<String, Object> m = new LinkedHashMap<>(primaryParams);
+            m.remove("fuel");
+            m.remove("excludeFuel");
+            m.remove("bodyType");
+            m.remove("excludeBodyType");
+            addFallbackParam(out, m);
+            log.info("[RecommendationES] fallback relax: drop fuel/bodyType filters");
+        }
+
+        // 7) textQuery 중심 완화
         if (primaryQ != null) {
             Map<String, Object> relaxed = relaxToTextQueryOnly(primaryParams, primaryQ);
             addFallbackParam(out, relaxed);
@@ -321,6 +400,29 @@ public class RecommendationElasticsearchService {
             m.remove("q");
             addFallbackParam(out, m);
         }
+        return out;
+    }
+
+    private static Map<String, Object> widenYearAndKm(Map<String, Object> source) {
+        Map<String, Object> out = new LinkedHashMap<>(source);
+        Integer yearMin = intOrNull(source.get("yearMin"));
+        Integer yearMax = intOrNull(source.get("yearMax"));
+        Integer kmMin = intOrNull(source.get("kmMin"));
+        Integer kmMax = intOrNull(source.get("kmMax"));
+
+        if (yearMin != null) out.put("yearMin", Math.max(1990, yearMin - 2));
+        if (yearMax != null) out.put("yearMax", Math.min(2030, yearMax + 2));
+        if (kmMin != null) out.put("kmMin", Math.max(0, kmMin - 20000));
+        if (kmMax != null) out.put("kmMax", Math.min(300000, kmMax + 20000));
+        return out;
+    }
+
+    private static Map<String, Object> widenPrice(Map<String, Object> source) {
+        Map<String, Object> out = new LinkedHashMap<>(source);
+        Integer min = intOrNull(source.get("priceMin"));
+        Integer max = intOrNull(source.get("priceMax"));
+        if (min != null) out.put("priceMin", Math.max(0, min - 200));
+        if (max != null) out.put("priceMax", Math.min(20000, max + 200));
         return out;
     }
 
@@ -432,12 +534,75 @@ public class RecommendationElasticsearchService {
                 case "DATE" -> finalScore = (rank * 0.45) + (yearScore * 0.30) + (priceScore * 0.25);
                 default -> finalScore = (rank * 0.60) + (yearScore * 0.20) + (kmScore * 0.20);
             }
+            finalScore += preferenceBoost(car, plan);
             car.setRelevanceScore(clamp01(finalScore));
         }
 
         cars.sort(Comparator.comparing(
                 (RecommendationResponse.RecommendedCar c) -> firstNonNull(c.getRelevanceScore(), 0.0)
         ).reversed());
+    }
+
+    private static double preferenceBoost(
+            RecommendationResponse.RecommendedCar car,
+            RecommendationQueryPlan plan
+    ) {
+        if (car == null || plan == null || plan.getPreferences() == null || plan.getPreferences().isEmpty()) {
+            return 0.0;
+        }
+        double boost = 0.0;
+        for (RecommendationQueryPlan.PreferenceSignal pref : plan.getPreferences()) {
+            if (pref == null || pref.getValues() == null || pref.getValues().isEmpty()) continue;
+            String field = trimOrNull(pref.getField());
+            if (field == null) continue;
+            double weight = Math.max(0.0, Math.min(1.0, firstNonNull(pref.getWeight(), 0.5)));
+            switch (field) {
+                case "fuel" -> {
+                    String fuel = trimOrNull(car.getFuel());
+                    if (fuel != null && containsToken(pref.getValues(), fuel)) {
+                        boost += 0.08 * weight;
+                    }
+                }
+                case "color" -> {
+                    String color = trimOrNull(car.getColor());
+                    if (color != null && containsToken(pref.getValues(), color)) {
+                        boost += 0.05 * weight;
+                    }
+                }
+                case "region" -> {
+                    String region = trimOrNull(car.getRegion());
+                    if (region != null && containsToken(pref.getValues(), region)) {
+                        boost += 0.04 * weight;
+                    }
+                }
+                case "mode" -> {
+                    if (containsToken(pref.getValues(), "VALUE") && car.getPrice() != null) {
+                        boost += 0.03 * weight;
+                    }
+                    if (containsToken(pref.getValues(), "COMMUTE") && car.getMileage() != null) {
+                        boost += 0.02 * weight;
+                    }
+                    if (containsToken(pref.getValues(), "FAMILY") && car.getYear() != null) {
+                        boost += 0.02 * weight;
+                    }
+                }
+                default -> {
+                    // ignore unsupported preference field
+                }
+            }
+        }
+        return Math.min(0.15, boost);
+    }
+
+    private static boolean containsToken(List<String> values, String target) {
+        if (values == null || values.isEmpty() || target == null) return false;
+        String t = target.trim().toUpperCase(Locale.ROOT);
+        for (String value : values) {
+            String v = trimOrNull(value);
+            if (v == null) continue;
+            if (t.contains(v.toUpperCase(Locale.ROOT))) return true;
+        }
+        return false;
     }
 
     private static String inferDefaultSortByIntent(String intentRaw) {
@@ -503,6 +668,30 @@ public class RecommendationElasticsearchService {
         if (lower.contains("전기") || lower.equals("electric") || lower.equals("ev")) return "전기";
         if (lower.equals("lpg") || lower.contains("엘피지")) return "LPG";
         return t;
+    }
+
+    private static String normalizeFuelCsv(String raw) {
+        String value = trimOrNull(raw);
+        if (value == null) return null;
+        List<String> tokens = value.contains(",") ? parseCsv(value) : List.of(value);
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String token : tokens) {
+            String n = normalizeFuel(token);
+            if (n != null && !n.isBlank()) normalized.add(n);
+        }
+        if (normalized.isEmpty()) return null;
+        return String.join(",", normalized);
+    }
+
+    private static List<String> parseCsv(String raw) {
+        if (raw == null || raw.isBlank()) return List.of();
+        String[] parts = raw.split(",");
+        List<String> out = new ArrayList<>();
+        for (String part : parts) {
+            String token = trimOrNull(part);
+            if (token != null) out.add(token);
+        }
+        return out;
     }
 
     private static String normalizeBodyType(String raw) {
@@ -624,8 +813,20 @@ public class RecommendationElasticsearchService {
                 || trimOrNull(plan != null ? plan.getModelCode() : null) != null
                 || trimOrNull(request != null ? request.getBodyTypeFilter() : null) != null
                 || trimOrNull(planBodyTypesCsv(plan)) != null
+                || trimOrNull(request != null ? request.getExcludeBodyTypeFilter() : null) != null
+                || trimOrNull(planExcludeBodyTypesCsv(plan)) != null
                 || trimOrNull(request != null ? request.getFuel() : null) != null
                 || trimOrNull(plan != null ? plan.getFuel() : null) != null
+                || trimOrNull(request != null ? request.getExcludeFuel() : null) != null
+                || trimOrNull(plan != null ? plan.getExcludeFuel() : null) != null
+                || trimOrNull(request != null ? request.getColorFilter() : null) != null
+                || trimOrNull(plan != null ? plan.getColor() : null) != null
+                || trimOrNull(request != null ? request.getExcludeColorFilter() : null) != null
+                || trimOrNull(plan != null ? plan.getExcludeColor() : null) != null
+                || trimOrNull(request != null ? request.getRegionFilter() : null) != null
+                || trimOrNull(plan != null ? plan.getRegion() : null) != null
+                || trimOrNull(request != null ? request.getExcludeRegionFilter() : null) != null
+                || trimOrNull(plan != null ? plan.getExcludeRegion() : null) != null
                 || (request != null && request.getMinPrice() != null)
                 || (request != null && request.getMaxPrice() != null)
                 || (plan != null && plan.getMinPrice() != null)
@@ -634,6 +835,9 @@ public class RecommendationElasticsearchService {
                 || (request != null && request.getMaxYear() != null)
                 || (plan != null && plan.getMinYear() != null)
                 || (plan != null && plan.getMaxYear() != null)
+                || (request != null && request.getMinKm() != null)
+                || (request != null && request.getMaxKm() != null)
+                || (plan != null && plan.getMinKm() != null)
                 || (plan != null && plan.getMaxKm() != null);
     }
 
@@ -662,6 +866,18 @@ public class RecommendationElasticsearchService {
         if (plan == null || plan.getBodyTypes() == null || plan.getBodyTypes().isEmpty()) return null;
         LinkedHashMap<String, String> values = new LinkedHashMap<>();
         for (String bodyType : plan.getBodyTypes()) {
+            String normalized = normalizeBodyType(bodyType);
+            String token = trimOrNull(normalized);
+            if (token != null) values.put(token.toUpperCase(Locale.ROOT), token);
+        }
+        if (values.isEmpty()) return null;
+        return String.join(",", values.values());
+    }
+
+    private static String planExcludeBodyTypesCsv(RecommendationQueryPlan plan) {
+        if (plan == null || plan.getExcludeBodyTypes() == null || plan.getExcludeBodyTypes().isEmpty()) return null;
+        LinkedHashMap<String, String> values = new LinkedHashMap<>();
+        for (String bodyType : plan.getExcludeBodyTypes()) {
             String normalized = normalizeBodyType(bodyType);
             String token = trimOrNull(normalized);
             if (token != null) values.put(token.toUpperCase(Locale.ROOT), token);

@@ -30,11 +30,11 @@ public class CodeQueryService {
   private static final int AGG_BUCKET_SIZE = 5000;
   private static final List<String> TEXT_SEARCH_FIELDS = List.of(
       "makerName", "modelName", "trimName", "modelCode",
-      "fuel", "color", "bodyType", "region", "transmission"
+      "fuel", "color", "bodyType", "region", "transmission", "carNo"
   );
   private static final List<String> TEXT_SEARCH_WILDCARD_FIELDS = List.of(
       "makerName", "modelName", "trimName", "modelCode",
-      "fuel.keyword", "color.keyword", "bodyType.keyword", "region.keyword", "transmission.keyword"
+      "fuel.keyword", "color.keyword", "bodyType.keyword", "region.keyword", "transmission.keyword", "carNo.keyword"
   );
   private static final Set<String> ALLOWED_CONTEXT_KEYS = Set.of(
       "q", "makerCode", "modelGroupCode", "modelCode", "trimCode",

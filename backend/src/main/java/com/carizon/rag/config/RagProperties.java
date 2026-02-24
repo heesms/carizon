@@ -71,8 +71,30 @@ public class RagProperties {
     public static class Recommendation {
         /** 평가 사유를 Ollama 등 LLM으로 자연스럽게 다듬을지 여부 (false면 조합 문구 그대로 반환) */
         private boolean reasonPolishEnabled = true;
+        private Parser parser = new Parser();
+        private Explainer explainer = new Explainer();
         private Reason reason = new Reason();
         private Prompt prompt = new Prompt();
+
+        @Data
+        public static class Parser {
+            /** 자연어 → 슬롯 파서 단계의 Ollama 타임아웃(ms) */
+            private int timeoutMs = 3500;
+            /** 연속 실패 횟수 임계값 도달 시 파서 LLM을 일시 비활성화 */
+            private int circuitFailThreshold = 3;
+            /** 서킷 오픈 유지 시간(ms) */
+            private int circuitOpenMs = 120000;
+            /** confidence가 이 값보다 낮으면 하드필터를 보수적으로 적용 */
+            private double lowConfidenceThreshold = 0.45;
+        }
+
+        @Data
+        public static class Explainer {
+            /** 추천 설명 LLM 단계 활성화 여부 */
+            private boolean enabled = true;
+            /** 추천 설명 LLM 단계 타임아웃(ms) */
+            private int timeoutMs = 8000;
+        }
         
         @Data
         public static class Reason {

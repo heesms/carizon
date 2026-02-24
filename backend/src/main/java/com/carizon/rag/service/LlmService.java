@@ -67,7 +67,10 @@ public class LlmService {
         body.put("model", model);
         body.put("prompt", prompt);
         body.put("stream", false);
-        body.put("system", KOREAN_ONLY_SYSTEM_PROMPT);
+        String systemPrompt = options != null && options.systemPrompt() != null && !options.systemPrompt().isBlank()
+                ? options.systemPrompt().trim()
+                : KOREAN_ONLY_SYSTEM_PROMPT;
+        body.put("system", systemPrompt);
         body.put("keep_alive", "10m");
 
         Map<String, Object> ollamaOptions = new HashMap<>();
@@ -77,7 +80,8 @@ public class LlmService {
         ollamaOptions.put("num_predict", options != null && options.maxTokens() != null ? options.maxTokens() : 300);
         body.put("options", ollamaOptions);
 
-        try (Response response = httpClientService.postJson(url, body)) {
+        Integer timeoutMs = options != null ? options.timeoutMs() : null;
+        try (Response response = httpClientService.postJson(url, body, timeoutMs)) {
             if (!response.isSuccessful()) {
                 throw new IOException("Ollama API error: " + response.code() + " " + response.message());
             }
@@ -144,5 +148,9 @@ public class LlmService {
         }
     }
 
-    public record GenerationOptions(Integer maxTokens, Double temperature) {}
+    public record GenerationOptions(Integer maxTokens, Double temperature, Integer timeoutMs, String systemPrompt) {
+        public GenerationOptions(Integer maxTokens, Double temperature) {
+            this(maxTokens, temperature, null, null);
+        }
+    }
 }

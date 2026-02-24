@@ -123,10 +123,18 @@ public class SearchFallbackRecommendationService {
             req.setMaxPrice(in.getMaxPrice());
             req.setMaker(in.getMaker());
             req.setFuel(in.getFuel());
+            req.setExcludeFuel(in.getExcludeFuel());
+            req.setColorFilter(in.getColorFilter());
+            req.setExcludeColorFilter(in.getExcludeColorFilter());
+            req.setRegionFilter(in.getRegionFilter());
+            req.setExcludeRegionFilter(in.getExcludeRegionFilter());
             req.setModelFilter(in.getModelFilter());
             req.setBodyTypeFilter(in.getBodyTypeFilter());
+            req.setExcludeBodyTypeFilter(in.getExcludeBodyTypeFilter());
             req.setMaxYear(in.getMaxYear());
             req.setMinYear(in.getMinYear());
+            req.setMaxKm(in.getMaxKm());
+            req.setMinKm(in.getMinKm());
             req.setPreferredYear(in.getPreferredYear());
             req.setIntent(in.getIntent());
         }
@@ -147,10 +155,18 @@ public class SearchFallbackRecommendationService {
         req.setMaxPrice(source.getMaxPrice());
         req.setMaker(source.getMaker());
         req.setFuel(source.getFuel());
+        req.setExcludeFuel(source.getExcludeFuel());
+        req.setColorFilter(source.getColorFilter());
+        req.setExcludeColorFilter(source.getExcludeColorFilter());
+        req.setRegionFilter(source.getRegionFilter());
+        req.setExcludeRegionFilter(source.getExcludeRegionFilter());
         req.setModelFilter(source.getModelFilter());
         req.setBodyTypeFilter(source.getBodyTypeFilter());
+        req.setExcludeBodyTypeFilter(source.getExcludeBodyTypeFilter());
         req.setMaxYear(source.getMaxYear());
         req.setMinYear(source.getMinYear());
+        req.setMaxKm(source.getMaxKm());
+        req.setMinKm(source.getMinKm());
         req.setPreferredYear(source.getPreferredYear());
         req.setIntent(source.getIntent());
         req.setUseLlm(Boolean.FALSE);

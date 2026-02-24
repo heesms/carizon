@@ -110,6 +110,16 @@ rag:
   recommendation:
     # 평가 사유를 Ollama로 다듬기 (true면 차량 1대당 1회 호출 → 블로그 10대 시 10회 호출이라 느릴 수 있음. false면 조합 문구만 사용)
     reason-polish-enabled: true
+    # 자연어 파서(해석 전용) 설정: LLM 실패 시 즉시 휴리스틱 fallback
+    parser:
+      timeout-ms: 3500
+      circuit-fail-threshold: 3
+      circuit-open-ms: 120000
+      low-confidence-threshold: 0.45
+    # 추천 설명 단계(결정 후 설명 전용) 설정
+    explainer:
+      enabled: true
+      timeout-ms: 8000
     # 추천 이유 생성 로직
     reason:
       # 유사도 점수 임계값 (0.0 ~ 1.0)

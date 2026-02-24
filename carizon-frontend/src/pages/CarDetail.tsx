@@ -205,7 +205,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
   ].filter(s => s.value)
 
   return (
-    <div className={`space-y-4 sm:space-y-6 animate-fade-in ${isModal ? 'pb-6' : ''}`}>
+    <div className={`space-y-4 sm:space-y-6 animate-fade-in ${isModal ? 'px-3 sm:px-6 lg:px-7 pb-8' : ''}`}>
       {/* 뒤로 (페이지 모드에서만 표시) */}
       {modalHeader}
       {!onClose && (
@@ -217,7 +217,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
         </button>
       )}
 
-      <div className={`grid grid-cols-1 gap-4 sm:gap-6 ${isModal ? 'md:grid-cols-[320px_1fr]' : 'lg:grid-cols-[380px_1fr]'}`}>
+      <div className={`grid grid-cols-1 gap-4 sm:gap-6 ${isModal ? 'md:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[400px_minmax(0,1fr)]' : 'lg:grid-cols-[380px_1fr]'}`}>
         {/* 좌측: 이미지 + 가격 */}
         <div className="space-y-4">
           <div className="card overflow-hidden">
@@ -281,13 +281,19 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
               기본 정보
             </h2>
             {car.myAccidentCnt != null && car.myAccidentCnt > 0 && (
-              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200">
-                <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl bg-red-50 border border-red-200">
+                <svg className="w-5 h-5 text-red-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    d="M8 18v-3a4 4 0 018 0v3Z"
+                    fill="currentColor"
+                    fillOpacity="0.24"
+                    stroke="none"
+                  />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                    d="M8 18v-3a4 4 0 018 0v3M7 18h10M12 4v2M5 12h2M17 12h2M7 8.5l1.5 1.5M17 8.5l-1.5 1.5" />
                 </svg>
-                <p className="text-xs text-amber-700 font-medium">
-                  내 차 사고이력 {car.myAccidentCnt}건 의심 — 구매 전 정비 이력을 꼭 확인하세요
+                <p className="text-xs text-red-700 font-semibold">
+                  내 차 사고이력 의심 - 구매 전 정비 이력을 꼭 확인하세요
                 </p>
               </div>
             )}

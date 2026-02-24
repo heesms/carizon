@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://carizon.co.kr/sitemap.xml
+Sitemap: https://carizon.shop/sitemap.xml

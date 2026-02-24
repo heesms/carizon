@@ -76,42 +76,29 @@ public class CarRecommendationService {
         // 2) 질의에서 팩터 추출 (메이커/차종/연료/연식/의도)
         if (request.getQuery() != null && !request.getQuery().isBlank()) {
             String userQuery = request.getQuery().trim();
-            if (useLlm
-                    && isPlanTooSparse(queryPlan)
-                    && (request.getSearchQuery() == null || request.getSearchQuery().isBlank())
-                    && isVagueQuery(userQuery)) {
-                try {
-                    String interpreted = interpretQueryForSearch(userQuery);
-                    if (interpreted != null && !interpreted.isBlank()) {
-                        request.setSearchQuery(interpreted.trim());
-                        log.info("[recommendation] LLM interpreted search query: {}", request.getSearchQuery());
-                    }
-                } catch (Exception e) {
-                    log.warn("[recommendation] LLM query interpretation failed, fallback heuristic extraction: {}", e.getMessage());
-                }
-            }
-            String effectiveQuery;
-            if (useLlm) {
-                // LLM 추천에서는 원문을 우선 보존해 자연어 신호를 최대한 유지한다.
-                effectiveQuery = userQuery;
-            } else {
-                effectiveQuery = (request.getSearchQuery() != null && !request.getSearchQuery().isBlank())
-                    ? request.getSearchQuery().trim() : userQuery;
-            }
+            String effectiveQuery = userQuery;
             applyQueryExtractions(request, effectiveQuery);
             log.info(
-                    "[recommendation] extracted filters: query='{}', searchQuery='{}', maker='{}', modelFilter='{}', bodyType='{}', option='{}', fuel='{}', price=[{},{}], year=[{},{}], noAccident={}, noFloodDamage={}, intent={}",
+                    "[recommendation] extracted filters: query='{}', searchQuery='{}', maker='{}', modelFilter='{}', bodyType='{}', excludeBodyType='{}', option='{}', fuel='{}', excludeFuel='{}', color='{}', excludeColor='{}', region='{}', excludeRegion='{}', price=[{},{}], year=[{},{}], km=[{},{}], noAccident={}, noFloodDamage={}, intent={}",
                     request.getQuery(),
                     request.getSearchQuery(),
                     request.getMaker(),
                     request.getModelFilter(),
                     request.getBodyTypeFilter(),
+                    request.getExcludeBodyTypeFilter(),
                     request.getOptionFilter(),
                     request.getFuel(),
+                    request.getExcludeFuel(),
+                    request.getColorFilter(),
+                    request.getExcludeColorFilter(),
+                    request.getRegionFilter(),
+                    request.getExcludeRegionFilter(),
                     request.getMinPrice(),
                     request.getMaxPrice(),
                     request.getMinYear(),
                     request.getMaxYear(),
+                    request.getMinKm(),
+                    request.getMaxKm(),
                     request.getNoAccident(),
                     request.getNoFloodDamage(),
                     request.getIntent()
@@ -257,13 +244,71 @@ public class CarRecommendationService {
     }
     
     /**
-     * 결과 요약 안내 문구(비생성, 고정 템플릿)
+     * 결과 요약 안내 문구.
+     * - 기본: 고정 템플릿
+     * - useLlm=true && explainer enabled: 이미 선택된 TOP N을 설명만 수행
      */
     private String generateOverallRecommendation(RecommendationRequest request,
                                                  List<RecommendationResponse.RecommendedCar> cars,
                                                  boolean useLlm) throws IOException {
         int count = cars != null ? cars.size() : 0;
-        return "Carizon AI 매물 추천 결과입니다. 총 " + count + "건을 확인해 보세요.";
+        String fallback = "Carizon AI 매물 추천 결과입니다. 총 " + count + "건을 확인해 보세요.";
+        boolean enabled = ragProperties.getRecommendation().getExplainer().isEnabled();
+        if (!useLlm || !enabled || cars == null || cars.isEmpty()) {
+            return fallback;
+        }
+
+        try {
+            int timeoutMs = Math.max(3000, ragProperties.getRecommendation().getExplainer().getTimeoutMs());
+            String prompt = buildRecommendationExplainerPrompt(request, cars);
+            String raw = llmService.generateResponse(
+                    prompt,
+                    new LlmService.GenerationOptions(
+                            260,
+                            0.2,
+                            timeoutMs,
+                            "You are a factual explainer. Use only the provided candidates. Answer in Korean."
+                    )
+            );
+            String text = raw != null ? raw.trim() : "";
+            if (!text.isBlank()) {
+                return text;
+            }
+        } catch (Exception e) {
+            log.warn("[recommendation] explainer failed, fallback fixed text: {}", e.getMessage());
+        }
+        return fallback;
+    }
+
+    private static String buildRecommendationExplainerPrompt(
+            RecommendationRequest request,
+            List<RecommendationResponse.RecommendedCar> cars
+    ) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("아래는 이미 선택된 추천 결과입니다. 주어진 정보만 사용해 설명하세요.\\n");
+        sb.append("출력 형식:\\n");
+        sb.append("1) 추천 요약 1~2문장\\n");
+        sb.append("2) 상위 차량 공통 강점 2~3개\\n");
+        sb.append("3) 탈락 기준(일반) 1문장: 조건 미일치/점수 낮음 관점\\n");
+        sb.append("주의: 목록에 없는 차량/사양/수치는 절대 언급 금지.\\n\\n");
+        sb.append("사용자 요청:\\n");
+        sb.append(request != null ? firstNonBlank(request.getQuery(), request.getSearchQuery()) : "").append("\\n\\n");
+        sb.append("선정 차량 목록:\\n");
+        int idx = 1;
+        for (RecommendationResponse.RecommendedCar car : cars) {
+            if (car == null) continue;
+            sb.append(idx++).append(") ")
+                    .append(firstNonBlank(car.getMaker(), "-")).append(" ")
+                    .append(firstNonBlank(car.getModel(), "-")).append(" ")
+                    .append(firstNonBlank(car.getTrim(), "")).append(" / ")
+                    .append(car.getYear() != null ? car.getYear() + "년식" : "연식미상").append(" / ")
+                    .append(car.getMileage() != null ? car.getMileage() + "km" : "주행거리미상").append(" / ")
+                    .append(car.getPrice() != null ? car.getPrice() + "만원" : "가격미상").append(" / ")
+                    .append("연료=").append(firstNonBlank(car.getFuel(), "-")).append(" / ")
+                    .append("지역=").append(firstNonBlank(car.getRegion(), "-"))
+                    .append("\\n");
+        }
+        return sb.toString();
     }
     
     /** 차량별 추천 이유는 문구 뱅크(조건·조합)로 부여. 없으면 default-message 사용 */
@@ -303,10 +348,36 @@ public class CarRecommendationService {
                 && plan.getFuel() != null && !plan.getFuel().isBlank()) {
             request.setFuel(plan.getFuel());
         }
+        if ((request.getExcludeFuel() == null || request.getExcludeFuel().isBlank())
+                && plan.getExcludeFuel() != null && !plan.getExcludeFuel().isBlank()) {
+            request.setExcludeFuel(plan.getExcludeFuel());
+        }
+        if ((request.getColorFilter() == null || request.getColorFilter().isBlank())
+                && plan.getColor() != null && !plan.getColor().isBlank()) {
+            request.setColorFilter(plan.getColor());
+        }
+        if ((request.getExcludeColorFilter() == null || request.getExcludeColorFilter().isBlank())
+                && plan.getExcludeColor() != null && !plan.getExcludeColor().isBlank()) {
+            request.setExcludeColorFilter(plan.getExcludeColor());
+        }
+        if ((request.getRegionFilter() == null || request.getRegionFilter().isBlank())
+                && plan.getRegion() != null && !plan.getRegion().isBlank()) {
+            request.setRegionFilter(plan.getRegion());
+        }
+        if ((request.getExcludeRegionFilter() == null || request.getExcludeRegionFilter().isBlank())
+                && plan.getExcludeRegion() != null && !plan.getExcludeRegion().isBlank()) {
+            request.setExcludeRegionFilter(plan.getExcludeRegion());
+        }
+        if ((request.getExcludeBodyTypeFilter() == null || request.getExcludeBodyTypeFilter().isBlank())
+                && plan.getExcludeBodyTypes() != null && !plan.getExcludeBodyTypes().isEmpty()) {
+            request.setExcludeBodyTypeFilter(String.join(",", plan.getExcludeBodyTypes()));
+        }
         if (request.getMinPrice() == null && plan.getMinPrice() != null) request.setMinPrice(plan.getMinPrice());
         if (request.getMaxPrice() == null && plan.getMaxPrice() != null) request.setMaxPrice(plan.getMaxPrice());
         if (request.getMinYear() == null && plan.getMinYear() != null) request.setMinYear(plan.getMinYear());
         if (request.getMaxYear() == null && plan.getMaxYear() != null) request.setMaxYear(plan.getMaxYear());
+        if (request.getMinKm() == null && plan.getMinKm() != null) request.setMinKm(plan.getMinKm());
+        if (request.getMaxKm() == null && plan.getMaxKm() != null) request.setMaxKm(plan.getMaxKm());
         if ((request.getIntent() == null || request.getIntent().isBlank())
                 && plan.getIntent() != null && !plan.getIntent().isBlank()) {
             request.setIntent(plan.getIntent());
@@ -515,36 +586,6 @@ public class CarRecommendationService {
         }
     }
     
-    /** 명시적 메이커/모델/연료/연식 언급이 없으면 true → LLM 해석 단계 진행 */
-    private static boolean isVagueQuery(String query) {
-        if (query == null || query.isBlank()) return false;
-        String lower = query.toLowerCase();
-        // 메이커/브랜드
-        if (lower.contains("볼보") || lower.contains("volvo") || lower.contains("현대") || lower.contains("기아") || lower.contains("제네시스") || lower.contains("genesis") || lower.contains("벤츠") || lower.contains("bmw") || lower.contains("아우디") || lower.contains("쉐보레") || lower.contains("테슬라")) return false;
-        // 모델명 (일부)
-        if (lower.contains("xc60") || lower.contains("xc90") || lower.contains("gv80") || lower.contains("g80") || lower.contains("g70") || lower.contains("쏘나타") || lower.contains("그랜저") || lower.contains("펠리세이드") || lower.contains("카니발") || lower.contains("스포티지")) return false;
-        // 연료
-        if (lower.contains("가솔린") || lower.contains("디젤") || lower.contains("하이브리드") || lower.contains("전기") || lower.contains("lpg") || lower.contains("휘발유")) return false;
-        // 연식
-        if (java.util.regex.Pattern.compile("\\d{2,4}\\s*년(식)?").matcher(query).find()) return false;
-        if (lower.contains("22년") || lower.contains("23년") || lower.contains("24년") || lower.contains("최신") || lower.contains("신형") || lower.contains("구형") || lower.contains("오래된 연식")) return false;
-        return true;
-    }
-
-    /** LLM으로 사용자 말을 'RAG 검색용 한 줄 키워드'로 해석 (7명 가족 → 7인승 미니밴 SUV 등) */
-    private String interpretQueryForSearch(String userQuery) throws IOException {
-        String promptTemplate = llmConfigService.getPrompt("interpret-search-query");
-        if (promptTemplate == null || promptTemplate.isBlank()) {
-            promptTemplate = "사용자가 중고차 추천을 요청했습니다. 아래 요청을 '중고차 검색에 쓸 한 줄 키워드'로만 바꿔주세요.\n"
-                + "예: 7명 가족 큰차 필요해 → 7인승 미니밴 SUV 대형 가족용. 메이커·모델·연료·연식을 사용자가 안 말했으면 추론해서 보충하되, 검색어만 한 줄로 출력하세요. 다른 설명 없이 검색어 한 줄만 한국어로.\n\n사용자 요청:\n${query}";
-        }
-        String prompt = promptTemplate.contains("${query}") ? promptTemplate.replace("${query}", userQuery) : promptTemplate + "\n\n사용자 요청:\n" + userQuery;
-        String raw = llmService.generateResponse(prompt);
-        if (raw == null || raw.isBlank()) return null;
-        String line = raw.lines().findFirst().orElse(raw).trim();
-        return line.length() > 500 ? line.substring(0, 500) : line;
-    }
-
     /** 쿼리에서 추천 의도 감지 (프리셋 가중치용) */
     private static RecommendationIntent detectIntent(String query) {
         if (query == null || query.isBlank()) return RecommendationIntent.GENERAL;
@@ -787,17 +828,4 @@ public class CarRecommendationService {
         return "model:" + makerKey + ":" + normalizedModel;
     }
 
-    private static boolean isPlanTooSparse(RecommendationQueryPlan plan) {
-        if (plan == null) return true;
-        if (trimOrNull(plan.getMakerCode()) != null) return false;
-        if (trimOrNull(plan.getMaker()) != null) return false;
-        if (trimOrNull(plan.getModelCode()) != null) return false;
-        if (trimOrNull(plan.getModel()) != null) return false;
-        if (plan.getBodyTypes() != null && !plan.getBodyTypes().isEmpty()) return false;
-        if (trimOrNull(plan.getFuel()) != null) return false;
-        if (plan.getMinPrice() != null || plan.getMaxPrice() != null) return false;
-        if (plan.getMinYear() != null || plan.getMaxYear() != null) return false;
-        if (plan.getMaxKm() != null) return false;
-        return trimOrNull(plan.getIntent()) == null;
-    }
 }

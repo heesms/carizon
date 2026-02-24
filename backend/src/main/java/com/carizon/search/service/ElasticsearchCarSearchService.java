@@ -39,11 +39,11 @@ public class ElasticsearchCarSearchService {
     private static final String INDEX = ElasticsearchConfig.CARS_INDEX;
     private static final List<String> TEXT_SEARCH_FIELDS = List.of(
         "makerName", "modelName", "trimName", "modelCode",
-        "fuel", "color", "bodyType", "region", "transmission"
+        "fuel", "color", "bodyType", "region", "transmission", "carNo"
     );
     private static final List<String> TEXT_SEARCH_WILDCARD_FIELDS = List.of(
         "makerName", "modelName", "trimName", "modelCode",
-        "fuel.keyword", "color.keyword", "bodyType.keyword", "region.keyword", "transmission.keyword"
+        "fuel.keyword", "color.keyword", "bodyType.keyword", "region.keyword", "transmission.keyword", "carNo.keyword"
     );
 
     /**
@@ -341,9 +341,25 @@ public class ElasticsearchCarSearchService {
         if (!fuels.isEmpty()) {
             filter.add(buildTermsOrMissingQuery("fuel.keyword", "fuel", fuels));
         }
+        List<String> excludeFuels = parseFuelTokens(params.get("excludeFuel"));
+        if (!excludeFuels.isEmpty()) {
+            Query excluded = buildTermsOrMissingQuery("fuel.keyword", "fuel", excludeFuels);
+            filter.add(QueryBuilders.bool(b -> {
+                b.mustNot(excluded);
+                return b;
+            }));
+        }
         List<String> colors = parseColorTokens(params.get("color"));
         if (!colors.isEmpty()) {
             filter.add(buildTermsOrMissingQuery("color.keyword", "color", colors));
+        }
+        List<String> excludeColors = parseColorTokens(params.get("excludeColor"));
+        if (!excludeColors.isEmpty()) {
+            Query excluded = buildTermsOrMissingQuery("color.keyword", "color", excludeColors);
+            filter.add(QueryBuilders.bool(b -> {
+                b.mustNot(excluded);
+                return b;
+            }));
         }
         if (params.get("transmission") != null && !String.valueOf(params.get("transmission")).isEmpty()) {
             filter.add(QueryBuilders.term(t -> t.field("transmission.keyword").value(String.valueOf(params.get("transmission")))));
@@ -352,8 +368,25 @@ public class ElasticsearchCarSearchService {
         if (!bodyTypes.isEmpty()) {
             filter.add(buildTermsOrMissingQuery("bodyType.keyword", "bodyType", bodyTypes));
         }
-        if (params.get("region") != null && !String.valueOf(params.get("region")).isEmpty()) {
-            filter.add(QueryBuilders.term(t -> t.field("region.keyword").value(String.valueOf(params.get("region")))));
+        List<String> excludeBodyTypes = parseBodyTypeTokens(params.get("excludeBodyType"));
+        if (!excludeBodyTypes.isEmpty()) {
+            Query excluded = buildTermsOrMissingQuery("bodyType.keyword", "bodyType", excludeBodyTypes);
+            filter.add(QueryBuilders.bool(b -> {
+                b.mustNot(excluded);
+                return b;
+            }));
+        }
+        List<String> regions = parseCsvValues(params.get("region"));
+        if (!regions.isEmpty()) {
+            filter.add(buildKeywordTermsQuery("region.keyword", regions));
+        }
+        List<String> excludeRegions = parseCsvValues(params.get("excludeRegion"));
+        if (!excludeRegions.isEmpty()) {
+            Query excluded = buildKeywordTermsQuery("region.keyword", excludeRegions);
+            filter.add(QueryBuilders.bool(b -> {
+                b.mustNot(excluded);
+                return b;
+            }));
         }
         if (params.get("carNo") != null && !String.valueOf(params.get("carNo")).trim().isEmpty()) {
             filter.add(QueryBuilders.term(t -> t.field("carNo.keyword").value(String.valueOf(params.get("carNo")).trim())));
@@ -466,16 +499,46 @@ public class ElasticsearchCarSearchService {
         if (!fuels.isEmpty()) {
             filter.add(buildTermsOrMissingMap("fuel.keyword", "fuel", fuels));
         }
+        List<String> excludeFuels = parseFuelTokens(params.get("excludeFuel"));
+        if (!excludeFuels.isEmpty()) {
+            filter.add(Map.of("bool", Map.of(
+                "must_not", List.of(buildTermsOrMissingMap("fuel.keyword", "fuel", excludeFuels))
+            )));
+        }
         List<String> colors = parseColorTokens(params.get("color"));
         if (!colors.isEmpty()) {
             filter.add(buildTermsOrMissingMap("color.keyword", "color", colors));
+        }
+        List<String> excludeColors = parseColorTokens(params.get("excludeColor"));
+        if (!excludeColors.isEmpty()) {
+            filter.add(Map.of("bool", Map.of(
+                "must_not", List.of(buildTermsOrMissingMap("color.keyword", "color", excludeColors))
+            )));
         }
         if (params.get("transmission") != null && !String.valueOf(params.get("transmission")).isEmpty()) filter.add(Map.of("term", Map.of("transmission.keyword", params.get("transmission"))));
         List<String> bodyTypes = parseBodyTypeTokens(params.get("bodyType"));
         if (!bodyTypes.isEmpty()) {
             filter.add(buildTermsOrMissingMap("bodyType.keyword", "bodyType", bodyTypes));
         }
-        if (params.get("region") != null && !String.valueOf(params.get("region")).isEmpty()) filter.add(Map.of("term", Map.of("region.keyword", params.get("region"))));
+        List<String> excludeBodyTypes = parseBodyTypeTokens(params.get("excludeBodyType"));
+        if (!excludeBodyTypes.isEmpty()) {
+            filter.add(Map.of("bool", Map.of(
+                "must_not", List.of(buildTermsOrMissingMap("bodyType.keyword", "bodyType", excludeBodyTypes))
+            )));
+        }
+        List<String> regions = parseCsvValues(params.get("region"));
+        if (!regions.isEmpty()) {
+            if (regions.size() == 1) filter.add(Map.of("term", Map.of("region.keyword", regions.get(0))));
+            else filter.add(Map.of("terms", Map.of("region.keyword", regions)));
+        }
+        List<String> excludeRegions = parseCsvValues(params.get("excludeRegion"));
+        if (!excludeRegions.isEmpty()) {
+            List<Map<String, Object>> mustNot = new ArrayList<>();
+            for (String region : excludeRegions) {
+                mustNot.add(Map.of("term", Map.of("region.keyword", region)));
+            }
+            filter.add(Map.of("bool", Map.of("must_not", mustNot)));
+        }
         if (params.get("carNo") != null && !String.valueOf(params.get("carNo")).trim().isEmpty()) filter.add(Map.of("term", Map.of("carNo.keyword", String.valueOf(params.get("carNo")).trim())));
 
         // 기본 필터: 가격이 0보다 큰 매물만
@@ -625,6 +688,24 @@ public class ElasticsearchCarSearchService {
         }
         if (should.size() == 1) return should.get(0);
         return QueryBuilders.bool(b -> {
+            b.should(should);
+            b.minimumShouldMatch("1");
+            return b;
+        });
+    }
+
+    private static Query buildKeywordTermsQuery(String keywordField, List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return QueryBuilders.matchAll(m -> m);
+        }
+        if (values.size() == 1) {
+            return QueryBuilders.term(t -> t.field(keywordField).value(values.get(0)));
+        }
+        return QueryBuilders.bool(b -> {
+            List<Query> should = new ArrayList<>();
+            for (String value : values) {
+                should.add(QueryBuilders.term(t -> t.field(keywordField).value(value)));
+            }
             b.should(should);
             b.minimumShouldMatch("1");
             return b;

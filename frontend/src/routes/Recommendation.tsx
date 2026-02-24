@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { getRecommendations, type RecommendationResponse, type RecommendedCar } from '@/api/recommendations'
 import { getLikeInfo, toggleLike, type LikeInfo } from '@/api/likes'
 import SeoMeta from '@/components/SeoMeta'
+import { getCachedImageSource } from '@/utils/imageCache'
 
 const MOBILE_MEDIA = '(max-width: 767px)'
 const RECOMMENDATION_CACHE_KEY = 'carizon_recommendation'
@@ -654,8 +655,9 @@ function RecommendedCarCard({ car, rank }: { car: RecommendedCar; rank: number }
         }
         return '/image/car/noimage/no_image.png'
     }
-    
-    const [imgSrc, setImgSrc] = useState<string>(getInitialImage())
+
+    const preferredImage = getInitialImage()
+    const [imgSrc, setImgSrc] = useState<string>(preferredImage)
     const [imgLoaded, setImgLoaded] = useState(false)
     const [imgError, setImgError] = useState(false)
     const [isCrawledImage, setIsCrawledImage] = useState(() => {
@@ -730,21 +732,30 @@ function RecommendedCarCard({ car, rank }: { car: RecommendedCar; rank: number }
     
     // 이미지: car_image_url(imageUrl) 우선, 없으면 modelCode 또는 기본 이미지
     useEffect(() => {
+        let cancelled = false
         setImgLoaded(false)
         setImgError(false)
         if (imageUrl && imageUrl.trim() !== '') {
             setIsCrawledImage(checkIfCrawledImage(imageUrl))
-            setImgSrc(imageUrl)
-            return
-        }
-        if (modelCode) {
+        } else if (modelCode) {
             setIsCrawledImage(false)
-            setImgSrc(`/image/car/model/${modelCode}.webp`)
-            return
+        } else {
+            setIsCrawledImage(false)
         }
-        setIsCrawledImage(false)
-        setImgSrc('/image/car/noimage/no_image.png')
-    }, [imageUrl, modelCode])
+        setImgSrc(preferredImage)
+
+        getCachedImageSource(preferredImage)
+            .then((cached) => {
+                if (!cancelled) setImgSrc(cached || preferredImage)
+            })
+            .catch(() => {
+                if (!cancelled) setImgSrc(preferredImage)
+            })
+
+        return () => {
+            cancelled = true
+        }
+    }, [imageUrl, modelCode, preferredImage])
 
     const cardContent = (
         <div className="block modern-card p-5 hover-lift group relative">

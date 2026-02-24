@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { getCarDetail, type CarDetail as CarDetailType } from '@/services/api'
 import SeoMeta from '@/components/SeoMeta'
+import { getCachedImageSource } from '@/utils/imageCache'
 
 const MOBILE_MEDIA = '(max-width: 767px)'
 function useIsMobile() {
@@ -105,7 +106,11 @@ export default function CarDetail(){
             setDetail(d)
             const mc = (d as any).specs?.modelCode as string | undefined
             const fallback = (rawData.representativeImageUrl as string) || undefined
-            setBigSrc(bigImageUrl(mc, fallback))
+            const preferred = bigImageUrl(mc, fallback)
+            setBigSrc(preferred)
+            getCachedImageSource(preferred)
+                .then((cached) => setBigSrc(cached || preferred))
+                .catch(() => setBigSrc(preferred))
         }).catch((err) => {
             console.error('Failed to load car detail:', err)
             setDetail(null)

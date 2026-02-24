@@ -170,7 +170,7 @@ function DetailModal() {
               ref={sheetRef}
               className="relative bg-white
                 rounded-t-[32px] sm:rounded-tl-[28px] sm:rounded-tr-[28px] sm:rounded-bl-[28px] sm:rounded-br-[28px]
-                overflow-hidden flex flex-col w-full sm:max-w-[52rem] xl:max-w-4xl
+                overflow-hidden flex flex-col w-full sm:w-[min(96vw,72rem)]
                 animate-sheet-up sm:animate-dialog-in"
               style={{
                 maxHeight: '94dvh',
@@ -190,8 +190,10 @@ function DetailModal() {
               </div>
 
               {/* 스크롤 콘텐츠 */}
-              <div className="overflow-y-auto flex-1 overscroll-contain">
-                <CarDetail onClose={dismiss} />
+              <div className="flex-1 min-h-0 sm:p-1.5">
+                <div className="h-full min-h-0 overflow-y-auto overscroll-contain scrollbar-thin [scrollbar-gutter:stable]">
+                  <CarDetail onClose={dismiss} />
+                </div>
               </div>
             </div>
           </div>

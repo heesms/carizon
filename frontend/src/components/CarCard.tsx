@@ -1,5 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
+import { getCachedImageSource } from '@/utils/imageCache'
 
 type CarListItem = {
     carId: number
@@ -32,9 +33,26 @@ export default function CarCard({
     if (!item) return null
     if (item.priceMin == null && item.priceMax == null) return null
 
-    const [imgSrc, setImgSrc] = React.useState(
-        listImageUrl(item.representativeImageUrl, item.modelCode)
+    const preferredImageSrc = React.useMemo(
+        () => listImageUrl(item.representativeImageUrl, item.modelCode),
+        [item.representativeImageUrl, item.modelCode]
     )
+    const [imgSrc, setImgSrc] = React.useState(preferredImageSrc)
+
+    React.useEffect(() => {
+        let cancelled = false
+        setImgSrc(preferredImageSrc)
+        getCachedImageSource(preferredImageSrc)
+            .then((cached) => {
+                if (!cancelled) setImgSrc(cached || preferredImageSrc)
+            })
+            .catch(() => {
+                if (!cancelled) setImgSrc(preferredImageSrc)
+            })
+        return () => {
+            cancelled = true
+        }
+    }, [preferredImageSrc])
 
     const price =
         item.priceMin != null && item.priceMax != null && item.priceMin !== item.priceMax

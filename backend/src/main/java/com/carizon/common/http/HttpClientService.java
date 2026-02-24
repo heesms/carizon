@@ -54,36 +54,48 @@ public class HttpClientService {
      * POST 요청 (JSON)
      */
     public Response postJson(String url, Object body) throws IOException {
-        String jsonBody = objectMapper.writeValueAsString(body);
-        RequestBody requestBody = RequestBody.create(jsonBody, JSON);
-        
-        Request request = new Request.Builder()
-                .url(url)
-                .post(requestBody)
-                .addHeader("Content-Type", "application/json")
-                .build();
-        
-        return httpClient.newCall(request).execute();
+        return postJson(url, body, null, null);
     }
-    
+
+    /**
+     * POST 요청 (JSON + 타임아웃)
+     */
+    public Response postJson(String url, Object body, Integer timeoutMs) throws IOException {
+        return postJson(url, body, null, timeoutMs);
+    }
+
     /**
      * POST 요청 (JSON + 헤더)
      */
     public Response postJson(String url, Object body, Headers headers) throws IOException {
+        return postJson(url, body, headers, null);
+    }
+
+    /**
+     * POST 요청 (JSON + 헤더 + 타임아웃)
+     */
+    public Response postJson(String url, Object body, Headers headers, Integer timeoutMs) throws IOException {
         String jsonBody = objectMapper.writeValueAsString(body);
         RequestBody requestBody = RequestBody.create(jsonBody, JSON);
-        
         Request.Builder requestBuilder = new Request.Builder()
                 .url(url)
                 .post(requestBody);
-        
+
         if (headers != null) {
             requestBuilder.headers(headers);
         } else {
             requestBuilder.addHeader("Content-Type", "application/json");
         }
-        
-        return httpClient.newCall(requestBuilder.build()).execute();
+
+        OkHttpClient clientToUse = httpClient;
+        if (timeoutMs != null && timeoutMs > 0) {
+            clientToUse = httpClient.newBuilder()
+                    .connectTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                    .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                    .writeTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                    .build();
+        }
+        return clientToUse.newCall(requestBuilder.build()).execute();
     }
     
     /**
