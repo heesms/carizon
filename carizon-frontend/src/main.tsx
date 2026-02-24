@@ -161,7 +161,7 @@ function DetailModal() {
           <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4 lg:p-6">
             {/* 반투명 배경 */}
             <div
-              className="absolute inset-0 bg-black/50 animate-fade-in"
+              className="absolute inset-0 bg-black/40 backdrop-blur-[3px] animate-fade-in"
               onClick={dismiss}
             />
 
@@ -169,23 +169,24 @@ function DetailModal() {
             <div
               ref={sheetRef}
               className="relative bg-white
-                rounded-t-2xl sm:rounded-2xl
-                shadow-2xl flex flex-col
-                w-full sm:max-w-4xl
-                animate-sheet-up sm:animate-fade-in"
-              style={{ maxHeight: '94dvh' }}
+                rounded-t-[32px] sm:rounded-[28px]
+                flex flex-col w-full sm:max-w-4xl
+                animate-sheet-up sm:animate-dialog-in"
+              style={{
+                maxHeight: '94dvh',
+                boxShadow: '0 -8px 40px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.04)',
+              }}
               onClick={e => e.stopPropagation()}
             >
               {/* 드래그 핸들 (모바일 전용) */}
               <div
-                className="sm:hidden shrink-0 flex flex-col items-center pt-3 pb-2 cursor-grab active:cursor-grabbing touch-none select-none"
+                className="sm:hidden shrink-0 flex items-center justify-center pt-3.5 pb-2.5 cursor-grab active:cursor-grabbing touch-none select-none"
                 onTouchStart={onTouchStart}
                 onTouchMove={onTouchMove}
                 onTouchEnd={onTouchEnd}
                 onMouseDown={onMouseDown}
               >
-                <div className="w-10 h-1.5 bg-gray-300 rounded-full" />
-                <p className="text-[10px] text-gray-300 mt-1 select-none">아래로 드래그해서 닫기</p>
+                <div className="w-9 h-[5px] bg-gray-200 rounded-full" />
               </div>
 
               {/* 스크롤 콘텐츠 */}
