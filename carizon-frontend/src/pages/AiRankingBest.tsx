@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { getMakers, getModelGroups, getModels, getAiRankingBest, type AiRankingResult, type CodeItem } from '@/api/index'
 
 // ── 유틸 ─────────────────────────────────────────────────────────────────────
@@ -87,6 +88,10 @@ function ModalPortal({ children }: { children: React.ReactNode }) {
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 export default function AiRankingBest() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const rankingContentRef = useRef<HTMLDivElement>(null)
+
   // picker 상태
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerStep, setPickerStep] = useState<'maker' | 'model'>('maker')
@@ -223,6 +228,29 @@ export default function AiRankingBest() {
     (modelsByGroup[groupCode] ?? []).filter(match).sort(sortByCount)
 
   const activeMaker = makers.find(m => m.code === pickerMakerCode)
+
+  // 랭킹 HTML 내 data-car-id 링크 클릭 → 내부 상세 모달
+  useEffect(() => {
+    const el = rankingContentRef.current
+    if (!el) return
+    const handler = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[data-car-id]')
+      if (!a) return
+      e.preventDefault()
+      const carId = a.getAttribute('data-car-id')
+      if (carId) {
+        navigate(`/cars/${carId}`, {
+          state: {
+            from: `${location.pathname}${location.search}`,
+            source: 'ai',
+            backgroundLocation: location,
+          },
+        })
+      }
+    }
+    el.addEventListener('click', handler)
+    return () => el.removeEventListener('click', handler)
+  }, [result, navigate, location])
 
   return (
     <div className="max-w-4xl mx-auto animate-fade-in">
@@ -364,29 +392,30 @@ export default function AiRankingBest() {
                 .ranking-content h2 { font-size:1rem; font-weight:700; color:#1e293b; margin-top:1.25rem; margin-bottom:0.75rem; }
                 .ranking-content h3 { font-size:0.95rem; font-weight:700; color:#2563eb; margin:1.25rem 0 1rem; padding-bottom:0.5rem; border-bottom:2px solid #dbeafe; }
                 .ranking-content h4 { font-size:0.875rem; font-weight:700; margin-bottom:12px; border-radius:8px; padding:6px 10px; background:#f1f5f9; color:#334155; }
-                .ranking-content h4 a { color:inherit; text-decoration:none; }
-                .ranking-content h4 a:hover { text-decoration:underline; }
+                .ranking-content h4 a[data-car-id] { color:inherit; text-decoration:none; display:block; }
+                .ranking-content h4 a[data-car-id]:hover { text-decoration:underline; }
                 .ranking-content ul { list-style:none !important; padding-left:0 !important; margin:0; }
                 .ranking-content ul > li { border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:16px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.05); transition:box-shadow 0.15s; }
                 .ranking-content ul > li:hover { box-shadow:0 4px 12px rgba(0,0,0,0.1); }
                 .ranking-content ul > li:nth-child(1) { background:linear-gradient(150deg,#fef3c7 0%,#fffbeb 70%); border:2px solid #fbbf24 !important; }
                 .ranking-content ul > li:nth-child(1) h4 { background:linear-gradient(135deg,#fbbf24,#f59e0b); color:#fff; font-weight:900; font-size:1rem; }
-                .ranking-content ul > li:nth-child(1) h4 a { color:#fff !important; }
+                .ranking-content ul > li:nth-child(1) h4 a[data-car-id] { color:#fff !important; }
                 .ranking-content ul > li:nth-child(2) { background:linear-gradient(150deg,#f1f5f9 0%,#f8fafc 70%); border:2px solid #94a3b8 !important; }
                 .ranking-content ul > li:nth-child(2) h4 { background:linear-gradient(135deg,#94a3b8,#64748b); color:#fff; font-weight:800; }
-                .ranking-content ul > li:nth-child(2) h4 a { color:#fff !important; }
+                .ranking-content ul > li:nth-child(2) h4 a[data-car-id] { color:#fff !important; }
                 .ranking-content ul > li:nth-child(3) { background:linear-gradient(150deg,#fff7ed 0%,#fffbf5 70%); border:1.5px solid #fb923c !important; }
                 .ranking-content ul > li:nth-child(3) h4 { background:linear-gradient(135deg,#fb923c,#f97316); color:#fff; font-weight:800; }
-                .ranking-content ul > li:nth-child(3) h4 a { color:#fff !important; }
+                .ranking-content ul > li:nth-child(3) h4 a[data-car-id] { color:#fff !important; }
                 .ranking-content table { font-size:0.8rem; }
                 .ranking-content table td { padding:6px 8px !important; }
                 .ranking-content table tr:nth-child(even) td { background-color:#f9fafb; }
-                .ranking-content p a { color:#2563eb; font-weight:600; }
-                .ranking-content p a:hover { text-decoration:underline; }
+                .ranking-content p a[data-car-id] { color:#2563eb; font-weight:600; }
+                .ranking-content p a[data-car-id]:hover { text-decoration:underline; }
               `}</style>
 
               {/* 랭킹 HTML 콘텐츠 */}
               <div
+                ref={rankingContentRef}
                 className="ranking-content p-5 prose prose-sm max-w-none"
                 dangerouslySetInnerHTML={{ __html: result.content }}
               />

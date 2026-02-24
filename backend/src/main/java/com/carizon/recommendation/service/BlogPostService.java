@@ -139,24 +139,15 @@ public class BlogPostService {
         
         // 순위를 정수로 표시 (1.1위 -> 1위)
         int rank = car.getRank() != null ? car.getRank().intValue() : 0;
-        
-        // 차량명 (하이퍼링크 포함 - JavaScript 기반 동적 링크)
+
+        // 차량명 (내부 상세 링크)
         String carName = buildCarName(car);
-        String pcUrl = car.getPcUrl() != null ? car.getPcUrl() : "";
-        String mUrl = car.getMUrl() != null ? car.getMUrl() : "";
-        
+        Long carId = car.getCarId();
+
         html.append("<h4>");
-        if ((!pcUrl.isEmpty() || !mUrl.isEmpty())) {
-            // JavaScript로 모바일/PC 구분하여 적절한 URL로 이동
-            html.append("<a href=\"#\" ");
-            html.append("data-pc-url=\"").append(escapeHtml(pcUrl)).append("\" ");
-            html.append("data-m-url=\"").append(escapeHtml(mUrl)).append("\" ");
-            html.append("onclick=\""); 
-            html.append("var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent); ");
-            html.append("var url = isMobile && this.getAttribute('data-m-url') ? this.getAttribute('data-m-url') : (this.getAttribute('data-pc-url') || this.getAttribute('data-m-url')); ");
-            html.append("if (url) { window.open(url, '_blank', 'noopener,noreferrer'); } ");
-            html.append("return false;");
-            html.append("\" ");
+        if (carId != null) {
+            html.append("<a href=\"/cars/").append(carId).append("\" ");
+            html.append("data-car-id=\"").append(carId).append("\" ");
             html.append("style=\"cursor: pointer; text-decoration: underline; color: inherit;\" ");
             html.append(">");
             html.append(rank).append("위: ").append(carName);
@@ -165,27 +156,16 @@ public class BlogPostService {
             html.append(rank).append("위: ").append(carName);
         }
         html.append("</h4>\n");
-        
+
         // 매물 이미지 추가 (car_image_url 사용, 저작권 이슈로 흐리게 처리)
-        // 이미지 클릭 시 링크로 이동
+        // 이미지 클릭 시 내부 상세 링크로 이동
         String carImageUrl = car.getCarImageUrl();
         if (carImageUrl != null && !carImageUrl.isEmpty()) {
-            String platformLink = platformLinkService.generateWordPressLink(car, null);
-            
             html.append("<figure style=\"text-align:center; margin:10px 0; position:relative;\">\n");
-            
-            // 링크가 있으면 이미지를 링크로 감싸기
-            if (!platformLink.isEmpty()) {
-                // 이미 위에서 선언된 pcUrl, mUrl 사용
-                html.append("<a href=\"#\" ");
-                html.append("data-pc-url=\"").append(escapeHtml(pcUrl)).append("\" ");
-                html.append("data-m-url=\"").append(escapeHtml(mUrl)).append("\" ");
-                html.append("onclick=\"");
-                html.append("var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent); ");
-                html.append("var url = isMobile && this.getAttribute('data-m-url') ? this.getAttribute('data-m-url') : (this.getAttribute('data-pc-url') || this.getAttribute('data-m-url')); ");
-                html.append("if (url) { window.open(url, '_blank', 'noopener,noreferrer'); } ");
-                html.append("return false;");
-                html.append("\" ");
+
+            if (carId != null) {
+                html.append("<a href=\"/cars/").append(carId).append("\" ");
+                html.append("data-car-id=\"").append(carId).append("\" ");
                 html.append("style=\"cursor: pointer; display: inline-block;\" ");
                 html.append(">");
             }
@@ -197,10 +177,10 @@ public class BlogPostService {
             html.append("-webkit-filter: blur(2px) opacity(0.7); ");
             html.append("pointer-events: auto;\" />\n");
             
-            if (!platformLink.isEmpty()) {
+            if (carId != null) {
                 html.append("</a>");
             }
-            
+
             html.append("</figure>\n");
         }
 
@@ -268,10 +248,12 @@ public class BlogPostService {
         html.append("</tbody>\n");
         html.append("</table>\n");
 
-        // 플랫폼 링크
-        String link = platformLinkService.generateWordPressLink(car, null);
-        if (!link.isEmpty()) {
-            html.append("<p>").append(link).append("</p>\n");
+        // 내부 상세 링크
+        if (carId != null) {
+            html.append("<p><a href=\"/cars/").append(carId).append("\" ");
+            html.append("data-car-id=\"").append(carId).append("\" ");
+            html.append("style=\"color:#2563eb; font-weight:600; cursor:pointer; text-decoration:underline;\"");
+            html.append(">🔍 상세보기</a></p>\n");
         }
 
         html.append("</li>\n");
