@@ -89,6 +89,97 @@ public class MergeService {
               )
             END
             """.strip();
+    private static final String FUEL_MAPPING_EXPR_TEMPLATE = """
+            CASE
+              WHEN __RAW_FUEL__ IS NULL OR TRIM(CAST(__RAW_FUEL__ AS CHAR)) = '' THEN '기타'
+              WHEN LOWER(TRIM(CAST(__RAW_FUEL__ AS CHAR))) = 'null' THEN '기타'
+              WHEN UPPER(TRIM(CAST(__RAW_FUEL__ AS CHAR))) = 'CNG' THEN '기타'
+              WHEN UPPER(TRIM(CAST(__RAW_FUEL__ AS CHAR))) = 'LPG' THEN 'LPG'
+              WHEN UPPER(TRIM(CAST(__RAW_FUEL__ AS CHAR))) = 'LPG(일반인 구입)' THEN 'LPG(일반인)'
+              WHEN UPPER(TRIM(CAST(__RAW_FUEL__ AS CHAR))) = 'LPG(일반인)' THEN 'LPG(일반인)'
+              WHEN UPPER(TRIM(CAST(__RAW_FUEL__ AS CHAR))) = 'LPG+전기' THEN '하이브리드(LPG)'
+              WHEN TRIM(CAST(__RAW_FUEL__ AS CHAR)) = '가솔린' THEN '가솔린'
+              WHEN UPPER(TRIM(CAST(__RAW_FUEL__ AS CHAR))) = '가솔린+CNG' THEN '가솔린'
+              WHEN UPPER(TRIM(CAST(__RAW_FUEL__ AS CHAR))) = '가솔린+LPG' THEN '가솔린'
+              WHEN TRIM(CAST(__RAW_FUEL__ AS CHAR)) = '가솔린+전기' THEN '하이브리드(가솔린)'
+              WHEN TRIM(CAST(__RAW_FUEL__ AS CHAR)) = '기타' THEN '기타'
+              WHEN TRIM(CAST(__RAW_FUEL__ AS CHAR)) = '디젤' THEN '디젤'
+              WHEN TRIM(CAST(__RAW_FUEL__ AS CHAR)) = '디젤+전기' THEN '하이브리드(디젤)'
+              WHEN TRIM(CAST(__RAW_FUEL__ AS CHAR)) = '수소' THEN '수소'
+              WHEN TRIM(CAST(__RAW_FUEL__ AS CHAR)) = '수소전기' THEN '기타'
+              WHEN TRIM(CAST(__RAW_FUEL__ AS CHAR)) = '전기' THEN '전기'
+              WHEN UPPER(TRIM(CAST(__RAW_FUEL__ AS CHAR))) = '전기(EV)' THEN '전기'
+              WHEN TRIM(CAST(__RAW_FUEL__ AS CHAR)) = '하이브리드' THEN '하이브리드(가솔린)'
+              WHEN UPPER(TRIM(CAST(__RAW_FUEL__ AS CHAR))) = '하이브리드(LPG)' THEN '하이브리드(LPG)'
+              WHEN TRIM(CAST(__RAW_FUEL__ AS CHAR)) = '하이브리드(가솔린)' THEN '하이브리드(가솔린)'
+              WHEN TRIM(CAST(__RAW_FUEL__ AS CHAR)) = '하이브리드(디젤)' THEN '하이브리드(디젤)'
+              ELSE '기타'
+            END
+            """.strip();
+    private static final String COLOR_MAPPING_EXPR_TEMPLATE = """
+            CASE
+              WHEN __RAW_COLOR__ IS NULL OR TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '' THEN '기타'
+              WHEN LOWER(TRIM(CAST(__RAW_COLOR__ AS CHAR))) = 'null' THEN '기타'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '흰색투톤' THEN '흰색투톤'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '흰색' THEN '흰색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '회색' THEN '회색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '하늘색' THEN '하늘색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '하늘' THEN '하늘색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '파랑색' THEN '파랑색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '파랑' THEN '파랑색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '파란색' THEN '파랑색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '초록색' THEN '초록색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '청옥색' THEN '초록색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '청색' THEN '파랑색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '진주투톤' THEN '진주색투톤'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '진주색' THEN '진주색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '진주' THEN '진주색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '쥐색' THEN '회색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '주황색' THEN '주황색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '주황' THEN '주황색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '자주색' THEN '보라색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '인기색상' THEN '기타'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '은회색' THEN '은색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '은하색' THEN '은색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '은색투톤' THEN '은색투톤'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '은색' THEN '은색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '연두색' THEN '초록색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '연금색' THEN '금색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '빨강색' THEN '빨강색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '빨강' THEN '빨강색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '빨간색' THEN '빨강색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '분홍색' THEN '분홍색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '분홍' THEN '분홍색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '보라색' THEN '보라색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '보라' THEN '보라색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '미색' THEN '미색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '명은색' THEN '은색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '담녹색' THEN '초록색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '녹색' THEN '초록색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '노랑색' THEN '노랑색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '노랑' THEN '노랑색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '노란색' THEN '노랑색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '남색' THEN '파랑색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '기타' THEN '기타'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '금색투톤' THEN '금색투톤'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '금색' THEN '금색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '검정투톤' THEN '검정투톤'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '검정색' THEN '검정색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '검정' THEN '검정색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '갈색투톤' THEN '갈색투톤'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '갈색' THEN '갈색'
+              WHEN TRIM(CAST(__RAW_COLOR__ AS CHAR)) = '갈대색' THEN '미색'
+              ELSE '기타'
+            END
+            """.strip();
+
+    private static String mapFuelExpr(String rawFuelExpr) {
+        return FUEL_MAPPING_EXPR_TEMPLATE.replace("__RAW_FUEL__", rawFuelExpr);
+    }
+
+    private static String mapColorExpr(String rawColorExpr) {
+        return COLOR_MAPPING_EXPR_TEMPLATE.replace("__RAW_COLOR__", rawColorExpr);
+    }
 
     /* ====================== 유틸 ====================== */
 
@@ -285,7 +376,7 @@ public class MergeService {
                        'CHACHACHA', r.car_seq, r.car_no, NULL,
                        r.MAKER_CODE, r.CLASS_CODE, r.CAR_CODE, r.MODEL_CODE, r.GRADE_CODE,
                        r.MAKER_NAME, r.CLASS_NAME, r.CAR_NAME, r.MODEL_NAME, r.GRADE_NAME,
-                       r.SELL_AMT, r.KM, r.displacement, r.YYMM, 'ONSALE', r.COLOR, r.GAS_NAME, r.auto_gbn_name, r.use_code_name, r.REGION,
+                       r.SELL_AMT, r.KM, r.displacement, r.YYMM, 'ONSALE', COLOR_EXPR, FUEL_EXPR, r.auto_gbn_name, r.use_code_name, r.REGION,
                        CONCAT('https://m.kbchachacha.com/public/web/car/detail.kbc?carSeq=', r.CAR_SEQ),
                        CONCAT('https://www.kbchachacha.com/public/car/detail.kbc?carSeq=', r.car_seq),
                        r.FIRST_AD_DAY, AD_DATE_EXPR_CHACHACHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
@@ -297,6 +388,8 @@ public class MergeService {
                        extra          = VALUES(extra),
                        ad_date        = COALESCE(VALUES(ad_date), platform_car.ad_date),
                        car_image_url  = VALUES(car_image_url),
+                       color          = VALUES(color),
+                       fuel           = VALUES(fuel),
                        last_seen_date = VALUES(last_seen_date),
                        updated_at     = NOW(),
                        car_no = COALESCE(platform_car.car_no, VALUES(car_no)),
@@ -311,7 +404,9 @@ public class MergeService {
                        trim_name = COALESCE(platform_car.trim_name, VALUES(trim_name)),
                        grade_name = COALESCE(platform_car.grade_name, VALUES(grade_name))
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
-                   .replace("AD_DATE_EXPR_CHACHACHA", AD_DATE_EXPR_CHACHACHA);
+                   .replace("AD_DATE_EXPR_CHACHACHA", AD_DATE_EXPR_CHACHACHA)
+                   .replace("COLOR_EXPR", mapColorExpr("r.COLOR"))
+                   .replace("FUEL_EXPR", mapFuelExpr("r.GAS_NAME"));
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
                 log.debug("CHACHACHA upsert affected={}", affected);
                 return null;
@@ -354,7 +449,7 @@ public class MergeService {
                       NULLIF(r.price_new, 0),
                       r.mileage, r.displacement , r.form_year,
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.status')),
-                      r.color, r.fuel, r.transmission,
+                      COLOR_EXPR, FUEL_EXPR, r.transmission,
                       CASE r.body_type
                         WHEN '준중형차' THEN '준중형' WHEN '경차' THEN '경차' WHEN '중형차' THEN '중형'
                         WHEN 'SUV' THEN 'SUV' WHEN '소형차' THEN '소형' WHEN '대형차' THEN '대형'
@@ -379,6 +474,8 @@ public class MergeService {
                       extra          = VALUES(extra),
                       ad_date        = COALESCE(VALUES(ad_date), platform_car.ad_date),
                       car_image_url  = VALUES(car_image_url),
+                      color          = VALUES(color),
+                      fuel           = VALUES(fuel),
                       option_array   = COALESCE(NULLIF(VALUES(option_array), ''), platform_car.option_array),
                       sel_option_array = COALESCE(NULLIF(VALUES(sel_option_array), ''), platform_car.sel_option_array),
                       seat_count     = COALESCE(VALUES(seat_count), platform_car.seat_count),
@@ -400,7 +497,9 @@ public class MergeService {
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
                    .replace("AD_DATE_EXPR_ENCAR", AD_DATE_EXPR_ENCAR)
                    .replace("RAW_TABLE", sourceTable)
-                   .replace("SELL_TYPE_FILTER", sellTypeFilter);
+                   .replace("SELL_TYPE_FILTER", sellTypeFilter)
+                   .replace("COLOR_EXPR", mapColorExpr("r.color"))
+                   .replace("FUEL_EXPR", mapFuelExpr("r.fuel"));
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
                 log.debug("{} upsert affected={}", logTag, affected);
                 return null;
@@ -434,7 +533,7 @@ public class MergeService {
                       r.maker_name, r.model_group_name, r.model_name, r.grade_name, r.grade_detail_name,
                       r.price, r.mileage, r.displacement, r.yymm,
                       'SALE',
-                      r.color, r.fuel, r.transmission,
+                      COLOR_EXPR, FUEL_EXPR, r.transmission,
                       CASE r.body_type
                         WHEN '중형차' THEN '중형' WHEN 'SUV' THEN 'SUV' WHEN '대형차' THEN '대형'
                         WHEN '경차' THEN '경차' WHEN '준중형차' THEN '준중형' WHEN '화물차' THEN '화물'
@@ -454,6 +553,8 @@ public class MergeService {
                       extra          = VALUES(extra),
                       ad_date        = COALESCE(VALUES(ad_date), platform_car.ad_date),
                       car_image_url  = VALUES(car_image_url),
+                      color          = VALUES(color),
+                      fuel           = VALUES(fuel),
                       last_seen_date = VALUES(last_seen_date),
                       updated_at     = NOW(),
                       car_no = COALESCE(platform_car.car_no, VALUES(car_no)),
@@ -468,7 +569,9 @@ public class MergeService {
                       trim_name = COALESCE(platform_car.trim_name, VALUES(trim_name)),
                       grade_name = COALESCE(platform_car.grade_name, VALUES(grade_name))
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
-                   .replace("AD_DATE_EXPR_KCAR", AD_DATE_EXPR_KCAR);
+                   .replace("AD_DATE_EXPR_KCAR", AD_DATE_EXPR_KCAR)
+                   .replace("COLOR_EXPR", mapColorExpr("r.color"))
+                   .replace("FUEL_EXPR", mapFuelExpr("r.fuel"));
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
                 log.debug("KCAR upsert affected={}", affected);
                 return null;
@@ -500,7 +603,7 @@ public class MergeService {
                       'CHUTCHA', r.car_id, r.number_plate, NULL,
                       r.brand_name, r.model_name, r.sub_model_name, r.grade_name, r.sub_grade_name,
                       r.price, r.mileage, r.displacement, r.first_reg_year, NULL,
-                      r.color, r.fuel_name, r.transmission_name,
+                      COLOR_EXPR, FUEL_EXPR, r.transmission_name,
                       CASE r.car_type
                         WHEN '경차' THEN '경차' WHEN '중대형' THEN '중형' WHEN '대형' THEN '대형'
                         WHEN '준중형' THEN '준중형' WHEN 'SUV' THEN 'SUV' WHEN '소형' THEN '소형'
@@ -519,6 +622,8 @@ public class MergeService {
                       extra          = VALUES(extra),
                       ad_date        = COALESCE(VALUES(ad_date), platform_car.ad_date),
                       car_image_url  = VALUES(car_image_url),
+                      color          = VALUES(color),
+                      fuel           = VALUES(fuel),
                       option_array   = COALESCE(NULLIF(VALUES(option_array), ''), platform_car.option_array),
                       last_seen_date = VALUES(last_seen_date),
                       updated_at     = NOW(),
@@ -529,7 +634,9 @@ public class MergeService {
                       trim_name = COALESCE(platform_car.trim_name, VALUES(trim_name)),
                       grade_name = COALESCE(platform_car.grade_name, VALUES(grade_name))
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
-                   .replace("AD_DATE_EXPR_CHUTCHA", AD_DATE_EXPR_CHUTCHA);
+                   .replace("AD_DATE_EXPR_CHUTCHA", AD_DATE_EXPR_CHUTCHA)
+                   .replace("COLOR_EXPR", mapColorExpr("r.color"))
+                   .replace("FUEL_EXPR", mapFuelExpr("r.fuel_name"));
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
                 log.debug("CHUTCHA upsert affected={}", affected);
                 return null;
@@ -566,7 +673,7 @@ public class MergeService {
                     R.maker_code, R.model_code, R.model_detail_code, R.grade_code,
                     R.maker_name, R.model_name, R.model_detail_name, R.grade_name,
                     r.sell_price, r.mileage, r.displacement, substr(r.yyyymm,1,4), 'SALE',
-                    R.color_name, R.fuel_name, R.transmission_name,
+                    COLOR_EXPR, FUEL_EXPR, R.transmission_name,
                     CASE R.car_type
                       WHEN '소형' THEN '소형' WHEN '중형' THEN '중형' WHEN '대형' THEN '대형'
                       WHEN '경형(일반형)' THEN '경차' WHEN '준중형' THEN '준중형'
@@ -585,6 +692,8 @@ public class MergeService {
                       extra          = VALUES(extra),
                       ad_date        = COALESCE(VALUES(ad_date), platform_car.ad_date),
                       car_image_url  = VALUES(car_image_url),
+                      color          = VALUES(color),
+                      fuel           = VALUES(fuel),
                       last_seen_date = VALUES(last_seen_date),
                       updated_at     = NOW(),
                       car_no = COALESCE(platform_car.car_no, VALUES(car_no)),
@@ -599,7 +708,9 @@ public class MergeService {
                       trim_name = COALESCE(platform_car.trim_name, VALUES(trim_name)),
                       grade_name = COALESCE(platform_car.grade_name, VALUES(grade_name))
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
-                   .replace("AD_DATE_EXPR_CHARANCHA", AD_DATE_EXPR_CHARANCHA);
+                   .replace("AD_DATE_EXPR_CHARANCHA", AD_DATE_EXPR_CHARANCHA)
+                   .replace("COLOR_EXPR", mapColorExpr("R.color_name"))
+                   .replace("FUEL_EXPR", mapFuelExpr("R.fuel_name"));
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
                 log.debug("CHARANCHA upsert affected={}", affected);
                 return null;
@@ -655,8 +766,8 @@ public class MergeService {
                       CASE WHEN JSON_EXTRACT(r.payload, '$.status') = 0 THEN 'ONSALE' 
                            WHEN JSON_EXTRACT(r.payload, '$.status') = 1 THEN 'SOLD'
                            ELSE 'ONSALE' END,
-                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.color')),
-                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuel')),
+                      COLOR_EXPR,
+                      FUEL_EXPR,
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.trans')),
                       r.body_type,
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.areaCd')),
@@ -687,6 +798,8 @@ public class MergeService {
                       extra          = VALUES(extra),
                       ad_date        = COALESCE(VALUES(ad_date), platform_car.ad_date),
                       car_image_url  = VALUES(car_image_url),
+                      color          = VALUES(color),
+                      fuel           = VALUES(fuel),
                       last_seen_date = VALUES(last_seen_date),
                       updated_at     = NOW(),
                       car_no = COALESCE(platform_car.car_no, VALUES(car_no)),
@@ -701,7 +814,9 @@ public class MergeService {
                       trim_name = COALESCE(platform_car.trim_name, VALUES(trim_name)),
                       grade_name = COALESCE(platform_car.grade_name, VALUES(grade_name))
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
-                   .replace("AD_DATE_EXPR_TCAR", AD_DATE_EXPR_TCAR);
+                   .replace("AD_DATE_EXPR_TCAR", AD_DATE_EXPR_TCAR)
+                   .replace("COLOR_EXPR", mapColorExpr("JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.color'))"))
+                   .replace("FUEL_EXPR", mapFuelExpr("JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuel'))"));
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
                 log.debug("TCAR upsert affected={}", affected);
                 
@@ -838,14 +953,16 @@ public class MergeService {
                        'CHACHACHA', r.car_seq, r.car_no, NULL,
                        r.MAKER_CODE, r.CLASS_CODE, r.CAR_CODE, r.MODEL_CODE, r.GRADE_CODE,
                        r.MAKER_NAME, r.CLASS_NAME, r.CAR_NAME, r.MODEL_NAME, r.GRADE_NAME,
-                       r.SELL_AMT, r.KM, r.displacement, r.YYMM, 'ONSALE', r.COLOR, r.GAS_NAME, r.auto_gbn_name, r.use_code_name, r.REGION,
+                       r.SELL_AMT, r.KM, r.displacement, r.YYMM, 'ONSALE', COLOR_EXPR, FUEL_EXPR, r.auto_gbn_name, r.use_code_name, r.REGION,
                        CONCAT('https://m.kbchachacha.com/public/web/car/detail.kbc?carSeq=', r.CAR_SEQ),
                        CONCAT('https://www.kbchachacha.com/public/car/detail.kbc?carSeq=', r.car_seq),
                        r.FIRST_AD_DAY, AD_DATE_EXPR_CHACHACHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
                     FROM raw_chachacha r
                     WHERE r.id > ? AND r.id <= ?
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
-                   .replace("AD_DATE_EXPR_CHACHACHA", AD_DATE_EXPR_CHACHACHA);
+                   .replace("AD_DATE_EXPR_CHACHACHA", AD_DATE_EXPR_CHACHACHA)
+                   .replace("COLOR_EXPR", mapColorExpr("r.COLOR"))
+                   .replace("FUEL_EXPR", mapFuelExpr("r.GAS_NAME"));
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });
@@ -889,7 +1006,7 @@ public class MergeService {
                       NULLIF(r.price_new, 0),
                       r.mileage, r.displacement , r.form_year,
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.status')),
-                      r.color, r.fuel, r.transmission,
+                      COLOR_EXPR, FUEL_EXPR, r.transmission,
                       CASE r.body_type
                         WHEN '준중형차' THEN '준중형' WHEN '경차' THEN '경차' WHEN '중형차' THEN '중형'
                         WHEN 'SUV' THEN 'SUV' WHEN '소형차' THEN '소형' WHEN '대형차' THEN '대형'
@@ -910,7 +1027,9 @@ public class MergeService {
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
                    .replace("AD_DATE_EXPR_ENCAR", AD_DATE_EXPR_ENCAR)
                    .replace("RAW_TABLE", sourceTable)
-                   .replace("SELL_TYPE_FILTER", sellTypeFilter);
+                   .replace("SELL_TYPE_FILTER", sellTypeFilter)
+                   .replace("COLOR_EXPR", mapColorExpr("r.color"))
+                   .replace("FUEL_EXPR", mapFuelExpr("r.fuel"));
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });
@@ -951,7 +1070,7 @@ public class MergeService {
                       r.maker_code, r.model_group_code, r.model_code, r.grade_code, r.grade_detail_code,
                       r.maker_name, r.model_group_name, r.model_name, r.grade_name, r.grade_detail_name,
                       r.price, r.mileage, r.displacement, r.yymm, 'SALE',
-                      r.color, r.fuel, r.transmission,
+                      COLOR_EXPR, FUEL_EXPR, r.transmission,
                       CASE r.body_type
                         WHEN '중형차' THEN '중형' WHEN 'SUV' THEN 'SUV' WHEN '대형차' THEN '대형'
                         WHEN '경차' THEN '경차' WHEN '준중형차' THEN '준중형' WHEN '화물차' THEN '화물'
@@ -966,7 +1085,9 @@ public class MergeService {
                     FROM raw_kcar r
                     WHERE r.id > ? AND r.id <= ?
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
-                   .replace("AD_DATE_EXPR_KCAR", AD_DATE_EXPR_KCAR);
+                   .replace("AD_DATE_EXPR_KCAR", AD_DATE_EXPR_KCAR)
+                   .replace("COLOR_EXPR", mapColorExpr("r.color"))
+                   .replace("FUEL_EXPR", mapFuelExpr("r.fuel"));
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });
@@ -999,7 +1120,7 @@ public class MergeService {
                       'CHUTCHA', r.car_id, r.number_plate, NULL,
                       r.brand_name, r.model_name, r.sub_model_name, r.grade_name, r.sub_grade_name,
                       r.price, r.mileage, r.displacement, r.first_reg_year, NULL,
-                      r.color, r.fuel_name, r.transmission_name,
+                      COLOR_EXPR, FUEL_EXPR, r.transmission_name,
                       CASE r.car_type
                         WHEN '경차' THEN '경차' WHEN '중대형' THEN '중형' WHEN '대형' THEN '대형'
                         WHEN '준중형' THEN '준중형' WHEN 'SUV' THEN 'SUV' WHEN '소형' THEN '소형'
@@ -1014,7 +1135,9 @@ public class MergeService {
                     From raw_chutcha r
                     WHERE r.id > ? AND r.id <= ? AND r.CAR_ID IS NOT NULL
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
-                   .replace("AD_DATE_EXPR_CHUTCHA", AD_DATE_EXPR_CHUTCHA);
+                   .replace("AD_DATE_EXPR_CHUTCHA", AD_DATE_EXPR_CHUTCHA)
+                   .replace("COLOR_EXPR", mapColorExpr("r.color"))
+                   .replace("FUEL_EXPR", mapFuelExpr("r.fuel_name"));
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });
@@ -1050,7 +1173,7 @@ public class MergeService {
                       R.maker_code, R.model_code, R.model_detail_code, R.grade_code,
                       R.maker_name, R.model_name, R.model_detail_name, R.grade_name,
                       r.sell_price, r.mileage, r.displacement, substr(r.yyyymm,1,4), 'SALE',
-                      R.color_name, R.fuel_name, R.transmission_name,
+                      COLOR_EXPR, FUEL_EXPR, R.transmission_name,
                       CASE R.car_type
                         WHEN '소형' THEN '소형' WHEN '중형' THEN '중형' WHEN '대형' THEN '대형'
                         WHEN '경형(일반형)' THEN '경차' WHEN '준중형' THEN '준중형'
@@ -1064,7 +1187,9 @@ public class MergeService {
                     FROM RAW_CHARANCHA r
                     WHERE r.id > ? AND r.id <= ?
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
-                   .replace("AD_DATE_EXPR_CHARANCHA", AD_DATE_EXPR_CHARANCHA);
+                   .replace("AD_DATE_EXPR_CHARANCHA", AD_DATE_EXPR_CHARANCHA)
+                   .replace("COLOR_EXPR", mapColorExpr("R.color_name"))
+                   .replace("FUEL_EXPR", mapFuelExpr("R.fuel_name"));
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });
@@ -1124,8 +1249,8 @@ public class MergeService {
                       CASE WHEN JSON_EXTRACT(r.payload, '$.status') = 0 THEN 'ONSALE' 
                            WHEN JSON_EXTRACT(r.payload, '$.status') = 1 THEN 'SOLD'
                            ELSE 'ONSALE' END,
-                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.color')),
-                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuel')),
+                      COLOR_EXPR,
+                      FUEL_EXPR,
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.trans')),
                       r.body_type,
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.areaCd')),
@@ -1150,7 +1275,9 @@ public class MergeService {
                         ''
                       ))) = 'S'
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
-                   .replace("AD_DATE_EXPR_TCAR", AD_DATE_EXPR_TCAR);
+                   .replace("AD_DATE_EXPR_TCAR", AD_DATE_EXPR_TCAR)
+                   .replace("COLOR_EXPR", mapColorExpr("JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.color'))"))
+                   .replace("FUEL_EXPR", mapFuelExpr("JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuel'))"));
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });

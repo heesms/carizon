@@ -23,6 +23,8 @@ public class CodeController {
   public List<Map<String,Object>> bodyTypes(@RequestParam Map<String, String> params){ return service.bodyTypes(params); }
   @GetMapping("/fuels")
   public List<Map<String,Object>> fuels(@RequestParam Map<String, String> params){ return service.fuels(params); }
+  @GetMapping("/colors")
+  public List<Map<String,Object>> colors(@RequestParam Map<String, String> params){ return service.colors(params); }
   @GetMapping("/model-groups")
   public List<Map<String,Object>> modelGroups(@RequestParam String makerCode, @RequestParam Map<String, String> params){
     long start = System.currentTimeMillis();

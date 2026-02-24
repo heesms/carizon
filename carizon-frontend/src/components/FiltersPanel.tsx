@@ -104,6 +104,15 @@ const sortByCountThenName = (a: CodeItem, b: CodeItem) => {
   return a.name.localeCompare(b.name, 'ko')
 }
 
+const isEtcItem = (item: CodeItem) => item.code === '기타' || item.name === '기타'
+
+const sortByCountThenNameWithEtcLast = (a: CodeItem, b: CodeItem) => {
+  const aEtc = isEtcItem(a)
+  const bEtc = isEtcItem(b)
+  if (aEtc !== bEtc) return aEtc ? 1 : -1
+  return sortByCountThenName(a, b)
+}
+
 const BODY_TYPE_DISPLAY_ORDER = [
   '경차',
   '소형',
@@ -1358,6 +1367,9 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     return map
   }, [])
   const visibleBodyTypes = useMemo(() => bodyTypeItems.slice().sort((a, b) => {
+    const aEtc = isEtcItem(a)
+    const bEtc = isEtcItem(b)
+    if (aEtc !== bEtc) return aEtc ? 1 : -1
     const idxA = bodyTypeDisplayOrder.get(a.code) ?? (BODY_TYPE_DISPLAY_ORDER.length + 1)
     const idxB = bodyTypeDisplayOrder.get(b.code) ?? (BODY_TYPE_DISPLAY_ORDER.length + 1)
     if (idxA !== idxB) return idxA - idxB
@@ -1368,8 +1380,8 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     fuelItems.forEach(it => m.set(it.code, countOf(it)))
     return m
   }, [fuelItems])
-  const visibleFuels = useMemo(() => fuelItems.slice().sort(sortByCountThenName), [fuelItems])
-  const visibleColors = useMemo(() => colorItems.slice().sort(sortByCountThenName), [colorItems])
+  const visibleFuels = useMemo(() => fuelItems.slice().sort(sortByCountThenNameWithEtcLast), [fuelItems])
+  const visibleColors = useMemo(() => colorItems.slice().sort(sortByCountThenNameWithEtcLast), [colorItems])
 
   return (
     <>

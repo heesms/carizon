@@ -2,6 +2,7 @@ package com.carizon.rag.controller;
 
 import com.carizon.common.dto.ApiResponse;
 import com.carizon.rag.service.LikeService;
+import com.carizon.search.service.ElasticsearchCarSearchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.Cookie;
@@ -12,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -26,6 +28,7 @@ import java.util.regex.Pattern;
 public class LikeController {
     
     private final LikeService likeService;
+    private final ElasticsearchCarSearchService elasticsearchCarSearchService;
     private static final Pattern SAFE_CLIENT_ID = Pattern.compile("^[A-Za-z0-9_-]{8,128}$");
     private static final String CLIENT_ID_COOKIE_NAME = "carizon_client_id";
     
@@ -122,5 +125,65 @@ public class LikeController {
             "counts", counts
         );
         return ResponseEntity.ok(ApiResponse.success(result));
+    }
+
+    @GetMapping("/me/cars")
+    @Operation(summary = "내 좋아요 차량 목록", description = "현재 사용자가 좋아요한 차량의 카드 목록을 조회합니다")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getMyLikedCars(
+            HttpServletRequest request,
+            @RequestParam(defaultValue = "100") int limit) {
+
+        String userId = getUserId(request);
+        List<Long> carIds = likeService.getLikedCarIds(userId, limit);
+        if (carIds.isEmpty()) {
+            return ResponseEntity.ok(ApiResponse.success(List.of()));
+        }
+        Map<Long, Long> counts = likeService.getLikeCounts(carIds);
+        List<Map<String, Object>> rows = elasticsearchCarSearchService.findCarsByIds(carIds);
+
+        Map<Long, Map<String, Object>> byCarId = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            Long carId = toLong(row.get("carId"));
+            if (carId == null) continue;
+            byCarId.put(carId, row);
+        }
+
+        List<Map<String, Object>> out = new java.util.ArrayList<>();
+        for (Long carId : carIds) {
+            Map<String, Object> row = byCarId.get(carId);
+            if (row == null) continue;
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("carId", carId);
+            item.put("maker", asText(row.get("maker")));
+            item.put("model", asText(row.get("model")));
+            item.put("trim", asText(row.get("trim")));
+            item.put("year", row.get("year"));
+            item.put("km", row.get("km"));
+            item.put("priceMin", row.get("priceMin"));
+            item.put("priceMax", row.get("priceMax"));
+            item.put("representativeImageUrl", asText(row.get("representativeImageUrl")));
+            item.put("modelCode", asText(row.get("modelCode")));
+            item.put("fuel", asText(row.get("fuel")));
+            item.put("region", asText(row.get("region")));
+            item.put("likesCount", counts.getOrDefault(carId, 0L));
+            out.add(item);
+        }
+        return ResponseEntity.ok(ApiResponse.success(out));
+    }
+
+    private static Long toLong(Object value) {
+        if (value == null) return null;
+        if (value instanceof Number number) return number.longValue();
+        try {
+            return Long.parseLong(String.valueOf(value).trim());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static String asText(Object value) {
+        if (value == null) return null;
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
     }
 }

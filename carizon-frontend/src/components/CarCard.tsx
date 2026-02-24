@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import type { CarListItem } from '@/api/cars'
-import { trackSelectItem } from '@/lib/analytics'
+import { getLike, toggleLike } from '@/api/likes'
+import { trackLike, trackSelectItem } from '@/lib/analytics'
 
 const NO_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><text fill="#9ca3af" font-family="sans-serif" font-size="13" x="200" y="158" text-anchor="middle">이미지 없음</text><rect fill="#e5e7eb" x="170" y="110" width="60" height="38" rx="4"/></svg>')}`
 
@@ -28,13 +29,87 @@ function fuelBadge(fuel?: string) {
   return 'badge-gray'
 }
 
-type Props = { item: CarListItem; likesCount?: number }
+type Props = {
+  item: CarListItem
+  likesCount?: number
+  showLikeCount?: boolean
+  loadLikeOnMount?: boolean
+  initialLiked?: boolean
+  onConfirmUnlike?: (carId: number) => boolean | Promise<boolean>
+  onLikeChanged?: (carId: number, liked: boolean, count: number) => void
+}
 
-export default function CarCard({ item, likesCount }: Props) {
+export default function CarCard({
+  item,
+  likesCount,
+  showLikeCount = true,
+  loadLikeOnMount = true,
+  initialLiked = false,
+  onConfirmUnlike,
+  onLikeChanged,
+}: Props) {
   const location = useLocation()
   const [src, setSrc] = useState(imgSrc(item))
+  const [liked, setLiked] = useState(!!initialLiked)
+  const [likeCount, setLikeCount] = useState(Number(likesCount ?? 0))
+  const [likeBusy, setLikeBusy] = useState(false)
   const price = formatPrice(item.priceMin, item.priceMax)
   if (!price) return null
+
+  useEffect(() => {
+    setLikeCount(Number(likesCount ?? 0))
+  }, [likesCount])
+
+  useEffect(() => {
+    setLiked(!!initialLiked)
+  }, [initialLiked, item.carId])
+
+  useEffect(() => {
+    if (!loadLikeOnMount) return
+    let mounted = true
+    getLike(item.carId)
+      .then((data) => {
+        if (!mounted) return
+        const nextLiked = !!data?.liked
+        const nextCount = Number(data?.count ?? likesCount ?? 0)
+        setLiked(nextLiked)
+        setLikeCount(nextCount)
+      })
+      .catch(() => {
+        // no-op
+      })
+    return () => { mounted = false }
+  }, [item.carId, likesCount, loadLikeOnMount])
+
+  const onToggleLike = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (likeBusy) return
+    const nextLiked = !liked
+    if (!nextLiked && onConfirmUnlike) {
+      try {
+        const confirmed = await Promise.resolve(onConfirmUnlike(item.carId))
+        if (!confirmed) return
+      } catch {
+        return
+      }
+    }
+
+    setLikeBusy(true)
+    try {
+      const next = await toggleLike(item.carId)
+      const nextLiked = !!next?.liked
+      const nextCount = Number(next?.count ?? 0)
+      setLiked(nextLiked)
+      setLikeCount(nextCount)
+      onLikeChanged?.(item.carId, nextLiked, nextCount)
+      trackLike(item.carId, nextLiked)
+    } catch {
+      // no-op
+    } finally {
+      setLikeBusy(false)
+    }
+  }
 
   const from = `${location.pathname}${location.search}${location.hash}`
   const source = location.pathname.startsWith('/recommendation')
@@ -51,7 +126,7 @@ export default function CarCard({ item, likesCount }: Props) {
     <Link
       to={`/cars/${item.carId}`}
       state={state}
-      className="card-hover flex flex-col group overflow-hidden"
+      className="card-hover flex flex-col group overflow-hidden h-full"
       onClick={() => trackSelectItem(item.carId, item.maker, item.model, source)}
     >
       {/* 이미지 */}
@@ -66,7 +141,7 @@ export default function CarCard({ item, likesCount }: Props) {
       </div>
 
       {/* 정보 */}
-      <div className="p-3.5 flex flex-col gap-2">
+      <div className="p-3.5 flex flex-col gap-2 min-h-[132px]">
         {/* 차명 */}
         <h3 className="font-bold text-sm leading-snug text-gray-900 group-hover:text-brand-600 transition-colors line-clamp-1">
           {item.maker} {item.model}
@@ -74,7 +149,7 @@ export default function CarCard({ item, likesCount }: Props) {
         </h3>
 
         {/* 스펙 태그 */}
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1 min-h-[40px] content-start">
           {item.year    && <span className="badge badge-gray text-[11px]">{item.year}년식</span>}
           {item.km != null && item.km > 0 && <span className="badge badge-gray text-[11px]">{item.km.toLocaleString()}km</span>}
           {item.fuel    && <span className={`badge ${fuelBadge(item.fuel)} text-[11px]`}>{item.fuel}</span>}
@@ -84,15 +159,21 @@ export default function CarCard({ item, likesCount }: Props) {
         {/* 가격 + 좋아요 */}
         <div className="flex items-end justify-between mt-auto pt-1">
           <span className="text-lg font-black text-brand-600">{price}</span>
-          {likesCount != null && (
-            <span className="flex items-center gap-1 text-xs text-gray-400">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
-              </svg>
-              {likesCount}
-            </span>
-          )}
+          <button
+            type="button"
+            onClick={onToggleLike}
+            disabled={likeBusy}
+            className={`inline-flex items-center justify-center text-xs rounded-md w-7 h-7 transition ${
+              liked ? 'text-red-500 bg-red-50' : 'text-gray-400 hover:text-red-400 hover:bg-red-50'
+            } ${likeBusy ? 'opacity-60 cursor-wait' : ''}`}
+            aria-label={liked ? '좋아요 취소' : '좋아요'}
+          >
+            <svg className="w-3.5 h-3.5" fill={liked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
+            </svg>
+            {showLikeCount && <span className="ml-1 text-[11px] leading-none">{likeCount}</span>}
+          </button>
         </div>
       </div>
     </Link>

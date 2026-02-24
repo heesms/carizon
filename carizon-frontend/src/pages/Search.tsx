@@ -4,7 +4,6 @@ import FiltersPanel from '@/components/FiltersPanel'
 import CarCard from '@/components/CarCard'
 import AdSlot from '@/components/AdSlot'
 import { searchCars, type CarListItem } from '@/api/cars'
-import { batchLikes } from '@/api/likes'
 import { getRecommendations } from '@/api/recommendations'
 import { trackFilterApply, trackSearch } from '@/lib/analytics'
 
@@ -23,7 +22,6 @@ export default function Search() {
   const [totalPages, setTotalPages]   = useState(0)
   const [totalElements, setTotal]     = useState(0)
   const [loading, setLoading]         = useState(false)
-  const [likesByCarId, setLikesByCarId] = useState<Record<number, number>>({})
   const [aiFallbackList, setAiFallbackList] = useState<CarListItem[]>([])
   const [aiFallbackMessage, setAiFallbackMessage] = useState('')
   const [aiFallbackLoading, setAiFallbackLoading] = useState(false)
@@ -124,27 +122,6 @@ export default function Search() {
     }
   }, [loading, textQuery, list.length])
 
-  useEffect(() => {
-    let cancelled = false
-    const carIds = filteredVisibleList.map(it => Number(it.carId)).filter(Number.isFinite)
-    if (carIds.length === 0) {
-      setLikesByCarId({})
-      return
-    }
-    batchLikes(carIds)
-      .then(data => {
-        if (cancelled) return
-        setLikesByCarId(data ?? {})
-      })
-      .catch(() => {
-        if (cancelled) return
-        setLikesByCarId({})
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [filteredVisibleList])
-
   const setFilters = (v: Record<string, any>) => {
     if (v.q) trackSearch(v.q)
     else trackFilterApply(v)
@@ -237,7 +214,11 @@ export default function Search() {
           .map((it, idx) => (
             <React.Fragment key={it.carId}>
               <div className="animate-fade-in" style={{ animationDelay: `${idx * 0.03}s` }}>
-                <CarCard item={it} likesCount={likesByCarId[it.carId] ?? 0} />
+                <CarCard
+                  item={it}
+                  showLikeCount={false}
+                  loadLikeOnMount={false}
+                />
               </div>
               {/* 9번째 카드 뒤에 그리드 내 광고 삽입 */}
               {idx === 8 && filteredVisibleList.length > 9 && (

@@ -38,6 +38,22 @@ public class RecommendationElasticsearchService {
     private static final Set<String> BROAD_CATEGORY_TOKENS = Set.of(
             "수입차", "외제차", "국산차", "패밀리카", "가족차", "가성비", "출퇴근", "저주행", "세단", "suv", "rv"
     );
+    private static final Set<String> TEXT_QUERY_NOISE_TOKENS = Set.of(
+            "추천", "보여줘", "보여주세요", "찾아줘", "찾아주세요", "해주세요", "해줘",
+            "위주", "조건", "매물", "차량", "자동차",
+            "수입", "수입차", "외제", "외제차", "국산", "국산차",
+            "이하", "이상", "미만", "초과", "이내", "언더", "오버",
+            "가격", "예산", "만원", "만", "원", "억", "대"
+    );
+    private static final Set<String> RELAXABLE_FILTER_KEYS = Set.of(
+            "makerCode", "makerCodes", "excludeMakerCodes",
+            "modelCode",
+            "fuel", "bodyType",
+            "priceMin", "priceMax",
+            "yearMin", "yearMax",
+            "kmMin", "kmMax",
+            "sort"
+    );
 
     private final ElasticsearchCarSearchService elasticsearchCarSearchService;
     private final CarMapper carMapper;
@@ -283,7 +299,17 @@ public class RecommendationElasticsearchService {
         if (primaryQ != null && modelFilter != null && !primaryQ.equalsIgnoreCase(modelFilter)) {
             Map<String, Object> m = new LinkedHashMap<>(primaryParams);
             m.put("q", modelFilter);
-            out.add(m);
+            addFallbackParam(out, m);
+        }
+
+        // 0건일 때는 LLM이 과하게 건 구조화 필터를 풀고 text query 중심으로 재시도한다.
+        if (primaryQ != null) {
+            Map<String, Object> relaxed = relaxToTextQueryOnly(primaryParams, primaryQ);
+            addFallbackParam(out, relaxed);
+        }
+        if (modelFilter != null && (primaryQ == null || !primaryQ.equalsIgnoreCase(modelFilter))) {
+            Map<String, Object> relaxedModel = relaxToTextQueryOnly(primaryParams, modelFilter);
+            addFallbackParam(out, relaxedModel);
         }
 
         // 검색 텍스트 fallback(useLlm=false)에서는 q를 제거하지 않는다.
@@ -293,9 +319,27 @@ public class RecommendationElasticsearchService {
         if (allowDropQFallback && primaryQ != null) {
             Map<String, Object> m = new LinkedHashMap<>(primaryParams);
             m.remove("q");
-            out.add(m);
+            addFallbackParam(out, m);
         }
         return out;
+    }
+
+    private static Map<String, Object> relaxToTextQueryOnly(Map<String, Object> source, String query) {
+        Map<String, Object> out = new LinkedHashMap<>(source);
+        out.put("q", query);
+        for (String key : RELAXABLE_FILTER_KEYS) {
+            out.remove(key);
+        }
+        out.put("q", query);
+        return out;
+    }
+
+    private static void addFallbackParam(List<Map<String, Object>> out, Map<String, Object> candidate) {
+        if (out == null || candidate == null || candidate.isEmpty()) return;
+        for (Map<String, Object> existing : out) {
+            if (candidate.equals(existing)) return;
+        }
+        out.add(candidate);
     }
 
     private static List<CarListItemDto> extractCarItems(Object content) {
@@ -522,6 +566,10 @@ public class RecommendationElasticsearchService {
         String q = trimOrNull(raw);
         if (q == null) return null;
         String compact = q.replaceAll("[\\p{Punct}]+", " ").replaceAll("\\s+", " ").trim();
+        compact = compact
+                .replaceAll("(\\d+)\\s*천\\s*만\\s*원", "$1천만원")
+                .replaceAll("(\\d+)\\s*만\\s*원", "$1만원")
+                .replaceAll("(\\d+)\\s*억", "$1억");
         if (compact.isEmpty()) return null;
         String[] tokens = compact.split("\\s+");
         LinkedHashSet<String> selected = new LinkedHashSet<>();
@@ -529,12 +577,30 @@ public class RecommendationElasticsearchService {
             String t = trimOrNull(token);
             if (t == null) continue;
             String lower = t.toLowerCase(Locale.ROOT);
-            if (lower.matches("(추천|보여줘|보여주세요|찾아줘|찾아주세요|해주세요|해줘|위주|조건|매물|차량|자동차)")) continue;
+            if (isNoiseTextToken(t, lower)) continue;
             if (selected.size() >= 8) break;
             selected.add(t);
         }
-        if (selected.isEmpty()) return compact;
+        if (selected.isEmpty()) return null;
         return String.join(" ", selected);
+    }
+
+    private static boolean isNoiseTextToken(String token, String lowerToken) {
+        if (TEXT_QUERY_NOISE_TOKENS.contains(lowerToken)) return true;
+        if (BROAD_CATEGORY_TOKENS.contains(lowerToken)) return true;
+        if (lowerToken.matches("\\d{1,2}억대?")) return true;
+        if (lowerToken.matches("\\d{1,2}천만원대?")) return true;
+        if (lowerToken.matches("\\d{1,2}천만대?")) return true;
+        if (lowerToken.matches("\\d{1,5}만원대?")) return true;
+        if (lowerToken.matches("\\d{1,5}만대?")) return true;
+        if (lowerToken.matches("\\d{1,5}만")) return true;
+        if (lowerToken.matches("\\d{1,7}원")) return true;
+        if (lowerToken.matches("\\d{2,4}년식?")) return true;
+        if (lowerToken.matches(".*\\d.*") && (lowerToken.contains("만") || lowerToken.contains("억") || lowerToken.contains("원"))) {
+            return true;
+        }
+        String compact = lowerToken.replaceAll("\\s+", "");
+        return compact.matches("(이하|이상|미만|초과|이내)(로|는|인|이면)?");
     }
 
     private static boolean isBroadCategoryOnlyQuery(String query) {

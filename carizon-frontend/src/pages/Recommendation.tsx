@@ -261,19 +261,18 @@ function RecommendedCarCard({
   fromLocation: Location
 }) {
   const [liked, setLiked]     = useState(false)
-  const [likeCount, setCount] = useState(0)
   const [imgSrc, setImgSrc]   = useState(car.imageUrl || NO_IMAGE)
 
   useEffect(() => {
     if (!car.carId) return
-    getLike(car.carId).then(r => { setLiked(r.liked); setCount(r.count) }).catch(() => {})
+    getLike(car.carId).then(r => { setLiked(r.liked) }).catch(() => {})
   }, [car.carId])
 
   const handleLike = async (e: React.MouseEvent) => {
     e.preventDefault()
     if (!car.carId) return
     const res = await toggleLike(car.carId).catch(() => null)
-    if (res) { setLiked(res.liked); setCount(res.count) }
+    if (res) { setLiked(res.liked) }
   }
 
   const cfg = RANK_STYLES[rank]
@@ -336,13 +335,12 @@ function RecommendedCarCard({
             )}
             {car.carId && (
               <button onClick={handleLike}
-                className={`flex items-center gap-0.5 text-[10px] sm:text-xs font-semibold px-2 py-1 rounded-lg transition-colors
+                className={`flex items-center justify-center w-7 h-7 rounded-lg transition-colors
                   ${liked ? 'text-red-500 bg-red-50' : 'text-gray-400 hover:text-red-400 hover:bg-red-50'}`}>
                 <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5" fill={liked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
                 </svg>
-                {likeCount}
               </button>
             )}
           </div>
@@ -400,13 +398,12 @@ function RecommendedCarCard({
         )}
         {car.carId && (
           <button onClick={handleLike}
-            className={`flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-lg transition-colors
+            className={`flex items-center justify-center w-6 h-6 rounded-lg transition-colors
               ${liked ? 'text-red-500 bg-red-50' : 'text-gray-400 hover:text-red-400 hover:bg-red-50'}`}>
             <svg className="w-3 h-3" fill={liked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
             </svg>
-            {likeCount}
           </button>
         )}
       </div>

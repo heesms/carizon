@@ -158,7 +158,7 @@ function DetailModal() {
       <Route
         path="/cars/:id"
         element={
-          <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4 lg:p-6">
+          <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:px-6 sm:py-6 lg:px-10 lg:py-8">
             {/* 반투명 배경 */}
             <div
               className="absolute inset-0 bg-black/40 backdrop-blur-[3px] animate-fade-in"
@@ -169,8 +169,8 @@ function DetailModal() {
             <div
               ref={sheetRef}
               className="relative bg-white
-                rounded-t-[32px] sm:rounded-[28px]
-                flex flex-col w-full sm:max-w-4xl
+                rounded-t-[32px] sm:rounded-tl-[28px] sm:rounded-tr-[28px] sm:rounded-bl-[28px] sm:rounded-br-[28px]
+                overflow-hidden flex flex-col w-full sm:max-w-[52rem] xl:max-w-4xl
                 animate-sheet-up sm:animate-dialog-in"
               style={{
                 maxHeight: '94dvh',

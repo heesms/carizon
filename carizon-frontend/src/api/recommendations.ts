@@ -39,7 +39,7 @@ export type RecommendationRequest = {
 }
 
 export const getRecommendations = (body: RecommendationRequest): Promise<RecommendationResponse> =>
-  fetch('/api/recommendations', {
+  fetch('/api/v2/recommendations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ maxResults: 5, ...body }),

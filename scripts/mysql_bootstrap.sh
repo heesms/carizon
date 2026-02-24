@@ -17,10 +17,44 @@ MYSQL_ROOT_USER="${MYSQL_ROOT_USER:-root}"
 
 DDL_SOURCE="${DDL_SOURCE:-./schema_from_excel.sql}"
 DDL_FIXED_TMP="${DDL_FIXED_TMP:-/tmp/carizon_schema_fixed.sql}"
+SEED_FIXED_TMP="${SEED_FIXED_TMP:-/tmp/carizon_seed_fixed.sql}"
 MIGRATIONS_DIR="${MIGRATIONS_DIR:-./backend/src/main/resources/db/migrations}"
 SEED_SOURCE="${SEED_SOURCE:-./infra/mysql/carizon_seed.sql}"
 SKIP_EXISTENCE_CHECK="${SKIP_EXISTENCE_CHECK:-false}"
 RESET_DATABASE="${RESET_DATABASE:-false}"
+SEED_FORCE_IMPORT="${SEED_FORCE_IMPORT:-false}"
+
+normalize_seed_file() {
+  local src="$1"
+  local dst="$2"
+
+  if [ ! -f "${src}" ]; then
+    echo "[bootstrap] seed source not found: ${src}"
+    return 1
+  fi
+
+  local file_info=""
+  if command -v file >/dev/null 2>&1; then
+    file_info="$(file -b "${src}" || true)"
+  fi
+
+  echo "[bootstrap] normalize seed: ${src} (${file_info:-unknown})"
+  if echo "${file_info}" | grep -qi 'utf-16'; then
+    if ! iconv -f UTF-16 -t UTF-8 "${src}" -o "${dst}"; then
+      if ! iconv -f UTF-16LE -t UTF-8 "${src}" -o "${dst}"; then
+        echo "[bootstrap] iconv failed. fallback: cp with binary cleanup"
+        cp "${src}" "${dst}"
+      fi
+    fi
+  else
+    cp "${src}" "${dst}"
+  fi
+
+  tr -d '\000' < "${dst}" > "${dst}.clean"
+  mv "${dst}.clean" "${dst}"
+  sed -i 's/\r$//' "${dst}"
+  echo "[bootstrap] prepared seed file: ${dst}"
+}
 
 echo "[bootstrap] start mysql bootstrap"
 docker compose -f "${COMPOSE_FILE}" up -d mysql
@@ -98,8 +132,16 @@ for file in "${MIGRATIONS_DIR}"/*.sql; do
 done
 
 if [ -f "${SEED_SOURCE}" ]; then
-  echo "[bootstrap] run seed: ${SEED_SOURCE}"
-  cat "${SEED_SOURCE}" | docker exec -i "${MYSQL_CONTAINER}" mysql -u"${MYSQL_ROOT_USER}" -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}"
+  if normalize_seed_file "${SEED_SOURCE}" "${SEED_FIXED_TMP}"; then
+    echo "[bootstrap] run seed: ${SEED_FIXED_TMP}"
+    if [ "${SEED_FORCE_IMPORT}" = "true" ]; then
+      docker exec -i "${MYSQL_CONTAINER}" mysql --default-character-set=utf8mb4 --binary-mode=1 --force -u"${MYSQL_ROOT_USER}" -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" < "${SEED_FIXED_TMP}"
+    else
+      docker exec -i "${MYSQL_CONTAINER}" mysql --default-character-set=utf8mb4 --binary-mode=1 -u"${MYSQL_ROOT_USER}" -p"${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" < "${SEED_FIXED_TMP}"
+    fi
+  else
+    echo "[bootstrap] skipped seed import due to missing/invalid source."
+  fi
 else
   echo "[bootstrap] seed file not found, skipped: ${SEED_SOURCE}"
 fi

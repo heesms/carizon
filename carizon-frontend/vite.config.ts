@@ -12,6 +12,9 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     hmr: { host: '127.0.0.1', port: 5173, protocol: 'ws' },
-    proxy: { '/api': { target: 'http://localhost:8080', changeOrigin: true } }
+    proxy: {
+      '/api': { target: 'http://localhost:8080', changeOrigin: true },
+      '/admin': { target: 'http://localhost:8080', changeOrigin: true },
+    }
   },
 })

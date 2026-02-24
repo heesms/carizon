@@ -4,6 +4,7 @@ import com.carizon.dto.CarListItemDto;
 import com.carizon.search.config.ElasticsearchConfig;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.SortOrder;
+import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders;
 import co.elastic.clients.json.JsonData;
@@ -36,6 +37,14 @@ public class ElasticsearchCarSearchService {
     private final ElasticsearchClient client;
     private final ObjectMapper objectMapper;
     private static final String INDEX = ElasticsearchConfig.CARS_INDEX;
+    private static final List<String> TEXT_SEARCH_FIELDS = List.of(
+        "makerName", "modelName", "trimName", "modelCode",
+        "fuel", "color", "bodyType", "region", "transmission"
+    );
+    private static final List<String> TEXT_SEARCH_WILDCARD_FIELDS = List.of(
+        "makerName", "modelName", "trimName", "modelCode",
+        "fuel.keyword", "color.keyword", "bodyType.keyword", "region.keyword", "transmission.keyword"
+    );
 
     /**
      * 차량 검색 (페이징, 필터, 정렬, 전체 건수 포함)
@@ -191,6 +200,52 @@ public class ElasticsearchCarSearchService {
         }
     }
 
+    /**
+     * carId 목록으로 차량 카드 데이터를 조회.
+     * 좋아요 목록 페이지에서 DB를 거치지 않고 ES 문서를 직접 사용한다.
+     */
+    public List<Map<String, Object>> findCarsByIds(List<Long> carIds) {
+        if (carIds == null || carIds.isEmpty()) return List.of();
+        try {
+            LinkedHashSet<Long> uniqueIds = new LinkedHashSet<>();
+            for (Long carId : carIds) {
+                if (carId == null || carId <= 0) continue;
+                uniqueIds.add(carId);
+            }
+            if (uniqueIds.isEmpty()) return List.of();
+
+            List<FieldValue> values = new ArrayList<>(uniqueIds.size());
+            for (Long id : uniqueIds) values.add(FieldValue.of(id));
+
+            SearchRequest request = new SearchRequest.Builder()
+                .index(INDEX)
+                .size(Math.min(values.size(), 500))
+                .trackTotalHits(t -> t.enabled(false))
+                .query(QueryBuilders.terms(t -> t.field("carId").terms(v -> v.value(values))))
+                .build();
+
+            SearchResponse<Map> response = client.search(request, Map.class);
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (Hit<Map> hit : response.hits().hits()) {
+                Map<String, Object> source = hit.source();
+                if (source == null) continue;
+                Map<String, Object> item = convertToCardItem(source);
+                if (item != null) out.add(item);
+            }
+            return out;
+        } catch (ElasticsearchException e) {
+            String msg = e.getMessage() != null ? e.getMessage() : "";
+            if (msg.contains("index_not_found") || msg.contains("no such index")) {
+                return List.of();
+            }
+            log.warn("[Elasticsearch] findCarsByIds failed", e);
+            return List.of();
+        } catch (Exception e) {
+            log.warn("[Elasticsearch] findCarsByIds failed", e);
+            return List.of();
+        }
+    }
+
     private Query buildQuery(Map<String, Object> params) {
         List<Query> must = new ArrayList<>();
         List<Query> filter = new ArrayList<>();
@@ -199,13 +254,9 @@ public class ElasticsearchCarSearchService {
         List<String> excludeMakerCodes = parseCsvValues(params.get("excludeMakerCodes"));
 
         String q = buildSearchQuery(params);
-        if (q != null && !q.isEmpty()) {
-            must.add(QueryBuilders.bool(b -> b
-                .should(QueryBuilders.multiMatch(m -> m.query(q).fields("makerName", "modelName", "trimName", "modelCode")))
-                .should(QueryBuilders.wildcard(w -> w.field("makerName").value("*" + q + "*")))
-                .should(QueryBuilders.wildcard(w -> w.field("modelName").value("*" + q + "*")))
-                .minimumShouldMatch("1")
-            ));
+        Query textSearchMust = buildTextSearchQuery(q);
+        if (textSearchMust != null) {
+            must.add(textSearchMust);
         }
         if (params.get("makerCode") != null) {
             filter.add(QueryBuilders.term(t -> t.field("makerCode").value(String.valueOf(params.get("makerCode")))));
@@ -282,38 +333,24 @@ public class ElasticsearchCarSearchService {
         }
         if (priceMax != null) {
             final int finalPriceMax = priceMax;
-            filter.add(QueryBuilders.range(r -> r.field("priceMax").lte(JsonData.of(finalPriceMax))));
+            // 예산 상한은 "최저가(priceMin) <= budget"으로 판단해야
+            // 멀티 플랫폼 가격 범위(priceMin~priceMax)를 가진 차량이 누락되지 않는다.
+            filter.add(QueryBuilders.range(r -> r.field("priceMin").lte(JsonData.of(finalPriceMax))));
         }
-        List<String> fuels = parseCsvValues(params.get("fuel"));
+        List<String> fuels = parseFuelTokens(params.get("fuel"));
         if (!fuels.isEmpty()) {
-            if (fuels.size() == 1) {
-                filter.add(QueryBuilders.term(t -> t.field("fuel.keyword").value(fuels.get(0))));
-            } else {
-                filter.add(QueryBuilders.bool(b -> {
-                    List<Query> should = new ArrayList<>();
-                    for (String fuel : fuels) {
-                        should.add(QueryBuilders.term(t -> t.field("fuel.keyword").value(fuel)));
-                    }
-                    b.should(should);
-                    b.minimumShouldMatch("1");
-                    return b;
-                }));
-            }
+            filter.add(buildTermsOrMissingQuery("fuel.keyword", "fuel", fuels));
+        }
+        List<String> colors = parseColorTokens(params.get("color"));
+        if (!colors.isEmpty()) {
+            filter.add(buildTermsOrMissingQuery("color.keyword", "color", colors));
         }
         if (params.get("transmission") != null && !String.valueOf(params.get("transmission")).isEmpty()) {
             filter.add(QueryBuilders.term(t -> t.field("transmission.keyword").value(String.valueOf(params.get("transmission")))));
         }
         List<String> bodyTypes = parseBodyTypeTokens(params.get("bodyType"));
         if (!bodyTypes.isEmpty()) {
-            filter.add(QueryBuilders.bool(b -> {
-                List<Query> should = new ArrayList<>();
-                for (String bt : bodyTypes) {
-                    should.add(QueryBuilders.term(t -> t.field("bodyType.keyword").value(bt)));
-                }
-                b.should(should);
-                b.minimumShouldMatch("1");
-                return b;
-            }));
+            filter.add(buildTermsOrMissingQuery("bodyType.keyword", "bodyType", bodyTypes));
         }
         if (params.get("region") != null && !String.valueOf(params.get("region")).isEmpty()) {
             filter.add(QueryBuilders.term(t -> t.field("region.keyword").value(String.valueOf(params.get("region")))));
@@ -381,15 +418,9 @@ public class ElasticsearchCarSearchService {
         List<String> modelCodes = parseCsvValues(params.get("modelCode"));
         List<String> makerCodes = parseCsvValues(params.get("makerCodes"));
         List<String> excludeMakerCodes = parseCsvValues(params.get("excludeMakerCodes"));
-        if (q != null && !q.isEmpty()) {
-            must.add(Map.of("bool", Map.of(
-                "should", List.of(
-                    Map.of("multi_match", Map.of("query", q, "fields", List.of("makerName", "modelName", "trimName", "modelCode"))),
-                    Map.of("wildcard", Map.of("makerName", Map.of("value", "*" + q + "*"))),
-                    Map.of("wildcard", Map.of("modelName", Map.of("value", "*" + q + "*")))
-                ),
-                "minimum_should_match", "1"
-            )));
+        Map<String, Object> textSearchMust = buildTextSearchClauseMap(q);
+        if (!textSearchMust.isEmpty()) {
+            must.add(textSearchMust);
         }
         if (params.get("makerCode") != null) filter.add(Map.of("term", Map.of("makerCode", params.get("makerCode"))));
         if (!makerCodes.isEmpty()) {
@@ -428,19 +459,21 @@ public class ElasticsearchCarSearchService {
             priceMax = null;
         }
         if (priceMin != null) filter.add(Map.of("range", Map.of("priceMin", Map.of("gte", priceMin))));
-        if (priceMax != null) filter.add(Map.of("range", Map.of("priceMax", Map.of("lte", priceMax))));
-        List<String> fuels = parseCsvValues(params.get("fuel"));
+        if (priceMax != null) {
+            filter.add(Map.of("range", Map.of("priceMin", Map.of("lte", priceMax))));
+        }
+        List<String> fuels = parseFuelTokens(params.get("fuel"));
         if (!fuels.isEmpty()) {
-            if (fuels.size() == 1) {
-                filter.add(Map.of("term", Map.of("fuel.keyword", fuels.get(0))));
-            } else {
-                filter.add(Map.of("terms", Map.of("fuel.keyword", fuels)));
-            }
+            filter.add(buildTermsOrMissingMap("fuel.keyword", "fuel", fuels));
+        }
+        List<String> colors = parseColorTokens(params.get("color"));
+        if (!colors.isEmpty()) {
+            filter.add(buildTermsOrMissingMap("color.keyword", "color", colors));
         }
         if (params.get("transmission") != null && !String.valueOf(params.get("transmission")).isEmpty()) filter.add(Map.of("term", Map.of("transmission.keyword", params.get("transmission"))));
         List<String> bodyTypes = parseBodyTypeTokens(params.get("bodyType"));
         if (!bodyTypes.isEmpty()) {
-            filter.add(Map.of("terms", Map.of("bodyType.keyword", bodyTypes)));
+            filter.add(buildTermsOrMissingMap("bodyType.keyword", "bodyType", bodyTypes));
         }
         if (params.get("region") != null && !String.valueOf(params.get("region")).isEmpty()) filter.add(Map.of("term", Map.of("region.keyword", params.get("region"))));
         if (params.get("carNo") != null && !String.valueOf(params.get("carNo")).trim().isEmpty()) filter.add(Map.of("term", Map.of("carNo.keyword", String.valueOf(params.get("carNo")).trim())));
@@ -476,6 +509,9 @@ public class ElasticsearchCarSearchService {
                 out.put("priceUpdatedAt", ((java.sql.Timestamp) v).toLocalDateTime().toString());
             }
         }
+        out.put("fuel", normalizeFuelType(asNullableString(out.get("fuel"))));
+        out.put("color", normalizeColorType(asNullableString(out.get("color"))));
+        out.put("bodyType", normalizeBodyType(asNullableString(out.get("bodyType"))));
         out.entrySet().removeIf(e -> e.getValue() == null && !"carId".equals(e.getKey()));
         return out;
     }
@@ -537,29 +573,249 @@ public class ElasticsearchCarSearchService {
         return new ArrayList<>(values);
     }
 
+    private static Query buildTextSearchQuery(String rawQuery) {
+        if (rawQuery == null) return null;
+        String query = rawQuery.trim();
+        if (query.isEmpty()) return null;
+
+        List<Query> should = new ArrayList<>();
+        should.add(QueryBuilders.multiMatch(m -> m.query(query).fields(TEXT_SEARCH_FIELDS)));
+        for (String field : TEXT_SEARCH_WILDCARD_FIELDS) {
+            should.add(QueryBuilders.wildcard(w -> w.field(field).value("*" + query + "*").caseInsensitive(true)));
+        }
+
+        return QueryBuilders.bool(b -> {
+            b.should(should);
+            b.minimumShouldMatch("1");
+            return b;
+        });
+    }
+
+    private static Map<String, Object> buildTextSearchClauseMap(String rawQuery) {
+        if (rawQuery == null) return Map.of();
+        String query = rawQuery.trim();
+        if (query.isEmpty()) return Map.of();
+
+        List<Map<String, Object>> should = new ArrayList<>();
+        should.add(Map.of("multi_match", Map.of("query", query, "fields", TEXT_SEARCH_FIELDS)));
+        for (String field : TEXT_SEARCH_WILDCARD_FIELDS) {
+            should.add(Map.of(
+                "wildcard", Map.of(
+                    field, Map.of(
+                        "value", "*" + query + "*",
+                        "case_insensitive", true
+                    )
+                )
+            ));
+        }
+
+        return Map.of("bool", Map.of(
+            "should", should,
+            "minimum_should_match", "1"
+        ));
+    }
+
+    private static Query buildTermsOrMissingQuery(String keywordField, String existsField, List<String> values) {
+        List<Query> should = new ArrayList<>();
+        for (String value : values) {
+            should.add(QueryBuilders.term(t -> t.field(keywordField).value(value)));
+        }
+        if (containsEtc(values)) {
+            should.add(QueryBuilders.bool(b -> b.mustNot(QueryBuilders.exists(e -> e.field(existsField)))));
+        }
+        if (should.size() == 1) return should.get(0);
+        return QueryBuilders.bool(b -> {
+            b.should(should);
+            b.minimumShouldMatch("1");
+            return b;
+        });
+    }
+
+    private static Map<String, Object> buildTermsOrMissingMap(String keywordField, String existsField, List<String> values) {
+        List<Map<String, Object>> should = new ArrayList<>();
+        for (String value : values) {
+            should.add(Map.of("term", Map.of(keywordField, value)));
+        }
+        if (containsEtc(values)) {
+            should.add(Map.of("bool", Map.of(
+                "must_not", List.of(Map.of("exists", Map.of("field", existsField)))
+            )));
+        }
+        if (should.size() == 1) return should.get(0);
+        return Map.of("bool", Map.of(
+            "should", should,
+            "minimum_should_match", "1"
+        ));
+    }
+
+    private static boolean containsEtc(List<String> values) {
+        if (values == null || values.isEmpty()) return false;
+        for (String value : values) {
+            if ("기타".equals(value)) return true;
+        }
+        return false;
+    }
+
     private static List<String> parseBodyTypeTokens(Object value) {
         List<String> values = parseCsvValues(value);
         if (values.isEmpty()) return List.of();
 
         LinkedHashSet<String> tokens = new LinkedHashSet<>();
         for (String item : values) {
-            String trimmed = item == null ? "" : item.trim();
-            if (trimmed.isEmpty()) continue;
-
-            if ("스포츠카".equalsIgnoreCase(trimmed) || "sportscar".equalsIgnoreCase(trimmed) || "sports car".equalsIgnoreCase(trimmed)) {
-                tokens.add("스포츠카");
-                tokens.add("쿠페");
-                tokens.add("컨버터블");
-            }
-
-            // 영문 차종(SUV/RV)은 소문자 우선 + 대문자 호환 둘 다 지원
-            String lower = trimmed.toLowerCase(Locale.ROOT);
-            String upper = trimmed.toUpperCase(Locale.ROOT);
-            tokens.add(lower);
-            tokens.add(upper);
-            tokens.add(trimmed);
+            String normalized = normalizeBodyType(item);
+            if (normalized == null || normalized.isBlank()) continue;
+            addLegacyBodyTypeTokens(tokens, normalized);
         }
         return new ArrayList<>(tokens);
+    }
+
+    private static void addLegacyBodyTypeTokens(Set<String> out, String normalized) {
+        out.add(normalized);
+        switch (normalized) {
+            case "SUV" -> Collections.addAll(out, "suv");
+            case "RV" -> Collections.addAll(out, "rv");
+            case "준중형" -> Collections.addAll(out, "준중형차");
+            case "중형" -> Collections.addAll(out, "중형차");
+            case "대형" -> Collections.addAll(out, "대형차");
+            case "소형" -> Collections.addAll(out, "소형차");
+            case "승합" -> Collections.addAll(out, "승합차", "경승합차");
+            case "화물" -> Collections.addAll(out, "화물차", "트럭");
+            case "스포츠카" -> Collections.addAll(out, "쿠페", "컨버터블", "sportscar", "sports car");
+            case "기타" -> Collections.addAll(out, "null");
+            default -> {
+            }
+        }
+    }
+
+    private static List<String> parseFuelTokens(Object value) {
+        List<String> values = parseCsvValues(value);
+        if (values.isEmpty()) return List.of();
+
+        LinkedHashSet<String> tokens = new LinkedHashSet<>();
+        for (String item : values) {
+            String normalized = normalizeFuelType(item);
+            if (normalized == null || normalized.isBlank()) continue;
+            addLegacyFuelTokens(tokens, normalized);
+        }
+        return new ArrayList<>(tokens);
+    }
+
+    private static void addLegacyFuelTokens(Set<String> out, String normalized) {
+        out.add(normalized);
+        switch (normalized) {
+            case "LPG" -> Collections.addAll(out, "LPG(일반인)", "LPG(일반인 구입)");
+            case "하이브리드" -> Collections.addAll(out, "하이브리드(가솔린)");
+            case "기타" -> Collections.addAll(out, "null");
+            default -> {
+            }
+        }
+    }
+
+    private static List<String> parseColorTokens(Object value) {
+        List<String> values = parseCsvValues(value);
+        if (values.isEmpty()) return List.of();
+
+        LinkedHashSet<String> tokens = new LinkedHashSet<>();
+        for (String item : values) {
+            String normalized = normalizeColorType(item);
+            if (normalized == null || normalized.isBlank()) continue;
+            addLegacyColorTokens(tokens, normalized);
+        }
+        return new ArrayList<>(tokens);
+    }
+
+    private static void addLegacyColorTokens(Set<String> out, String normalized) {
+        out.add(normalized);
+        switch (normalized) {
+            case "회색" -> Collections.addAll(out, "쥐색");
+            case "하늘색" -> Collections.addAll(out, "하늘");
+            case "파랑색" -> Collections.addAll(out, "파랑", "파란색", "청색", "남색");
+            case "초록색" -> Collections.addAll(out, "청옥색", "연두색", "담녹색", "녹색");
+            case "진주색투톤" -> Collections.addAll(out, "진주투톤");
+            case "진주색" -> Collections.addAll(out, "진주");
+            case "주황색" -> Collections.addAll(out, "주황");
+            case "보라색" -> Collections.addAll(out, "보라", "자주색");
+            case "은색" -> Collections.addAll(out, "은회색", "은하색", "명은색");
+            case "금색" -> Collections.addAll(out, "연금색");
+            case "빨강색" -> Collections.addAll(out, "빨강", "빨간색");
+            case "분홍색" -> Collections.addAll(out, "분홍");
+            case "노랑색" -> Collections.addAll(out, "노랑", "노란색");
+            case "미색" -> Collections.addAll(out, "갈대색");
+            case "검정색" -> Collections.addAll(out, "검정");
+            case "기타" -> Collections.addAll(out, "인기색상", "null");
+            default -> {
+            }
+        }
+    }
+
+    private static String normalizeColorType(String raw) {
+        if (raw == null) return "기타";
+        String v = raw.trim();
+        if (v.isBlank()) return "기타";
+        if ("null".equalsIgnoreCase(v)) return "기타";
+        return switch (v) {
+            case "흰색투톤" -> "흰색투톤";
+            case "흰색" -> "흰색";
+            case "회색", "쥐색" -> "회색";
+            case "하늘색", "하늘" -> "하늘색";
+            case "파랑색", "파랑", "파란색", "청색", "남색" -> "파랑색";
+            case "초록색", "청옥색", "연두색", "담녹색", "녹색" -> "초록색";
+            case "진주색투톤", "진주투톤" -> "진주색투톤";
+            case "진주색", "진주" -> "진주색";
+            case "주황색", "주황" -> "주황색";
+            case "보라색", "보라", "자주색" -> "보라색";
+            case "은색", "은회색", "은하색", "명은색" -> "은색";
+            case "은색투톤" -> "은색투톤";
+            case "금색", "연금색" -> "금색";
+            case "금색투톤" -> "금색투톤";
+            case "빨강색", "빨강", "빨간색" -> "빨강색";
+            case "분홍색", "분홍" -> "분홍색";
+            case "미색", "갈대색" -> "미색";
+            case "노랑색", "노랑", "노란색" -> "노랑색";
+            case "검정투톤" -> "검정투톤";
+            case "검정색", "검정" -> "검정색";
+            case "갈색투톤" -> "갈색투톤";
+            case "갈색" -> "갈색";
+            case "기타", "인기색상" -> "기타";
+            default -> "기타";
+        };
+    }
+
+    private static String normalizeBodyType(String raw) {
+        if (raw == null) return "기타";
+        String v = raw.trim();
+        if (v.isBlank() || "null".equalsIgnoreCase(v)) return "기타";
+
+        String lower = v.toLowerCase(Locale.ROOT);
+        if ("suv".equals(lower)) return "SUV";
+        if ("rv".equals(lower)) return "RV";
+
+        return switch (v) {
+            case "경차", "소형", "준중형", "중형", "대형", "SUV", "RV",
+                "승합", "스포츠카", "트럭", "화물", "상용", "버스", "기타" -> v;
+            case "준중형차" -> "준중형";
+            case "중형차", "중대형" -> "중형";
+            case "대형차" -> "대형";
+            case "소형차" -> "소형";
+            case "승합차", "경승합차" -> "승합";
+            case "화물차" -> "화물";
+            case "스포츠카/쿠페" -> "스포츠카";
+            default -> "기타";
+        };
+    }
+
+    private static String normalizeFuelType(String raw) {
+        if (raw == null) return "기타";
+        String trimmed = raw.trim();
+        if (trimmed.isBlank() || "null".equalsIgnoreCase(trimmed)) return "기타";
+        String v = trimmed.toLowerCase(Locale.ROOT);
+        if (v.contains("lpg")) return "LPG";
+        if (v.contains("전기") || v.contains("electric") || "ev".equals(v)) return "전기";
+        if (v.contains("하이브리드") || v.contains("hybrid")) return "하이브리드";
+        if (v.contains("디젤") || v.contains("경유") || v.contains("diesel")) return "디젤";
+        if (v.contains("가솔린") || v.contains("휘발유") || v.contains("gasoline") || v.contains("petrol")) return "가솔린";
+        if ("기타".equals(trimmed)) return "기타";
+        return trimmed;
     }
 
     private static Integer sanitizePriceMin(Object value) {
@@ -586,6 +842,26 @@ public class ElasticsearchCarSearchService {
         }
     }
 
+    private static Map<String, Object> convertToCardItem(Map<String, Object> hit) {
+        long carId = parseLong(hit.get("carId"), 0L);
+        if (carId <= 0) return null;
+
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("carId", carId);
+        item.put("maker", firstNonBlank(getString(hit, "makerName"), getString(hit, "maker")));
+        item.put("model", firstNonBlank(getString(hit, "modelName"), getString(hit, "model")));
+        item.put("trim", firstNonBlank(getString(hit, "trimName"), getString(hit, "trim")));
+        item.put("year", getInteger(hit, "year"));
+        item.put("km", getInteger(hit, "km"));
+        item.put("priceMin", getInteger(hit, "priceMin"));
+        item.put("priceMax", getInteger(hit, "priceMax"));
+        item.put("representativeImageUrl", getString(hit, "representativeImageUrl"));
+        item.put("modelCode", getString(hit, "modelCode"));
+        item.put("fuel", getString(hit, "fuel"));
+        item.put("region", getString(hit, "region"));
+        return item;
+    }
+
     private static Integer getInteger(Map<String, Object> map, String key) {
         Object value = map.get(key);
         if (value == null) return null;
@@ -600,6 +876,18 @@ public class ElasticsearchCarSearchService {
     private static String getString(Map<String, Object> map, String key) {
         Object value = map.get(key);
         return value != null ? String.valueOf(value) : null;
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        String ta = asNullableString(a);
+        if (ta != null) return ta;
+        return asNullableString(b);
+    }
+
+    private static String asNullableString(Object value) {
+        if (value == null) return null;
+        String s = String.valueOf(value).trim();
+        return s.isEmpty() ? null : s;
     }
 
     private static LocalDateTime parseDateTime(String s) {

@@ -1,3 +1,5 @@
+import type { CarListItem } from '@/api/cars'
+
 const j = async (r: Response) => {
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   const json = await r.json()
@@ -54,6 +56,7 @@ const likeHeaders = (): HeadersInit => ({
 
 export type LikeInfo = { liked: boolean; count: number }
 export type MyLikesInfo = { carIds: number[]; counts: Record<number, number> }
+export type MyLikedCar = CarListItem & { likesCount?: number }
 
 export const getLike    = (carId: number): Promise<LikeInfo> =>
   fetch(`/api/likes/${carId}`, { headers: likeHeaders() }).then(j)
@@ -68,6 +71,9 @@ export const batchLikes = (carIds: number[]): Promise<Record<number, number>> =>
 
 export const getMyLikes = (limit = 100): Promise<MyLikesInfo> =>
   fetch(`/api/likes/me?limit=${encodeURIComponent(String(limit))}`, { headers: likeHeaders() }).then(j)
+
+export const getMyLikedCars = (limit = 100): Promise<MyLikedCar[]> =>
+  fetch(`/api/likes/me/cars?limit=${encodeURIComponent(String(limit))}`, { headers: likeHeaders() }).then(j)
 
 export const getWeeklyBest = () =>
   fetch('/api/recommendation/weekly-best/all').then(j)
