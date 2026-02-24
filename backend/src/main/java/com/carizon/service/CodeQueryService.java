@@ -20,13 +20,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 @Slf4j
 @Service
 public class CodeQueryService {
-  private static final long CACHE_TTL_MS = 600_000L;
   private static final int AGG_BUCKET_SIZE = 5000;
   private static final List<String> TEXT_SEARCH_FIELDS = List.of(
       "makerName", "modelName", "trimName", "modelCode",
@@ -46,13 +44,6 @@ public class CodeQueryService {
   private final RestClient restClient;
   private final ObjectMapper objectMapper;
 
-  private volatile CacheEntry makersCache;
-  private volatile CacheEntry bodyTypesCache;
-  private volatile CacheEntry fuelsCache;
-  private volatile CacheEntry colorsCache;
-  private final Map<String, CacheEntry> modelGroupsCache = new ConcurrentHashMap<>();
-  private final Map<String, CacheEntry> modelsCache = new ConcurrentHashMap<>();
-
   public CodeQueryService(CarMapper mapper, RestClient restClient, ObjectMapper objectMapper) {
     this.mapper = mapper;
     this.restClient = restClient;
@@ -62,18 +53,6 @@ public class CodeQueryService {
   public List<Map<String, Object>> makers(Map<String, String> context) {
     long start = System.currentTimeMillis();
     Map<String, String> ctx = sanitizeContext(context, Set.of("makerCode", "makerCodes"));
-    boolean dynamicContext = !ctx.isEmpty();
-
-    long cacheCheckStart = System.currentTimeMillis();
-    CacheEntry cache = makersCache;
-    boolean cacheHit = !dynamicContext && isValid(cache);
-    long cacheCheckMs = System.currentTimeMillis() - cacheCheckStart;
-    if (cacheHit) {
-      long totalMs = System.currentTimeMillis() - start;
-      log.info("[codes.makers] cacheHit=true, rows={}, cacheCheckMs={}ms, totalMs={}ms",
-          cache.data().size(), cacheCheckMs, totalMs);
-      return cache.data();
-    }
 
     List<Map<String, Object>> rows = loadRows("codes.makers", mapper::selectMakers);
     long esStart = System.currentTimeMillis();
@@ -96,16 +75,8 @@ public class CodeQueryService {
       return String.valueOf(a.getOrDefault("name", "")).compareTo(String.valueOf(b.getOrDefault("name", "")));
     });
 
-    long cacheStoreMs = 0L;
-    if (!dynamicContext) {
-      long cacheStoreStart = System.currentTimeMillis();
-      makersCache = new CacheEntry(System.currentTimeMillis(), merged);
-      cacheStoreMs = System.currentTimeMillis() - cacheStoreStart;
-    }
-
     long totalMs = System.currentTimeMillis() - start;
-    log.info("[codes.makers] cacheHit=false, rows={}, cacheCheckMs={}ms, esMs={}ms, cacheStoreMs={}ms, totalMs={}ms",
-        merged.size(), cacheCheckMs, esMs, cacheStoreMs, totalMs);
+    log.info("[codes.makers] rows={}, esMs={}ms, totalMs={}ms", merged.size(), esMs, totalMs);
 
     return merged;
   }
@@ -113,13 +84,6 @@ public class CodeQueryService {
   public List<Map<String, Object>> bodyTypes(Map<String, String> context) {
     long start = System.currentTimeMillis();
     Map<String, String> ctx = sanitizeContext(context, Set.of("bodyType"));
-    boolean dynamicContext = !ctx.isEmpty();
-    CacheEntry cache = bodyTypesCache;
-    if (!dynamicContext && isValid(cache)) {
-      log.info("[codes.body-types] cacheHit=true, rows={}, totalMs={}ms",
-          cache.data().size(), System.currentTimeMillis() - start);
-      return cache.data();
-    }
 
     List<Map<String, Object>> rows = loadRows("codes.body-types", mapper::selectBodyTypes);
     long esStart = System.currentTimeMillis();
@@ -132,10 +96,7 @@ public class CodeQueryService {
     );
     long esMs = System.currentTimeMillis() - esStart;
     List<Map<String, Object>> merged = mergeCounts(rows, counts, CodeQueryService::normalizeBodyType);
-    if (!dynamicContext) {
-      bodyTypesCache = new CacheEntry(System.currentTimeMillis(), merged);
-    }
-    log.info("[codes.body-types] cacheHit=false, rows={}, esMs={}ms, totalMs={}ms",
+    log.info("[codes.body-types] rows={}, esMs={}ms, totalMs={}ms",
         merged.size(), esMs, System.currentTimeMillis() - start);
     return merged;
   }
@@ -143,13 +104,6 @@ public class CodeQueryService {
   public List<Map<String, Object>> fuels(Map<String, String> context) {
     long start = System.currentTimeMillis();
     Map<String, String> ctx = sanitizeContext(context, Set.of("fuel"));
-    boolean dynamicContext = !ctx.isEmpty();
-    CacheEntry cache = fuelsCache;
-    if (!dynamicContext && isValid(cache)) {
-      log.info("[codes.fuels] cacheHit=true, rows={}, totalMs={}ms",
-          cache.data().size(), System.currentTimeMillis() - start);
-      return cache.data();
-    }
 
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
@@ -190,11 +144,7 @@ public class CodeQueryService {
     etc.put("carCount", counts.getOrDefault("기타", 0L));
     rows.add(etc);
 
-    if (!dynamicContext) {
-      fuelsCache = new CacheEntry(System.currentTimeMillis(), rows);
-    }
-
-    log.info("[codes.fuels] cacheHit=false, rows={}, esMs={}ms, totalMs={}ms",
+    log.info("[codes.fuels] rows={}, esMs={}ms, totalMs={}ms",
         rows.size(), esMs, System.currentTimeMillis() - start);
     return rows;
   }
@@ -202,13 +152,6 @@ public class CodeQueryService {
   public List<Map<String, Object>> colors(Map<String, String> context) {
     long start = System.currentTimeMillis();
     Map<String, String> ctx = sanitizeContext(context, Set.of("color"));
-    boolean dynamicContext = !ctx.isEmpty();
-    CacheEntry cache = colorsCache;
-    if (!dynamicContext && isValid(cache)) {
-      log.info("[codes.colors] cacheHit=true, rows={}, totalMs={}ms",
-          cache.data().size(), System.currentTimeMillis() - start);
-      return cache.data();
-    }
 
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
@@ -235,11 +178,7 @@ public class CodeQueryService {
       rows.add(row);
     }
 
-    if (!dynamicContext) {
-      colorsCache = new CacheEntry(System.currentTimeMillis(), rows);
-    }
-
-    log.info("[codes.colors] cacheHit=false, rows={}, esMs={}ms, totalMs={}ms",
+    log.info("[codes.colors] rows={}, esMs={}ms, totalMs={}ms",
         rows.size(), esMs, System.currentTimeMillis() - start);
     return rows;
   }
@@ -248,18 +187,6 @@ public class CodeQueryService {
     long start = System.currentTimeMillis();
     String key = makerCode == null ? "" : makerCode.trim();
     Map<String, String> ctx = sanitizeContext(context, Set.of("makerCode", "makerCodes", "modelGroupCode"));
-    boolean dynamicContext = !ctx.isEmpty();
-
-    long cacheCheckStart = System.currentTimeMillis();
-    CacheEntry cache = modelGroupsCache.get(key);
-    boolean cacheHit = !dynamicContext && isValid(cache);
-    long cacheCheckMs = System.currentTimeMillis() - cacheCheckStart;
-    if (cacheHit) {
-      long totalMs = System.currentTimeMillis() - start;
-      log.info("[codes.model-groups] cacheHit=true, makerCode={}, rows={}, cacheCheckMs={}ms, totalMs={}ms",
-          key, cache.data().size(), cacheCheckMs, totalMs);
-      return cache.data();
-    }
 
     List<Map<String, Object>> rows = loadRows("codes.model-groups", () -> mapper.selectModelGroups(makerCode));
     long esStart = System.currentTimeMillis();
@@ -273,16 +200,9 @@ public class CodeQueryService {
     long esMs = System.currentTimeMillis() - esStart;
     List<Map<String, Object>> merged = mergeCounts(rows, counts);
 
-    long cacheStoreMs = 0L;
-    if (!dynamicContext) {
-      long cacheStoreStart = System.currentTimeMillis();
-      modelGroupsCache.put(key, new CacheEntry(System.currentTimeMillis(), merged));
-      cacheStoreMs = System.currentTimeMillis() - cacheStoreStart;
-    }
-
     long totalMs = System.currentTimeMillis() - start;
-    log.info("[codes.model-groups] cacheHit=false, makerCode={}, rows={}, cacheCheckMs={}ms, esMs={}ms, cacheStoreMs={}ms, totalMs={}ms",
-        key, merged.size(), cacheCheckMs, esMs, cacheStoreMs, totalMs);
+    log.info("[codes.model-groups] makerCode={}, rows={}, esMs={}ms, totalMs={}ms",
+        key, merged.size(), esMs, totalMs);
 
     return merged;
   }
@@ -291,20 +211,7 @@ public class CodeQueryService {
     long start = System.currentTimeMillis();
     String makerKey = makerCode == null ? "" : makerCode.trim();
     String modelGroupKey = modelGroupCode == null ? "" : modelGroupCode.trim();
-    String key = makerKey + "|" + modelGroupKey;
     Map<String, String> ctx = sanitizeContext(context, Set.of("makerCode", "makerCodes", "modelGroupCode", "modelCode"));
-    boolean dynamicContext = !ctx.isEmpty();
-
-    long cacheCheckStart = System.currentTimeMillis();
-    CacheEntry cache = modelsCache.get(key);
-    boolean cacheHit = !dynamicContext && isValid(cache);
-    long cacheCheckMs = System.currentTimeMillis() - cacheCheckStart;
-    if (cacheHit) {
-      long totalMs = System.currentTimeMillis() - start;
-      log.info("[codes.models] cacheHit=true, key={}, rows={}, cacheCheckMs={}ms, totalMs={}ms",
-          key, cache.data().size(), cacheCheckMs, totalMs);
-      return cache.data();
-    }
 
     List<Map<String, Object>> rows = loadRows("codes.models", () -> mapper.selectModels(makerCode, modelGroupCode));
     long esStart = System.currentTimeMillis();
@@ -318,16 +225,9 @@ public class CodeQueryService {
     long esMs = System.currentTimeMillis() - esStart;
     List<Map<String, Object>> merged = mergeCounts(rows, counts);
 
-    long cacheStoreMs = 0L;
-    if (!dynamicContext) {
-      long cacheStoreStart = System.currentTimeMillis();
-      modelsCache.put(key, new CacheEntry(System.currentTimeMillis(), merged));
-      cacheStoreMs = System.currentTimeMillis() - cacheStoreStart;
-    }
-
     long totalMs = System.currentTimeMillis() - start;
-    log.info("[codes.models] cacheHit=false, key={}, rows={}, cacheCheckMs={}ms, esMs={}ms, cacheStoreMs={}ms, totalMs={}ms",
-        key, merged.size(), cacheCheckMs, esMs, cacheStoreMs, totalMs);
+    log.info("[codes.models] makerCode={}, modelGroupCode={}, rows={}, esMs={}ms, totalMs={}ms",
+        makerKey, modelGroupKey, merged.size(), esMs, totalMs);
 
     return merged;
   }
@@ -362,10 +262,6 @@ public class CodeQueryService {
 
   public List<Map<String, Object>> grades(String makerCode, String modelGroupCode, String modelCode, String trimCode) {
     return mapper.selectGrades(makerCode, modelGroupCode, modelCode, trimCode);
-  }
-
-  private static boolean isValid(CacheEntry cache) {
-    return cache != null && (System.currentTimeMillis() - cache.cachedAtMs()) < CACHE_TTL_MS;
   }
 
   private List<Map<String, Object>> loadRows(String tag, RowLoader loader) {
@@ -887,6 +783,4 @@ public class CodeQueryService {
   private interface RowLoader {
     List<Map<String, Object>> load();
   }
-
-  private record CacheEntry(long cachedAtMs, List<Map<String, Object>> data) {}
 }
