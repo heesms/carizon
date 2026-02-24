@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -30,11 +31,13 @@ public class CarEmbeddingBatchService {
     private final ChromaVectorStoreService vectorStoreService;
 
     private static final int WORKERS = 10;         // 병렬 워커 수 (Ollama 병목 시 조정)
+    private static final int DB_QUERY_PARALLELISM = 2; // DB 조회 동시성 제한 (MySQL CPU 보호)
     private static final int BATCH_SIZE_DB = 400;  // DB에서 끊어 처리할 청크 크기
     private static final int BATCH_SIZE_CHROMA = 80; // Chroma add 배치 크기
     private static final int PROGRESS_LOG_INTERVAL = 50; // N건마다 진행 로그
 
     private final AtomicInteger metadataLogCount = new AtomicInteger(0); // Metadata 로그 출력 카운터
+    private final Semaphore dbQuerySemaphore = new Semaphore(DB_QUERY_PARALLELISM);
 
     /** API/로그용 진행 상황 (진행 중일 때만 갱신, 배치 종료 후 마지막 결과 유지) */
     private volatile boolean progressRunning = false;
@@ -304,7 +307,13 @@ public class CarEmbeddingBatchService {
     }
 
     private CarEmbeddingDto buildEmbeddingDto(Long carId) throws Exception {
-        CarEmbeddingDto dto = textConverterService.createCarEmbedding(carId);
+        CarEmbeddingDto dto;
+        dbQuerySemaphore.acquire();
+        try {
+            dto = textConverterService.createCarEmbedding(carId);
+        } finally {
+            dbQuerySemaphore.release();
+        }
         if (dto == null) {
             log.warn("[embedding] no car data: carId={}", carId);
             return null;
