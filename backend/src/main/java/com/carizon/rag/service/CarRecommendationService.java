@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -125,12 +126,20 @@ public class CarRecommendationService {
         log.info("[recommendation] ES candidate search done: {}ms, cars={}", esMs, esCars.size());
 
         // 5) 하이브리드 결합 (RAG 0.65 + ES 0.35)
-        List<RecommendationResponse.RecommendedCar> cars = mergeHybridCars(ragCars, esCars, maxResults);
+        // 결과 표시 전에 "기타 제조사"를 걸러내기 위해 여유 후보를 먼저 합친다.
+        int hybridCandidateLimit = Math.max(maxResults * 4, 40);
+        List<RecommendationResponse.RecommendedCar> cars = mergeHybridCars(ragCars, esCars, hybridCandidateLimit);
         log.info("[recommendation] hybrid merge done: ragCars={}, esCars={}, merged={}",
                 ragCars.size(), esCars.size(), cars.size());
 
         // 명시 모델어가 있으면 해당 모델이 먼저 보이도록 우선 정렬
         cars = prioritizeModelMatches(cars, request);
+
+        // 표시용 이름 보정: RAG/ES 일부 경로에서 maker/model/trim 누락된 경우 DB 메타데이터로 채움
+        backfillDisplayNames(cars);
+
+        // 제조사가 "기타"인 매물은 AI 추천 결과에서 제외
+        cars = excludeEtcMakers(cars);
 
         if (!isModelExplicitlyRequested(request, queryPlan)) {
             cars = diversifyByModel(cars, maxResults);
@@ -139,9 +148,6 @@ public class CarRecommendationService {
         if (cars.size() > maxResults) {
             cars = new ArrayList<>(cars.subList(0, maxResults));
         }
-
-        // 표시용 이름 보정: RAG/ES 일부 경로에서 maker/model/trim 누락된 경우 DB 메타데이터로 채움
-        backfillDisplayNames(cars);
 
         if (cars.isEmpty()) {
             log.warn("[recommendation] no cars after ES search/fallback");
@@ -230,6 +236,37 @@ public class CarRecommendationService {
                 log.debug("[recommendation] display name backfill skipped for carId={}: {}", car.getCarId(), e.getMessage());
             }
         }
+    }
+
+    private static List<RecommendationResponse.RecommendedCar> excludeEtcMakers(
+            List<RecommendationResponse.RecommendedCar> cars
+    ) {
+        if (cars == null || cars.isEmpty()) return List.of();
+        List<RecommendationResponse.RecommendedCar> filtered = new ArrayList<>(cars.size());
+        int removed = 0;
+        for (RecommendationResponse.RecommendedCar car : cars) {
+            if (car == null) continue;
+            if (isEtcMaker(car.getMaker())) {
+                removed++;
+                continue;
+            }
+            filtered.add(car);
+        }
+        if (removed > 0) {
+            log.info("[recommendation] excluded etc makers: removed={}, remain={}", removed, filtered.size());
+        }
+        return filtered;
+    }
+
+    private static boolean isEtcMaker(String maker) {
+        String v = trimOrNull(maker);
+        if (v == null) return false;
+        String normalized = v.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+        return "기타".equals(normalized)
+                || normalized.startsWith("기타")
+                || "etc".equals(normalized)
+                || "other".equals(normalized)
+                || "unknown".equals(normalized);
     }
     
     /**
