@@ -5,8 +5,8 @@ import com.carizon.search.config.ElasticsearchConfig;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.FieldValue;
-import co.elastic.clients.elasticsearch._types.mapping.FieldType;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
+import co.elastic.clients.elasticsearch._types.query_dsl.FunctionBoostMode;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders;
 import co.elastic.clients.json.JsonData;
@@ -63,16 +63,24 @@ public class ElasticsearchCarSearchService {
             String sortField = getSortField(queryParams);
             SortOrder sortOrder = getSortOrder(queryParams);
 
+            // 추천순(기본): function_score + random_score (하루 단위 seed로 페이지네이션 일관성 유지)
+            Query effectiveQuery = query;
+            if ("random".equals(sortField)) {
+                long dailySeed = System.currentTimeMillis() / 86400000L;
+                effectiveQuery = QueryBuilders.functionScore(fs -> fs
+                    .query(query)
+                    .functions(fn -> fn.randomScore(rs -> rs.seed(String.valueOf(dailySeed)).field("_seq_no")))
+                    .boostMode(FunctionBoostMode.Replace)
+                );
+            }
+
             SearchRequest.Builder searchBuilder = new SearchRequest.Builder()
                     .index(INDEX)
-                    .query(query)
+                    .query(effectiveQuery)
                     .from(from)
                     .size(size)
                     .trackTotalHits(t -> t.enabled(true));
-            // platformCount는 reindex 전 매핑에 없을 수 있으므로 unmappedType으로 방어
-            if ("platformCount".equals(sortField)) {
-                searchBuilder.sort(s -> s.field(f -> f.field(sortField).order(sortOrder).unmappedType(FieldType.Integer)));
-            } else {
+            if (!"random".equals(sortField)) {
                 searchBuilder.sort(s -> s.field(f -> f.field(sortField).order(sortOrder)));
             }
 
@@ -541,12 +549,12 @@ public class ElasticsearchCarSearchService {
 
     private String getSortField(Map<String, Object> params) {
         String sort = params.containsKey("sort") ? String.valueOf(params.get("sort")) : null;
-        if (sort == null || sort.isEmpty() || "null".equals(sort)) return "platformCount";
+        if (sort == null || sort.isEmpty() || "null".equals(sort)) return "random";
         if ("LOW_PRICE".equals(sort)) return "priceMin";
         if ("LOW_KM".equals(sort)) return "km";
         if ("NEW_YEAR".equals(sort)) return "year";
         if ("RECENT".equals(sort)) return "priceUpdatedAt";
-        return "platformCount";
+        return "random";
     }
 
     private SortOrder getSortOrder(Map<String, Object> params) {
