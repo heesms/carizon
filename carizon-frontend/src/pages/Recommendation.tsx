@@ -293,7 +293,7 @@ function RecommendedCarCard({
           <Link
             to={`/cars/${car.carId}`}
             state={carState}
-            className="absolute inset-0 z-0"
+            className="absolute inset-0 z-10"
             aria-label={`${car.maker} ${car.model} 상세보기`}
           />
         )}
@@ -337,8 +337,8 @@ function RecommendedCarCard({
             )}
           </div>
 
-          {/* 좋아요 버튼 (커버 링크 위에 z-10으로 배치) */}
-          <div className="flex flex-col items-end gap-1.5 shrink-0 relative z-10">
+          {/* 좋아요 버튼 (커버 링크 위에 z-20으로 배치) */}
+          <div className="flex flex-col items-end gap-1.5 shrink-0 relative z-20">
             {car.carId && (
               <button onClick={handleLike}
                 className={`flex items-center justify-center w-7 h-7 rounded-lg transition-colors
@@ -368,25 +368,25 @@ function RecommendedCarCard({
         <Link
           to={`/cars/${car.carId}`}
           state={carState}
-          className="absolute inset-0 z-0 rounded-2xl"
+          className="absolute inset-0 z-10 rounded-2xl"
           aria-label={`${car.maker} ${car.model} 상세보기`}
         />
       )}
 
       {/* 순위 뱃지 */}
-      <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-500 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5 relative z-10">
+      <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-500 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
         {rank}
       </div>
 
       {/* 이미지 */}
-      <div className="w-16 h-12 sm:w-20 sm:h-14 rounded-lg overflow-hidden bg-gray-50 shrink-0 relative z-10">
+      <div className="w-16 h-12 sm:w-20 sm:h-14 rounded-lg overflow-hidden bg-gray-50 shrink-0">
         <img src={imgSrc} alt={`${car.maker} ${car.model}`}
           className="w-full h-full object-cover object-[center_65%]"
           onError={() => setImgSrc(NO_IMAGE)} />
       </div>
 
       {/* 정보 */}
-      <div className="flex-1 min-w-0 relative z-10">
+      <div className="flex-1 min-w-0">
         <div className="font-semibold text-xs sm:text-sm text-gray-900 truncate">
           {car.maker} {car.model}
           {car.trim && <span className="font-normal text-gray-400 ml-1 text-[10px]">{car.trim}</span>}
@@ -405,7 +405,7 @@ function RecommendedCarCard({
       </div>
 
       {/* 좋아요 버튼 */}
-      <div className="flex flex-col items-end gap-1 shrink-0 relative z-10">
+      <div className="flex flex-col items-end gap-1 shrink-0 relative z-20">
         {car.carId && (
           <button onClick={handleLike}
             className={`flex items-center justify-center w-6 h-6 rounded-lg transition-colors
