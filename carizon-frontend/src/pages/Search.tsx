@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react'
-import { useSearchParams, useLocation } from 'react-router-dom'
+import { useSearchParams, useLocation, useNavigationType } from 'react-router-dom'
 import FiltersPanel from '@/components/FiltersPanel'
 import CarCard from '@/components/CarCard'
 import AdSlot from '@/components/AdSlot'
@@ -19,6 +19,7 @@ const SORT_OPTIONS = [
 export default function Search() {
   const [sp, setSp] = useSearchParams()
   const location = useLocation()
+  const navigationType = useNavigationType()
   const [list, setList]               = useState<CarListItem[]>([])
   const [likedCarIds, setLikedCarIds] = useState<Set<number>>(() => new Set())
   const [page, setPage]               = useState(0)
@@ -33,15 +34,27 @@ export default function Search() {
 
   // 뒤로가기 시 스크롤 위치 복원
   useEffect(() => {
+    const routeState = (location.state ?? {}) as { restoreSearchScrollFromDetail?: boolean }
+    const shouldRestore =
+      routeState.restoreSearchScrollFromDetail === true || navigationType === 'POP'
+
     const raw = sessionStorage.getItem('search_scroll_y')
     if (!raw) return
+    if (!shouldRestore) {
+      sessionStorage.removeItem('search_scroll_y')
+      return
+    }
     try {
       const { url, y } = JSON.parse(raw)
       if (url === `${location.pathname}${location.search}`) {
         sessionStorage.removeItem('search_scroll_y')
         savedScrollRef.current = y
+      } else {
+        sessionStorage.removeItem('search_scroll_y')
       }
-    } catch { /* no-op */ }
+    } catch {
+      sessionStorage.removeItem('search_scroll_y')
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const params = useMemo(() => Object.fromEntries(sp.entries()), [sp])

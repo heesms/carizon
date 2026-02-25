@@ -38,6 +38,7 @@ export type PlatformRow = {
   pcUrl?: string
   mUrl?: string
   lastSeenDate?: string
+  optionArray?: string
   representativeImageUrl?: string
   extra?: string
 }
@@ -168,6 +169,7 @@ export const getCarDetail = async (id: string | number): Promise<CarDetailData> 
       pcUrl: r.pcUrl ?? r.pc_url,
       mUrl: r.mUrl ?? r.m_url,
       lastSeenDate: r.lastSeenDate,
+      optionArray: r.optionArray ?? r.option_array,
       representativeImageUrl: r.representativeImageUrl,
       extra: r.extra,
     })),

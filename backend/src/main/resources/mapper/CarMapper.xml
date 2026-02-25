@@ -80,6 +80,7 @@
            cm.my_accident_cnt AS myAccidentCnt,
            pc.platform_car_id AS platformCarId, pc.platform_name, pc.price, pc.status, pc.pc_url, pc.m_url,
            DATE_FORMAT(pc.last_seen_date, '%Y-%m-%d') AS lastSeenDate,
+           pc.option_array AS optionArray,
            pc.car_image_url AS representativeImageUrl
     FROM car_master cm
     INNER JOIN platform_car pc ON pc.car_id = cm.car_id

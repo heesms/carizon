@@ -19,13 +19,23 @@ const clean = (v: any): string | undefined => {
 // 플랫폼 한글명
 const PLATFORM_NAMES: Record<string, string> = {
   encar: '엔카', ENCAR: '엔카',
+  encar_truck: '엔카', ENCAR_TRUCK: '엔카',
   kcar: 'K캐어', KCAR: 'K캐어',
   chachacha: '차차차', CHACHACHA: '차차차',
   chutcha: '첫차', CHUTCHA: '첫차',
   charancha: '차란차', CHARANCHA: '차란차',
   tcar: 'TCAR', TCAR: 'TCAR',
 }
-const platformLabel = (p: string) => PLATFORM_NAMES[p] ?? p
+
+const normalizePlatformKey = (platformName: string) => {
+  const key = String(platformName ?? '').toUpperCase()
+  return key === 'ENCAR_TRUCK' ? 'ENCAR' : key
+}
+
+const platformLabel = (p: string) => {
+  const normalized = normalizePlatformKey(p)
+  return PLATFORM_NAMES[p] ?? PLATFORM_NAMES[normalized] ?? p
+}
 
 // 플랫폼 바 차트 색상 (bg / text)
 const PLATFORM_BAR_COLORS: Record<string, { bg: string; text: string; light: string }> = {
@@ -36,7 +46,26 @@ const PLATFORM_BAR_COLORS: Record<string, { bg: string; text: string; light: str
   CHARANCHA: { bg: 'bg-purple-500', text: 'text-purple-700', light: 'bg-purple-50' },
   TCAR:      { bg: 'bg-orange-500', text: 'text-orange-700', light: 'bg-orange-50' },
 }
-const barColor = (p: string) => PLATFORM_BAR_COLORS[p.toUpperCase()] ?? { bg: 'bg-gray-400', text: 'text-gray-700', light: 'bg-gray-50' }
+const barColor = (p: string) =>
+  PLATFORM_BAR_COLORS[normalizePlatformKey(p)] ?? { bg: 'bg-gray-400', text: 'text-gray-700', light: 'bg-gray-50' }
+
+const normalizeOptionText = (value: string) =>
+  value.toLowerCase().replace(/[^0-9a-z가-힣]/g, '')
+
+const KEY_OPTION_RULES: Array<{ id: string; label: string; keywords: string[]; iconSrc: string }> = [
+  { id: 'sunroof', label: '선루프', keywords: ['선루프', '썬루프'], iconSrc: '/icons/options/1.png' },
+  { id: 'around-view', label: '어라운드뷰', keywords: ['어라운드', '어라운드뷰'], iconSrc: '/icons/options/2.png' },
+  { id: 'heated-seat', label: '열선시트', keywords: ['열선시트'], iconSrc: '/icons/options/3.png' },
+  { id: 'vent-seat', label: '통풍시트', keywords: ['통풍시트'], iconSrc: '/icons/options/4.png' },
+  { id: 'leather-seat', label: '가죽시트', keywords: ['가죽시트'], iconSrc: '/icons/options/5.png' },
+  { id: 'parking-sensor', label: '주차센서', keywords: ['주차감지', '주차감지센서', '주차센서'], iconSrc: '/icons/options/6.png' },
+  { id: 'heated-wheel', label: '핸들 열선', keywords: ['열선 스티어링', '열선스티어링', '열선핸들'], iconSrc: '/icons/options/7.png' },
+  { id: 'blind-spot', label: '후측방경고', keywords: ['후측방', '후측방경보', '후측방경고'], iconSrc: '/icons/options/8.png' },
+  { id: 'lane-departure', label: '차선이탈경보', keywords: ['차선이탈 경보', '차선이탈경보'], iconSrc: '/icons/options/9.png' },
+  { id: 'hud', label: 'HUD', keywords: ['헤드업 디스플레이', '헤드업디스플레이', 'hud'], iconSrc: '/icons/options/10.png' },
+  { id: 'auto-aircon', label: '풀오토에어컨', keywords: ['풀오토에어컨', '자동에어컨', '오토에어컨'], iconSrc: '/icons/options/11.png' },
+  { id: 'power-seat', label: '전동시트', keywords: ['전동시트'], iconSrc: '/icons/options/12.png' },
+]
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(false)
@@ -80,6 +109,11 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
     if (source === 'ai') {
       if (window.history.length > 1) { navigate(-1); return }
       navigate('/recommendation')
+      return
+    }
+    if (source === 'search') {
+      const target = from || '/search'
+      navigate(target, { state: { restoreSearchScrollFromDetail: true } })
       return
     }
     if (from) { navigate(from); return }
@@ -190,6 +224,17 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
   const minPrice = activePlatforms.length > 0 ? Math.min(...activePlatforms.map(p => p.price!)) : null
   const maxPrice = activePlatforms.length > 0 ? Math.max(...activePlatforms.map(p => p.price!)) : null
   const hasUniqueLowestPrice = minPrice != null && activePlatforms.filter(p => p.price === minPrice).length === 1
+  const optionArrayValues = platforms
+    .map(p => clean(p.optionArray))
+    .filter((value): value is string => !!value)
+  const hasOptionArrayData = optionArrayValues.length > 0
+  const normalizedOptionSource = normalizeOptionText(optionArrayValues.join('|'))
+  const keyOptions = KEY_OPTION_RULES.map((rule) => ({
+    ...rule,
+    enabled: rule.keywords.some(keyword =>
+      normalizedOptionSource.includes(normalizeOptionText(keyword))
+    ),
+  }))
 
   const specs = [
     { label: '연식',     value: car.year ? `${car.year}년식` : undefined,
@@ -434,7 +479,41 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
             )}
           </div>
 
-          {/* 4. 가격 히스토리 차트 */}
+          {/* 4. 주요 옵션 정보 */}
+          {hasOptionArrayData && (
+            <div className="card p-4 sm:p-5">
+              <div className="mb-3">
+                <h2 className="font-bold text-gray-900">주요 옵션정보</h2>
+              </div>
+              <div className="grid grid-cols-3 lg:grid-cols-6 gap-x-2 gap-y-4 sm:gap-y-5">
+                {keyOptions.map((option) => (
+                  <div
+                    key={option.id}
+                    className="flex flex-col items-center justify-start text-center min-h-[68px]"
+                  >
+                    <div className="h-8 flex items-center justify-center">
+                      <img
+                        src={option.iconSrc}
+                        alt={option.label}
+                        className={`w-7 h-7 object-contain select-none ${
+                          option.enabled ? 'opacity-100' : 'opacity-25 grayscale'
+                        }`}
+                        loading="lazy"
+                        draggable={false}
+                      />
+                    </div>
+                    <span className={`mt-1.5 text-[11px] sm:text-xs font-semibold leading-tight ${
+                      option.enabled ? 'text-gray-900' : 'text-gray-300'
+                    }`}>
+                      {option.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 5. 가격 히스토리 차트 */}
           {history.length > 0 && <PriceChart points={history} />}
 
           {/* AI 추천 유도 */}

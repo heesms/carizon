@@ -6,5 +6,5 @@ public record CarDetailRow(
     Integer year, Integer mileage, Integer displacement, String fuel, String transmission,
     String color, String bodyType, String region, Integer seatCount, Integer myAccidentCnt,
     Long platformCarId, String platformName, Integer price, String status, String pcUrl, String mUrl, String lastSeenDate,
-    String representativeImageUrl
+    String optionArray, String representativeImageUrl
 ) {}

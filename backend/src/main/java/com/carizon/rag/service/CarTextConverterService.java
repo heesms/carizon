@@ -443,6 +443,7 @@ public class CarTextConverterService {
                    pc.platform_car_id AS platformCarId, 
                    pc.platform_name, 
                    pc.price, pc.status, pc.pc_url, pc.m_url,
+                   pc.option_array AS optionArray,
                    m.country_name,
                    (SELECT pc2.car_image_url FROM platform_car pc2
                     LEFT JOIN cz_platform_priority pp ON pp.platform_name = pc2.platform_name
@@ -495,6 +496,7 @@ public class CarTextConverterService {
             (String) carMap.get("pc_url"),
             (String) carMap.get("m_url"),
             (String) carMap.get("lastSeenDate"),
+            (String) carMap.get("optionArray"),
             (String) carMap.get("representativeImageUrl")
         );
         
