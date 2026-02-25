@@ -15,10 +15,16 @@ export type SeoMetadata = {
 
 const getSearchSummary = (search: string) => {
   const params = new URLSearchParams(search)
-  const maker = params.get('maker')
-  const model = params.get('model')
+  const makerCode = params.get('makerCode')
+  const modelCode = params.get('modelCode')
+  const bodyType = params.get('bodyType')
   const keyword = params.get('q') || params.get('query')
-  const keywordParts = [keyword, maker ? `제조사:${maker}` : '', model ? `모델:${model}` : ''].filter(Boolean)
+  const keywordParts = [
+    keyword,
+    makerCode ? `제조사코드:${makerCode}` : '',
+    modelCode ? `모델코드:${modelCode}` : '',
+    bodyType ? `차종:${bodyType}` : '',
+  ].filter(Boolean)
 
   return keywordParts.length > 0 ? `(${keywordParts.join(', ')})` : ''
 }
@@ -36,12 +42,48 @@ const getRouteMetadata = (pathname: string, search = ''): SeoMetadata => {
   }
 
   if (trimmed.startsWith('/search')) {
+    const params = new URLSearchParams(search)
+    const makerCode = (params.get('makerCode') || '').trim()
+    const modelCode = (params.get('modelCode') || '').trim()
+    const bodyType = (params.get('bodyType') || '').trim()
+    const pageRaw = (params.get('page') || '').trim()
+    const sortRaw = (params.get('sort') || '').trim()
+    const page = Number(pageRaw || '0')
+    const hasPaging = Number.isFinite(page) && page > 0
+    const hasSort = sortRaw.length > 0
+
+    const representativePairs = [
+      makerCode ? ['makerCode', makerCode] as const : null,
+      modelCode ? ['modelCode', modelCode] as const : null,
+      bodyType ? ['bodyType', bodyType] as const : null,
+    ].filter(Boolean) as ReadonlyArray<readonly [string, string]>
+
+    let hasOtherFilters = false
+    params.forEach((value, key) => {
+      const v = String(value || '').trim()
+      if (!v) return
+      if (key === 'makerCode' || key === 'modelCode' || key === 'bodyType' || key === 'page' || key === 'sort') return
+      hasOtherFilters = true
+    })
+
+    const canonicalParams = new URLSearchParams()
+    if (representativePairs.length > 0) {
+      const preferred = representativePairs[0]
+      canonicalParams.set(preferred[0], preferred[1])
+    }
+    const canonicalQuery = canonicalParams.toString()
+    const canonicalPath = canonicalQuery ? `/search?${canonicalQuery}` : '/search'
+
+    const indexableRepresentative = representativePairs.length === 1 && !hasOtherFilters && !hasPaging && !hasSort
+    const noIndex = !indexableRepresentative && params.toString().length > 0
+
     const suffix = searchSummary ? ` ${searchSummary}` : ''
     return {
       title: '차량 검색',
       description: `중고차 검색 조건${suffix}에 맞는 매물을 조회합니다.`,
       keywords: `중고차 검색${suffix}, 조건 검색, ${DEFAULT_KEYWORDS}`,
-      canonicalPath: `/search${search || ''}`,
+      canonicalPath,
+      noIndex,
     }
   }
 

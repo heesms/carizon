@@ -111,6 +111,12 @@ export default function MyLikes() {
         </div>
       )}
 
+      {!loading && !error && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          판매완료된 매물은 찜 목록에서 자동으로 제거될 수 있습니다.
+        </div>
+      )}
+
       {confirmCarId != null && (
         <div
           className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center px-4"
