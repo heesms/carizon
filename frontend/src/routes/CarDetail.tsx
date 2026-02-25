@@ -30,6 +30,8 @@ function platformDisplayName(platform: string): string {
     const map: Record<string, string> = {
         chachacha: '차차차',
         encar: '엔카',
+        encar_truck: '엔카',
+        'encar-truck': '엔카',
         chutcha: '첫차',
         kcar: 'K캐어',
         tcar: '티카',
