@@ -64,9 +64,7 @@ export default function Search() {
     () => visibleList.filter((item) => {
       const min = item.priceMin
       const max = item.priceMax
-      const hasValidPrice = (typeof min === 'number' && min >= 1) || (typeof max === 'number' && max >= 1)
-      const hasRepresentativeImage = typeof item.representativeImageUrl === 'string' && item.representativeImageUrl.trim().length > 0
-      return hasValidPrice && hasRepresentativeImage
+      return (typeof min === 'number' && min >= 1) || (typeof max === 'number' && max >= 1)
     }),
     [visibleList]
   )
