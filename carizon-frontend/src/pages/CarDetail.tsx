@@ -227,7 +227,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
       icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /> },
   ].filter(s => s.value)
 
-  const heroLabels = ['연식', '주행거리', '연료', '변속기']
+  const heroLabels = ['연식', '주행거리', '연료', '배기량']
   const heroSpecs = specs.filter(s => heroLabels.includes(s.label))
   const tableSpecs = specs.filter(s => !heroLabels.includes(s.label))
 
@@ -270,25 +270,25 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                 {!!car.displacement && <span className="badge badge-gray text-xs">{car.displacement.toLocaleString()}cc</span>}
               </div>
 
-              {/* 가격 */}
+              {/* 가격 + 좋아요 */}
               {minPrice && (
-                <div className="mb-4">
-                  <div className="text-xs text-gray-400 mb-0.5">
-                    {hasUniqueLowestPrice ? '플랫폼 최저가' : '플랫폼 최저가격'}
+                <div className="flex items-end justify-between gap-2 mb-1">
+                  <div>
+                    <div className="text-xs text-gray-400 mb-0.5">
+                      {hasUniqueLowestPrice ? '플랫폼 최저가' : '플랫폼 최저가격'}
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-black text-brand-600">
+                      {minPrice.toLocaleString()}만원
+                      {maxPrice && maxPrice !== minPrice && (
+                        <span className="text-base sm:text-lg text-gray-400 font-medium ml-1">~ {maxPrice.toLocaleString()}만원</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-2xl sm:text-3xl font-black text-brand-600">
-                    {minPrice.toLocaleString()}만원
-                    {maxPrice && maxPrice !== minPrice && (
-                      <span className="text-base sm:text-lg text-gray-400 font-medium ml-1">~ {maxPrice.toLocaleString()}만원</span>
-                    )}
+                  <div className="shrink-0 pb-0.5">
+                    <LikeButton carId={Number(id)} />
                   </div>
                 </div>
               )}
-
-              {/* 좋아요 */}
-              <div className="flex items-center gap-2">
-                <LikeButton carId={Number(id)} />
-              </div>
             </div>
           </div>
 
