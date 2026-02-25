@@ -1,10 +1,43 @@
-import React from 'react'
-import { Outlet, Link, NavLink, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Outlet, Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
+
+const PAGE_NAMES: Record<string, string> = {
+  '/':               '메인',
+  '/search':         '검색',
+  '/recommendation': 'Carizon AI',
+  '/ai-ranking':     'AI 랭킹',
+  '/likes':          '찜한 차량',
+  '/info':           '정보',
+}
+
+function useScrollHide() {
+  const [visible, setVisible] = useState(true)
+  const lastY = useRef(0)
+  useEffect(() => {
+    const onScroll = () => {
+      const y = window.scrollY
+      if (y < 10) { setVisible(true) }
+      else if (y > lastY.current + 4) { setVisible(false) }
+      else if (y < lastY.current - 4) { setVisible(true) }
+      lastY.current = y
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+  return visible
+}
 
 export default function Layout() {
   const [q, setQ] = useState('')
   const navigate = useNavigate()
+  const location = useLocation()
+  const headerVisible = useScrollHide()
+
+  const pageTitle = (() => {
+    const path = location.pathname
+    if (path.startsWith('/cars/')) return '차량 상세'
+    return PAGE_NAMES[path] ?? ''
+  })()
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -22,6 +55,26 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen min-h-[100dvh] flex flex-col">
+
+      {/* ── 모바일 헤더 (스크롤 시 사라짐) ── */}
+      <header
+        className="sm:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-100 shadow-sm transition-transform duration-200"
+        style={{ transform: headerVisible ? 'translateY(0)' : 'translateY(-100%)' }}
+      >
+        <div className="flex items-center h-14 px-4 gap-3">
+          {/* 로고 */}
+          <Link to="/" className="flex items-center shrink-0">
+            <img src="/carizon_logo.png" alt="Carizon" className="h-7" />
+          </Link>
+          {/* 현재 페이지명 */}
+          {pageTitle && (
+            <span className="flex-1 text-center text-sm font-bold text-gray-800 truncate pr-14">
+              {pageTitle}
+            </span>
+          )}
+        </div>
+      </header>
+
       {/* ── 헤더 (데스크톱만) ── */}
       <header className="hidden sm:block sticky top-0 z-50 bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -61,7 +114,7 @@ export default function Layout() {
       </header>
 
       {/* ── 본문 ── */}
-      <main className="flex-1 pb-16 sm:pb-0">
+      <main className="flex-1 pt-14 pb-16 sm:pt-0 sm:pb-0">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
           <Outlet />
         </div>
@@ -95,7 +148,6 @@ export default function Layout() {
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="flex items-stretch h-14">
 
-          {/* 메인 */}
           <NavLink to="/" end className={bottomNavCls}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -104,7 +156,6 @@ export default function Layout() {
             <span className="text-[10px] font-medium">메인</span>
           </NavLink>
 
-          {/* 검색 */}
           <NavLink to="/search" className={bottomNavCls}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -113,7 +164,6 @@ export default function Layout() {
             <span className="text-[10px] font-medium">검색</span>
           </NavLink>
 
-          {/* AI */}
           <NavLink to="/recommendation" className={bottomNavCls}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -122,7 +172,6 @@ export default function Layout() {
             <span className="text-[10px] font-medium">AI</span>
           </NavLink>
 
-          {/* 랭킹 */}
           <NavLink to="/ai-ranking" className={bottomNavCls}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -131,7 +180,6 @@ export default function Layout() {
             <span className="text-[10px] font-medium">랭킹</span>
           </NavLink>
 
-          {/* 찜 */}
           <NavLink to="/likes" className={bottomNavCls}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
