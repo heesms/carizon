@@ -685,6 +685,21 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     if (!makerCode) setSelectedModelGroupByCode({})
   }, [makerCode])
 
+  // 모델 목록이 로드되면 선택된 코드에 해당하는 이름 복원 (뒤로가기 등에서 state가 초기화된 경우)
+  useEffect(() => {
+    if (models.length === 0 || selectedModelCodes.length === 0) return
+    const updates: Record<string, string> = {}
+    for (const code of selectedModelCodes) {
+      if (!selectedModelNameByCode[code]) {
+        const found = models.find(m => m.code === code)
+        if (found) updates[code] = found.name
+      }
+    }
+    if (Object.keys(updates).length > 0) {
+      setSelectedModelNameByCode(prev => ({ ...prev, ...updates }))
+    }
+  }, [models, modelCode]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     setTextQueryDraft(String(value.q ?? ''))
   }, [value.q])
@@ -1722,6 +1737,37 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
               <label className="text-xs font-semibold text-gray-500 block mb-1">차량번호</label>
               <input className="input text-sm" placeholder="예) 12가3456" value={String(value.carNo ?? '')} onChange={set('carNo')} />
             </div>
+
+            {/* 상세필터 하단 액션 버튼 */}
+            <div className="sm:col-span-2 lg:col-span-4 flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-gray-100">
+              <div className="flex gap-2">
+                <button
+                  className="btn-ghost h-9 text-sm"
+                  onClick={() => setDetailOpen(false)}
+                >
+                  상세필터 닫기
+                </button>
+                {hasFilters && (
+                  <button
+                    className="btn-ghost h-9 text-xs text-red-500 hover:text-red-600 hover:bg-red-50"
+                    onClick={resetFilters}
+                  >
+                    초기화
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  className="btn-ghost h-9 text-sm"
+                  onClick={() => setFiltersCollapsed(true)}
+                >
+                  접기
+                </button>
+                <button className="btn-primary h-9 px-5" onClick={handleSearch}>
+                  검색
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1758,7 +1804,11 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5 bg-gray-50">
                 {makersLoading && (
-                  <div className="text-center text-sm text-gray-500 py-10">제조사 목록 불러오는 중...</div>
+                  <div className="animate-pulse space-y-3 px-2 py-4">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="h-12 bg-gray-200 rounded-xl" />
+                    ))}
+                  </div>
                 )}
 
                 {!makersLoading && makersError && (
@@ -1831,7 +1881,11 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5 bg-gray-50">
                 {pickerModelGroupsLoading && (
-                  <div className="text-center text-sm text-gray-500 py-10">모델그룹 불러오는 중...</div>
+                  <div className="animate-pulse space-y-3 px-2 py-4">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="h-12 bg-gray-200 rounded-xl" />
+                    ))}
+                  </div>
                 )}
 
                 {!pickerModelGroupsLoading && pickerModelGroupsError && (
@@ -1871,7 +1925,11 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                           {expanded && (
                             <div className="border-t border-gray-100 bg-white">
                               {modelsLoading && (
-                                <div className="px-4 py-6 text-center text-xs text-gray-400">모델 목록 불러오는 중...</div>
+                                <div className="animate-pulse space-y-2 px-4 py-3">
+                                  {Array.from({ length: 4 }).map((_, i) => (
+                                    <div key={i} className="h-9 bg-gray-100 rounded-lg" />
+                                  ))}
+                                </div>
                               )}
                               {!modelsLoading && modelsError && (
                                 <div className="px-4 py-6 text-center text-xs text-gray-400">{modelsError}</div>
@@ -1936,7 +1994,11 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                           {expanded && (
                             <div className="border-t border-gray-100 bg-white">
                               {modelsLoading && (
-                                <div className="px-4 py-6 text-center text-xs text-gray-400">모델 목록 불러오는 중...</div>
+                                <div className="animate-pulse space-y-2 px-4 py-3">
+                                  {Array.from({ length: 4 }).map((_, i) => (
+                                    <div key={i} className="h-9 bg-gray-100 rounded-lg" />
+                                  ))}
+                                </div>
                               )}
                               {!modelsLoading && modelsError && (
                                 <div className="px-4 py-6 text-center text-xs text-gray-400">{modelsError}</div>
@@ -2097,7 +2159,11 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-gray-50">
                 {bodyTypeLoading && (
-                  <div className="text-center text-sm text-gray-500 py-10">차종 목록 불러오는 중...</div>
+                  <div className="animate-pulse space-y-3 px-2 py-4">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="h-12 bg-gray-200 rounded-xl" />
+                    ))}
+                  </div>
                 )}
                 {!bodyTypeLoading && bodyTypeError && (
                   <div className="text-center text-sm text-gray-500 py-10">{bodyTypeError}</div>
@@ -2177,7 +2243,11 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-gray-50">
                 <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                   {fuelLoading && (
-                    <div className="px-4 py-10 text-center text-sm text-gray-500">연료 목록 불러오는 중...</div>
+                    <div className="animate-pulse space-y-2 px-4 py-3">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <div key={i} className="h-11 bg-gray-100 rounded-lg" />
+                      ))}
+                    </div>
                   )}
                   {!fuelLoading && fuelError && (
                     <div className="px-4 py-10 text-center text-sm text-gray-500">{fuelError}</div>
@@ -2258,7 +2328,11 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-gray-50">
                 <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                   {colorLoading && (
-                    <div className="px-4 py-10 text-center text-sm text-gray-500">색상 목록 불러오는 중...</div>
+                    <div className="animate-pulse space-y-2 px-4 py-3">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <div key={i} className="h-11 bg-gray-100 rounded-lg" />
+                      ))}
+                    </div>
                   )}
                   {!colorLoading && colorError && (
                     <div className="px-4 py-10 text-center text-sm text-gray-500">{colorError}</div>

@@ -260,6 +260,7 @@
            MIN(pc.price) AS priceMin,
            MAX(pc.price) AS priceMax,
            MAX(pc.updated_at) AS priceUpdatedAt,
+           COUNT(DISTINCT pc.platform_name) AS platformCount,
            COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
            COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
            COALESCE(MAX(pc.color), cm.color) AS color,
@@ -275,7 +276,7 @@
     LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
       AND (
         pc.status = 'ONSALE'
-        OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
+        OR (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK') AND pc.status = 'ADVERTISE')
       )
     LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
     LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
@@ -308,6 +309,7 @@
            MIN(pc.price) AS priceMin,
            MAX(pc.price) AS priceMax,
            MAX(pc.updated_at) AS priceUpdatedAt,
+           COUNT(DISTINCT pc.platform_name) AS platformCount,
            COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
            COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
            COALESCE(MAX(pc.color), cm.color) AS color,
@@ -323,7 +325,7 @@
     LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
       AND (
         pc.status = 'ONSALE'
-        OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
+        OR (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK') AND pc.status = 'ADVERTISE')
       )
     LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
     LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
@@ -356,6 +358,7 @@
            MIN(pc.price) AS priceMin,
            MAX(pc.price) AS priceMax,
            MAX(pc.updated_at) AS priceUpdatedAt,
+           COUNT(DISTINCT pc.platform_name) AS platformCount,
            COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
            COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
            COALESCE(MAX(pc.color), cm.color) AS color,
@@ -371,7 +374,7 @@
     LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
       AND (
         pc.status = 'ONSALE'
-        OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
+        OR (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK') AND pc.status = 'ADVERTISE')
       )
     LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
     LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
@@ -405,6 +408,7 @@
            MIN(pc.price) AS priceMin,
            MAX(pc.price) AS priceMax,
            MAX(pc.updated_at) AS priceUpdatedAt,
+           COUNT(DISTINCT pc.platform_name) AS platformCount,
            COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
            COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
            COALESCE(MAX(pc.color), cm.color) AS color,
@@ -455,6 +459,7 @@
            MIN(pc.price) AS priceMin,
            MAX(pc.price) AS priceMax,
            MAX(pc.updated_at) AS priceUpdatedAt,
+           COUNT(DISTINCT pc.platform_name) AS platformCount,
            COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
            COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
            COALESCE(MAX(pc.color), cm.color) AS color,

@@ -4,7 +4,6 @@ import com.carizon.recommendation.dto.WeeklyBestCarDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -23,10 +22,9 @@ public class WeeklyBestCarBatchService {
     private final JdbcTemplate jdbc;
 
     /**
-     * 랭킹 배치 실행 (매일 새벽 4시 1회 실행)
-     * TODO: 실제 워드프레스 포스팅은 BlogPostService.postToWordPress() 구현 후 활성화
+     * 랭킹 배치 실행
+     * 스케쥴 비활성화 - FridayNightPipelineScheduler 에서 통합 관리
      */
-    @Scheduled(cron = "0 0 4 * * *", zone = "Asia/Seoul")
     public void generateWeeklyBestPosts() {
         log.info("[weekly Best batch] weekly Best selection and blog post gen start");
 
@@ -101,7 +99,7 @@ public class WeeklyBestCarBatchService {
             WHERE cm.adv_status = 'ONSALE'
               AND (
                 pc.status = 'ONSALE'
-                OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
+                OR (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK') AND pc.status = 'ADVERTISE')
               )
               AND pc.last_seen_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
               AND cm.model_code IS NOT NULL

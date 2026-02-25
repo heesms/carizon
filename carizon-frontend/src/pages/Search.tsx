@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useLocation } from 'react-router-dom'
 import FiltersPanel from '@/components/FiltersPanel'
 import CarCard from '@/components/CarCard'
 import AdSlot from '@/components/AdSlot'
@@ -8,7 +8,7 @@ import { getRecommendations } from '@/api/recommendations'
 import { trackFilterApply, trackSearch } from '@/lib/analytics'
 
 const SORT_OPTIONS = [
-  { value: '', label: '무작위' },
+  { value: '', label: '추천순' },
   { value: 'RECENT', label: '최신순' },
   { value: 'LOW_PRICE', label: '가격 낮은순' },
   { value: 'LOW_KM', label: '주행 적은순' },
@@ -17,6 +17,7 @@ const SORT_OPTIONS = [
 
 export default function Search() {
   const [sp, setSp] = useSearchParams()
+  const location = useLocation()
   const [list, setList]               = useState<CarListItem[]>([])
   const [page, setPage]               = useState(0)
   const [totalPages, setTotalPages]   = useState(0)
@@ -26,6 +27,28 @@ export default function Search() {
   const [aiFallbackMessage, setAiFallbackMessage] = useState('')
   const [aiFallbackLoading, setAiFallbackLoading] = useState(false)
   const aiRequestedQueryRef = useRef('')
+  const savedScrollRef = useRef<number | null>(null)
+
+  // 뒤로가기 시 스크롤 위치 복원
+  useEffect(() => {
+    const raw = sessionStorage.getItem('search_scroll_y')
+    if (!raw) return
+    try {
+      const { url, y } = JSON.parse(raw)
+      if (url === `${location.pathname}${location.search}`) {
+        sessionStorage.removeItem('search_scroll_y')
+        savedScrollRef.current = y
+      }
+    } catch { /* no-op */ }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!loading && savedScrollRef.current !== null) {
+      const y = savedScrollRef.current
+      savedScrollRef.current = null
+      requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
+    }
+  }, [loading])
 
   const params = useMemo(() => Object.fromEntries(sp.entries()), [sp])
   const textQuery = useMemo(() => String(sp.get('q') ?? '').trim(), [sp])
@@ -146,6 +169,7 @@ export default function Search() {
     const usp = new URLSearchParams(sp)
     usp.set('page', String(p))
     setSp(usp)
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
   }
 
   const setSort = (sort: string) => {

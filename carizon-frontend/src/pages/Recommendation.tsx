@@ -270,9 +270,16 @@ function RecommendedCarCard({
 
   const handleLike = async (e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     if (!car.carId) return
     const res = await toggleLike(car.carId).catch(() => null)
     if (res) { setLiked(res.liked) }
+  }
+
+  const carState = {
+    from: `${fromLocation.pathname}${fromLocation.search}${fromLocation.hash}`,
+    source: 'ai',
+    backgroundLocation: fromLocation,
   }
 
   const cfg = RANK_STYLES[rank]
@@ -280,9 +287,19 @@ function RecommendedCarCard({
   // ── 1~3위: 메달 헤더 강조 카드 ──────────────────────────────────────────────
   if (cfg) {
     return (
-      <div className={`rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow ${cfg.border} ${cfg.cardBg}`}>
+      <div className={`relative rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer ${cfg.border} ${cfg.cardBg}`}>
+        {/* 전체 카드 클릭 커버 링크 */}
+        {car.carId && (
+          <Link
+            to={`/cars/${car.carId}`}
+            state={carState}
+            className="absolute inset-0 z-0"
+            aria-label={`${car.maker} ${car.model} 상세보기`}
+          />
+        )}
+
         {/* 순위 헤더 배너 */}
-        <div className={`${cfg.headerBg} px-3 py-1.5 flex items-center gap-2`}>
+        <div className={`${cfg.headerBg} px-3 py-1.5 flex items-center gap-2 relative`}>
           <span className="text-base leading-none">{cfg.medal}</span>
           <span className="text-white text-xs font-black tracking-wide">{cfg.label}</span>
           {cfg.badge && (
@@ -293,7 +310,7 @@ function RecommendedCarCard({
         </div>
 
         {/* 카드 바디 */}
-        <div className="p-3 sm:p-4 flex gap-3">
+        <div className="p-3 sm:p-4 flex gap-3 relative">
           {/* 이미지 */}
           <div className={`${cfg.imgClass} rounded-xl overflow-hidden bg-gray-50 shrink-0`}>
             <img src={imgSrc} alt={`${car.maker} ${car.model}`}
@@ -320,19 +337,8 @@ function RecommendedCarCard({
             )}
           </div>
 
-          {/* 액션 */}
-          <div className="flex flex-col items-end gap-1.5 shrink-0">
-            {car.carId && (
-              <Link to={`/cars/${car.carId}`}
-                state={{
-                  from: `${fromLocation.pathname}${fromLocation.search}${fromLocation.hash}`,
-                  source: 'ai',
-                  backgroundLocation: fromLocation,
-                }}
-                className={`text-[10px] sm:text-xs px-2 py-1 rounded-lg font-bold transition-colors ${cfg.btnClass}`}>
-                상세보기
-              </Link>
-            )}
+          {/* 좋아요 버튼 (커버 링크 위에 z-10으로 배치) */}
+          <div className="flex flex-col items-end gap-1.5 shrink-0 relative z-10">
             {car.carId && (
               <button onClick={handleLike}
                 className={`flex items-center justify-center w-7 h-7 rounded-lg transition-colors
@@ -345,27 +351,42 @@ function RecommendedCarCard({
             )}
           </div>
         </div>
+
+        {/* 상세보기 안내 */}
+        <div className="px-3 pb-2.5 flex justify-end relative">
+          <span className="text-[10px] text-gray-400">상세보기 →</span>
+        </div>
       </div>
     )
   }
 
   // ── 4위 이하: 컴팩트 카드 ──────────────────────────────────────────────────
   return (
-    <div className="card p-2.5 sm:p-3 flex gap-2 sm:gap-3 hover:shadow-sm transition-shadow">
+    <div className="relative card p-2.5 sm:p-3 flex gap-2 sm:gap-3 hover:shadow-sm transition-shadow cursor-pointer">
+      {/* 전체 카드 클릭 커버 링크 */}
+      {car.carId && (
+        <Link
+          to={`/cars/${car.carId}`}
+          state={carState}
+          className="absolute inset-0 z-0 rounded-2xl"
+          aria-label={`${car.maker} ${car.model} 상세보기`}
+        />
+      )}
+
       {/* 순위 뱃지 */}
-      <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-500 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+      <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-500 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5 relative z-10">
         {rank}
       </div>
 
       {/* 이미지 */}
-      <div className="w-16 h-12 sm:w-20 sm:h-14 rounded-lg overflow-hidden bg-gray-50 shrink-0">
+      <div className="w-16 h-12 sm:w-20 sm:h-14 rounded-lg overflow-hidden bg-gray-50 shrink-0 relative z-10">
         <img src={imgSrc} alt={`${car.maker} ${car.model}`}
           className="w-full h-full object-cover object-[center_65%]"
           onError={() => setImgSrc(NO_IMAGE)} />
       </div>
 
       {/* 정보 */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 relative z-10">
         <div className="font-semibold text-xs sm:text-sm text-gray-900 truncate">
           {car.maker} {car.model}
           {car.trim && <span className="font-normal text-gray-400 ml-1 text-[10px]">{car.trim}</span>}
@@ -383,19 +404,8 @@ function RecommendedCarCard({
         )}
       </div>
 
-      {/* 액션 */}
-      <div className="flex flex-col items-end gap-1 shrink-0">
-        {car.carId && (
-          <Link to={`/cars/${car.carId}`}
-            state={{
-              from: `${fromLocation.pathname}${fromLocation.search}${fromLocation.hash}`,
-              source: 'ai',
-              backgroundLocation: fromLocation,
-            }}
-            className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-lg bg-brand-50 text-brand-600 hover:bg-brand-100 font-semibold transition-colors">
-            상세보기
-          </Link>
-        )}
+      {/* 좋아요 버튼 */}
+      <div className="flex flex-col items-end gap-1 shrink-0 relative z-10">
         {car.carId && (
           <button onClick={handleLike}
             className={`flex items-center justify-center w-6 h-6 rounded-lg transition-colors
@@ -406,6 +416,7 @@ function RecommendedCarCard({
             </svg>
           </button>
         )}
+        <span className="text-[9px] text-gray-400 mt-0.5">→ 상세보기</span>
       </div>
     </div>
   )

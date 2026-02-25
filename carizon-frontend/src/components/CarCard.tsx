@@ -127,7 +127,15 @@ export default function CarCard({
       to={`/cars/${item.carId}`}
       state={state}
       className="card-hover flex flex-col group overflow-hidden h-full"
-      onClick={() => trackSelectItem(item.carId, item.maker, item.model, source)}
+      onClick={() => {
+        if (source === 'search') {
+          sessionStorage.setItem('search_scroll_y', JSON.stringify({
+            url: `${location.pathname}${location.search}`,
+            y: window.scrollY,
+          }))
+        }
+        trackSelectItem(item.carId, item.maker, item.model, source)
+      }}
     >
       {/* 이미지 */}
       <div className="relative aspect-[4/3] overflow-hidden bg-gray-50">

@@ -113,6 +113,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
 
   useEffect(() => {
     if (!id) return
+    if (!isModal) window.scrollTo(0, 0)
     setDetail(null)
     setHistory([])
     setImgSrc(NO_IMAGE)

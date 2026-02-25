@@ -404,12 +404,12 @@ public class ElasticsearchCarSearchService {
 
     private String getSortField(Map<String, Object> params) {
         String sort = params.containsKey("sort") ? String.valueOf(params.get("sort")) : null;
-        if (sort == null || sort.isEmpty() || "null".equals(sort)) return "priceUpdatedAt";
+        if (sort == null || sort.isEmpty() || "null".equals(sort)) return "platformCount";
         if ("LOW_PRICE".equals(sort)) return "priceMin";
         if ("LOW_KM".equals(sort)) return "km";
         if ("NEW_YEAR".equals(sort)) return "year";
         if ("RECENT".equals(sort)) return "priceUpdatedAt";
-        return "priceUpdatedAt";
+        return "platformCount";
     }
 
     private SortOrder getSortOrder(Map<String, Object> params) {

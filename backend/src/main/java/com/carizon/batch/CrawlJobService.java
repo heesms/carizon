@@ -3,7 +3,6 @@ package com.carizon.batch;
 import com.carizon.crawler.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -23,17 +22,17 @@ public class CrawlJobService {
     private final CharanchaCrawler charancha;
     private final TcarCrawler tcar;
 
-    // 매일 새벽 03:15 KST (순차 실행 - 기존 방식 유지)
-    @Scheduled(cron = "0 15 3 * * *", zone = "Asia/Seoul")
+    // 스케쥴 비활성화 - FridayNightPipelineScheduler 에서 통합 관리
     public void runDaily() {
         log.info("[CRAWL] daily schedule start (sequential)");
-        // 순서: 차차차 -> kcar -> tcar -> 차란차 -> 첫차 -> 엔카
+        // 순서: 차차차 -> kcar -> tcar -> 차란차 -> 첫차 -> 엔카 -> 엔카트럭
         chachacha.runOnce();
         kcar.runOnceFull();
         tcar.runOnceFull();
         charancha.runOnceFull();
         chutcha.runOnceFull();
         encar.runOnce();  // 엔카를 마지막으로
+        encarTruck.runOnce();
         log.info("[CRAWL] daily schedule end");
     }
 
@@ -44,7 +43,7 @@ public class CrawlJobService {
     public void runDailyAsync() {
         log.info("[CRAWL] daily schedule start (async)");
         
-        var executor = Executors.newFixedThreadPool(6);
+        var executor = Executors.newFixedThreadPool(7);
         try {
             long startTime = System.currentTimeMillis();
             
@@ -101,6 +100,15 @@ public class CrawlJobService {
                         log.info("[CRAWL] ENCAR done");
                     } catch (Exception e) {
                         log.error("[CRAWL] ENCAR failed", e);
+                    }
+                }, executor),
+                CompletableFuture.runAsync(() -> {
+                    log.info("[CRAWL] ENCAR_TRUCK start");
+                    try {
+                        encarTruck.runOnce();
+                        log.info("[CRAWL] ENCAR_TRUCK done");
+                    } catch (Exception e) {
+                        log.error("[CRAWL] ENCAR_TRUCK failed", e);
                     }
                 }, executor)
             ).join(); // 모든 크롤링 완료 대기
