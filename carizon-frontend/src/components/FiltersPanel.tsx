@@ -1766,7 +1766,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
             <div className="sm:col-span-2 lg:col-span-4 flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
               <button
                 className="btn-ghost h-[38px] text-sm text-brand-600"
-                onClick={() => setDetailOpen(false)}
+                onClick={() => { setDetailOpen(false); window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior }) }}
               >
                 상세 필터
                 {detailFilterCount > 0 && (
