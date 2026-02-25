@@ -1738,35 +1738,37 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
               <input className="input text-sm" placeholder="예) 12가3456" value={String(value.carNo ?? '')} onChange={set('carNo')} />
             </div>
 
-            {/* 상세필터 하단 액션 버튼 */}
-            <div className="sm:col-span-2 lg:col-span-4 flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-gray-100">
-              <div className="flex gap-2">
-                <button
-                  className="btn-ghost h-9 text-sm"
-                  onClick={() => setDetailOpen(false)}
-                >
-                  상세필터 닫기
-                </button>
-                {hasFilters && (
-                  <button
-                    className="btn-ghost h-9 text-xs text-red-500 hover:text-red-600 hover:bg-red-50"
-                    onClick={resetFilters}
-                  >
-                    초기화
-                  </button>
+            {/* 상세필터 하단 액션 버튼 - 상단 버튼 구성과 동일 */}
+            <div className="sm:col-span-2 lg:col-span-4 flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+              <button
+                className="btn-ghost h-[38px] text-sm text-brand-600"
+                onClick={() => setDetailOpen(false)}
+              >
+                상세 필터
+                {detailFilterCount > 0 && (
+                  <span className="ml-1 w-5 h-5 rounded-full bg-brand-600 text-white text-xs flex items-center justify-center">
+                    {detailFilterCount}
+                  </span>
                 )}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  className="btn-ghost h-9 text-sm"
-                  onClick={() => setFiltersCollapsed(true)}
-                >
-                  접기
+              </button>
+              <button className="btn-primary h-[38px] px-5" onClick={handleSearch}>
+                검색
+              </button>
+              <button
+                className="inline-flex items-center justify-center h-[38px] w-[38px] rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition"
+                onClick={() => setFiltersCollapsed(true)}
+                aria-label="검색 필터 접기"
+                title="검색 필터 접기"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+              </button>
+              {hasFilters && (
+                <button className="btn-ghost h-[38px] text-xs text-red-500 hover:text-red-600 hover:bg-red-50" onClick={resetFilters}>
+                  초기화
                 </button>
-                <button className="btn-primary h-9 px-5" onClick={handleSearch}>
-                  검색
-                </button>
-              </div>
+              )}
             </div>
           </div>
         )}
