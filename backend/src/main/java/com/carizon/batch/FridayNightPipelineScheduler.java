@@ -5,7 +5,6 @@ import com.carizon.mapping.MasterMergeService;
 import com.carizon.merge.MergeService;
 import com.carizon.rag.service.CarEmbeddingBatchService;
 import com.carizon.rag.service.ChromaVectorStoreService;
-import com.carizon.rag.service.LikeService;
 import com.carizon.search.service.CarIndexingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,14 +42,13 @@ public class FridayNightPipelineScheduler {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final String[] CODE_MAPPING_PLATFORMS = {
-            "ENCAR", "KCAR", "CHACHACHA", "CHUTCHA", "CHARANCHA", "TCAR"
+            "ENCAR", "ENCAR_TRUCK", "KCAR", "CHACHACHA", "CHUTCHA", "CHARANCHA", "TCAR"
     };
 
     private final CrawlJobService crawlJobService;
     private final MergeService mergeService;
     private final CodeMappingService codeMappingService;
     private final MasterMergeService masterMergeService;
-    private final LikeService likeService;
     private final CarIndexingService indexingService;
     private final ChromaVectorStoreService vectorStoreService;
     private final CarEmbeddingBatchService embeddingBatchService;
@@ -91,12 +89,10 @@ public class FridayNightPipelineScheduler {
             long rebuildPlatformStart = System.currentTimeMillis();
             Map<String, Object> platformResult = mergeService.rebuildFromScratch(bizDate);
             int platformCarCount = toInt(platformResult.get("platformCarCount"));
-            long likesClearedAfterPlatform = clearLikesForRebuild();
             totalItems += Math.max(platformCarCount, 0);
             result.put("rebuildPlatformCar", Map.of(
                     "path", "/admin/pipeline/rebuild-platform-car",
                     "platformCarCount", platformCarCount,
-                    "likesCleared", likesClearedAfterPlatform,
                     "durationMs", System.currentTimeMillis() - rebuildPlatformStart
             ));
 
@@ -116,7 +112,6 @@ public class FridayNightPipelineScheduler {
             int carMasterCount = masterMergeService.rebuildCarMasterFromScratch(bizDate);
             int masterUpdatedCount = masterMergeService.updateCarMasterFromMapping();
             int linkedCount = mergeService.linkToMaster();
-            long likesClearedAfterMaster = clearLikesForRebuild();
             totalItems += Math.max(carMasterCount, 0);
             totalItems += Math.max(linkedCount, 0);
             result.put("rebuildCarMaster", Map.of(
@@ -124,7 +119,6 @@ public class FridayNightPipelineScheduler {
                     "carMasterCount", carMasterCount,
                     "updatedCount", masterUpdatedCount,
                     "linkedCount", linkedCount,
-                    "likesCleared", likesClearedAfterMaster,
                     "durationMs", System.currentTimeMillis() - rebuildMasterStart
             ));
 
@@ -199,18 +193,6 @@ public class FridayNightPipelineScheduler {
             throw new RuntimeException("parallel jobs failed: " + cause.getMessage(), cause);
         } finally {
             executor.shutdown();
-        }
-    }
-
-    private long clearLikesForRebuild() {
-        try {
-            Map<String, Long> cleared = likeService.clearAllLikes();
-            if (cleared == null) return 0L;
-            Long totalDeleted = cleared.get("totalDeleted");
-            return totalDeleted != null ? totalDeleted : 0L;
-        } catch (Exception e) {
-            log.warn("[friday-night] like clear failed: {}", e.getMessage());
-            return -1L;
         }
     }
 

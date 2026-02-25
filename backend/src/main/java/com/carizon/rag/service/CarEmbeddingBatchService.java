@@ -103,7 +103,7 @@ public class CarEmbeddingBatchService {
             INNER JOIN platform_car pc ON pc.car_id = cm.car_id
             WHERE (
               pc.status = 'ONSALE'
-              OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
+              OR (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK') AND pc.status = 'ADVERTISE')
             )
               AND pc.price IS NOT NULL AND pc.price > 0
               AND cm.updated_at >= ?
@@ -126,7 +126,7 @@ public class CarEmbeddingBatchService {
             INNER JOIN platform_car pc ON pc.car_id = cm.car_id
             WHERE (
               pc.status = 'ONSALE'
-              OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
+              OR (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK') AND pc.status = 'ADVERTISE')
             )
               AND pc.price IS NOT NULL AND pc.price > 0
               AND cm.car_id > ? AND cm.car_id <= ?
@@ -148,7 +148,7 @@ public class CarEmbeddingBatchService {
             INNER JOIN platform_car pc ON pc.car_id = cm.car_id
             WHERE (
               pc.status = 'ONSALE'
-              OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
+              OR (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK') AND pc.status = 'ADVERTISE')
             )
               AND pc.price IS NOT NULL AND pc.price > 0
             ORDER BY cm.car_id
@@ -201,7 +201,7 @@ public class CarEmbeddingBatchService {
         sql.append("""
             WHERE (
               pc.status = 'ONSALE'
-              OR (pc.platform_name = 'ENCAR' AND pc.status = 'ADVERTISE')
+              OR (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK') AND pc.status = 'ADVERTISE')
             )
               AND pc.price IS NOT NULL AND pc.price > 0
             """);

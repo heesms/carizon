@@ -46,7 +46,7 @@ public class AdminDashboardController {
             
             // 플랫폼 차량 통계 (조건 완화: status가 NULL이거나 'ONSALE'이거나 ENCAR의 경우 'ADVERTISE'인 경우)
             Long platformCarCount = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM platform_car WHERE (status = 'ONSALE' OR status IS NULL OR (platform_name = 'ENCAR' AND status = 'ADVERTISE'))", Long.class);
+                "SELECT COUNT(*) FROM platform_car WHERE (status = 'ONSALE' OR status IS NULL OR (platform_name IN ('ENCAR', 'ENCAR_TRUCK') AND status = 'ADVERTISE'))", Long.class);
             if (platformCarCount == null) platformCarCount = 0L;
             stats.put("platformCarCount", platformCarCount);
             
@@ -54,7 +54,7 @@ public class AdminDashboardController {
             List<Map<String, Object>> platformStats = jdbc.queryForList("""
                 SELECT platform_name, COUNT(*) as count
                 FROM platform_car
-                WHERE (status = 'ONSALE' OR status IS NULL OR (platform_name = 'ENCAR' AND status = 'ADVERTISE'))
+                WHERE (status = 'ONSALE' OR status IS NULL OR (platform_name IN ('ENCAR', 'ENCAR_TRUCK') AND status = 'ADVERTISE'))
                 GROUP BY platform_name
                 ORDER BY count DESC
                 """);

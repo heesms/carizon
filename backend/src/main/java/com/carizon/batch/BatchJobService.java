@@ -146,7 +146,7 @@ public class BatchJobService {
         } else {
             // 모든 플랫폼
             int total = 0;
-            String[] platforms = {"ENCAR", "KCAR", "CHACHACHA", "CHUTCHA", "CHARANCHA", "TCAR"};
+            String[] platforms = {"ENCAR", "ENCAR_TRUCK", "KCAR", "CHACHACHA", "CHUTCHA", "CHARANCHA", "TCAR"};
             for (int i = 0; i < platforms.length; i++) {
                 String p = platforms[i];
                 int stepNo = i + 1;

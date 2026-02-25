@@ -134,6 +134,7 @@ public class PlatformLinkService {
         return switch (platformName.toUpperCase()) {
             case "CHACHACHA" -> "KB차차차";
             case "ENCAR" -> "엔카";
+            case "ENCAR_TRUCK" -> "엔카";
             case "KCAR" -> "케이카";
             case "CHUTCHA" -> "첫차";
             case "CHARANCHA" -> "차란차";

@@ -1,5 +1,6 @@
 package com.carizon.mapping;
 
+import com.carizon.common.service.CarMasterIdSequenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -19,6 +20,7 @@ public class MasterMergeService {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;          // execute(...) 용
     private final TransactionTemplate txTemplate;  // REQUIRES_NEW 권장 (설정에 따라)
+    private final CarMasterIdSequenceService carMasterIdSequenceService;
 
     private static final int CHUNK_SIZE = 1000;
     private static final int MASTER_MERGE_BATCH_SIZE = 5000; // car_master 머지 배치 크기
@@ -304,6 +306,8 @@ public class MasterMergeService {
      *  car_price_history도 함께 TRUNCATE해야 할 수 있음 (platform_car_id 참조) */
     public int rebuildCarMasterFromScratch(LocalDate bizDate) {
         log.warn("[master] rebuildCarMasterFromScratch: TRUNCATE car_master and rebuild! (batch mode)");
+        long nextCarId = carMasterIdSequenceService.snapshotNextCarId();
+        log.info("[master] rebuildCarMasterFromScratch: preserve next car_id={}", nextCarId);
         
         // 우선순위 테이블 보장 (별도 트랜잭션으로 분리하여 락 타임아웃 방지)
         try {
@@ -316,6 +320,7 @@ public class MasterMergeService {
         tx.execute(status -> {
             log.info("[master] rebuildCarMasterFromScratch: car_master TRUNCATE start");
             jdbc.execute("TRUNCATE TABLE car_master");
+            carMasterIdSequenceService.restoreNextCarId(nextCarId);
             log.info("[master] rebuildCarMasterFromScratch: car_master TRUNCATE done");
             return null;
         });

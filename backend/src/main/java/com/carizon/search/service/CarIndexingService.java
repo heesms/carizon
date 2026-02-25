@@ -44,7 +44,7 @@ public class CarIndexingService {
         long totalStart = System.currentTimeMillis();
 
         try {
-            elasticsearchCarSearchService.deleteAllDocuments();
+            elasticsearchCarSearchService.resetIndexWithMapping();
 
             int batchSize = Math.max(500, reindexBatchSize);
             Long lastCarId = null;

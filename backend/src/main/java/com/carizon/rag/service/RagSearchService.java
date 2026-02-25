@@ -473,14 +473,14 @@ public class RagSearchService {
             }
         }
         
-        // 판매 중인 차량만 (임베딩 조건과 동일: ONSALE 또는 ENCAR+ADVERTISE)
+        // 판매 중인 차량만 (임베딩 조건과 동일: ONSALE 또는 ENCAR/ENCAR_TRUCK + ADVERTISE)
         if (result.getStatus() == null || result.getStatus().isBlank()) {
             return FilterRejectReason.STATUS_EMPTY;
         }
         boolean onSale = "ONSALE".equalsIgnoreCase(result.getStatus());
-        boolean encarAdvertise = "ADVERTISE".equalsIgnoreCase(result.getStatus())
-            && "ENCAR".equalsIgnoreCase(result.getPlatformName());
-        if (!onSale && !encarAdvertise) {
+        boolean encarFamilyAdvertise = "ADVERTISE".equalsIgnoreCase(result.getStatus())
+            && isEncarFamilyPlatform(result.getPlatformName());
+        if (!onSale && !encarFamilyAdvertise) {
             return FilterRejectReason.STATUS_NOT_ONSALE;
         }
         
@@ -534,6 +534,12 @@ public class RagSearchService {
         FLOOD_HISTORY,
         STATUS_EMPTY,
         STATUS_NOT_ONSALE
+    }
+
+    private static boolean isEncarFamilyPlatform(String platformName) {
+        if (platformName == null || platformName.isBlank()) return false;
+        String platform = platformName.trim();
+        return "ENCAR".equalsIgnoreCase(platform) || "ENCAR_TRUCK".equalsIgnoreCase(platform);
     }
 
     private boolean hasOptionMatch(SearchResult result, String optionFilterRaw) {

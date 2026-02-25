@@ -1,5 +1,6 @@
 package com.carizon.merge;
 
+import com.carizon.common.service.CarMasterIdSequenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -39,6 +40,7 @@ public class MergeService {
     private final JdbcTemplate jdbc;
     private final NamedParameterJdbcTemplate npJdbc;
     private final PlatformTransactionManager txManager;
+    private final CarMasterIdSequenceService carMasterIdSequenceService;
 
     // 잠금 경합 줄이려면 우선 작게. 상황 봐가며 키워도 됨.
     private static final int UPSERT_BATCH_SIZE = 1_000; // raw_* → platform_car
@@ -417,11 +419,18 @@ public class MergeService {
     }
 
     public void mergeEncarDetail(LocalDate bizDate) {
-        mergeEncarDetailBySource(bizDate, "raw_encar", true, "merge:ENCAR", "ENCAR");
-        mergeEncarDetailBySource(bizDate, "raw_encar_truck", false, "merge:ENCAR_TRUCK", "ENCAR_TRUCK");
+        mergeEncarDetailBySource(bizDate, "raw_encar", true, "merge:ENCAR", "ENCAR", "ENCAR");
+        mergeEncarDetailBySource(bizDate, "raw_encar_truck", false, "merge:ENCAR_TRUCK", "ENCAR_TRUCK", "ENCAR_TRUCK");
     }
 
-    private void mergeEncarDetailBySource(LocalDate bizDate, String rawTable, boolean requireNormalSellType, String lockName, String logTag) {
+    private void mergeEncarDetailBySource(
+            LocalDate bizDate,
+            String rawTable,
+            boolean requireNormalSellType,
+            String lockName,
+            String logTag,
+            String platformName
+    ) {
         String sourceTable = validateEncarRawTable(rawTable);
         long from = 0L;
         while (true) {
@@ -442,7 +451,7 @@ public class MergeService {
                        m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url,
                        option_array, sel_option_array, seat_count, my_accident_cnt, flood_total_loss_cnt)
                     SELECT
-                      'ENCAR', r.vehicle_id, r.vehicle_no, NULL,
+                      'PLATFORM_NAME_LITERAL', r.vehicle_id, r.vehicle_no, NULL,
                       r.manufacturer_code, r.model_group_code, r.model_code, r.grade_code, r.grade_detail_code,
                       r.manufacturer_name, r.model_group_name, r.model_name, r.grade_name, r.grade_detail_name,
                       COALESCE(CAST(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.price')), ',', '') AS UNSIGNED), r.price),
@@ -498,6 +507,7 @@ public class MergeService {
                    .replace("AD_DATE_EXPR_ENCAR", AD_DATE_EXPR_ENCAR)
                    .replace("RAW_TABLE", sourceTable)
                    .replace("SELL_TYPE_FILTER", sellTypeFilter)
+                   .replace("PLATFORM_NAME_LITERAL", platformName)
                    .replace("COLOR_EXPR", mapColorExpr("r.color"))
                    .replace("FUEL_EXPR", mapFuelExpr("r.fuel"));
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
@@ -881,12 +891,15 @@ public class MergeService {
     /** TRUNCATE 후 platform_car와 car_master 재생성 (순수 INSERT만 사용, 더 빠름) */
     public Map<String, Object> rebuildFromScratch(LocalDate bizDate) {
         log.warn("[merge] rebuildFromScratch: TRUNCATE platform_car, car_master, car_price_history and rebuild!");
+        long nextCarId = carMasterIdSequenceService.snapshotNextCarId();
+        log.info("[merge] preserve next car_id={} before TRUNCATE", nextCarId);
         
         // 1단계: TRUNCATE (car_price_history → car_master → platform_car 순서)
         jdbc.execute("TRUNCATE TABLE car_price_history");
         log.info("[merge] car_price_history TRUNCATE done");
         
         jdbc.execute("TRUNCATE TABLE car_master");
+        carMasterIdSequenceService.restoreNextCarId(nextCarId);
         log.info("[merge] car_master TRUNCATE done");
         
         jdbc.execute("TRUNCATE TABLE platform_car");
@@ -973,11 +986,17 @@ public class MergeService {
 
     /** ENCAR INSERT만 */
     private void mergeEncarDetailInsertOnly(LocalDate bizDate) {
-        mergeEncarDetailInsertOnlyBySource(bizDate, "raw_encar", true, "merge:ENCAR");
-        mergeEncarDetailInsertOnlyBySource(bizDate, "raw_encar_truck", false, "merge:ENCAR_TRUCK");
+        mergeEncarDetailInsertOnlyBySource(bizDate, "raw_encar", true, "merge:ENCAR", "ENCAR");
+        mergeEncarDetailInsertOnlyBySource(bizDate, "raw_encar_truck", false, "merge:ENCAR_TRUCK", "ENCAR_TRUCK");
     }
 
-    private void mergeEncarDetailInsertOnlyBySource(LocalDate bizDate, String rawTable, boolean requireNormalSellType, String lockName) {
+    private void mergeEncarDetailInsertOnlyBySource(
+            LocalDate bizDate,
+            String rawTable,
+            boolean requireNormalSellType,
+            String lockName,
+            String platformName
+    ) {
         String sourceTable = validateEncarRawTable(rawTable);
         long from = 0L;
         String bizDateStr = bizDate.toString();
@@ -999,7 +1018,7 @@ public class MergeService {
                        m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url,
                        option_array, sel_option_array, seat_count, my_accident_cnt, flood_total_loss_cnt)
                     SELECT DISTINCT
-                      'ENCAR', r.vehicle_id, r.vehicle_no, NULL,
+                      'PLATFORM_NAME_LITERAL', r.vehicle_id, r.vehicle_no, NULL,
                       r.manufacturer_code, r.model_group_code, r.model_code, r.grade_code, r.grade_detail_code,
                       r.manufacturer_name, r.model_group_name, r.model_name, r.grade_name, r.grade_detail_name,
                       COALESCE(CAST(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.advertisement.price')), ',', '') AS UNSIGNED), r.price),
@@ -1028,6 +1047,7 @@ public class MergeService {
                    .replace("AD_DATE_EXPR_ENCAR", AD_DATE_EXPR_ENCAR)
                    .replace("RAW_TABLE", sourceTable)
                    .replace("SELL_TYPE_FILTER", sellTypeFilter)
+                   .replace("PLATFORM_NAME_LITERAL", platformName)
                    .replace("COLOR_EXPR", mapColorExpr("r.color"))
                    .replace("FUEL_EXPR", mapFuelExpr("r.fuel"));
                 jdbc.update(sql, cursorFrom, cursorTo);
@@ -1427,7 +1447,7 @@ public class MergeService {
                 return null;
             }));
 
-        // car_id 링크 후: option_array/sel_option_array 동기화 (최신 ENCAR 우선)
+        // car_id 링크 후: option_array/sel_option_array 동기화 (최신 ENCAR 계열 우선)
         runWithRetry(3, 200L, () ->
             requiresNew().execute(status -> {
                 int synced = jdbc.update("""
@@ -1438,7 +1458,7 @@ public class MergeService {
                             WHERE pc.car_id = cm.car_id
                               AND pc.option_array IS NOT NULL
                               AND TRIM(pc.option_array) <> ''
-                            ORDER BY (pc.platform_name = 'ENCAR') DESC,
+                            ORDER BY (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK')) DESC,
                                      pc.ad_date DESC,
                                      pc.updated_at DESC,
                                      pc.platform_car_id DESC
@@ -1450,7 +1470,7 @@ public class MergeService {
                             WHERE pc.car_id = cm.car_id
                               AND pc.sel_option_array IS NOT NULL
                               AND TRIM(pc.sel_option_array) <> ''
-                            ORDER BY (pc.platform_name = 'ENCAR') DESC,
+                            ORDER BY (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK')) DESC,
                                      pc.ad_date DESC,
                                      pc.updated_at DESC,
                                      pc.platform_car_id DESC

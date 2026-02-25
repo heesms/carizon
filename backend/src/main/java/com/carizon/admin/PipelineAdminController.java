@@ -6,7 +6,6 @@ import com.carizon.common.dto.ApiResponse;
 import com.carizon.mapping.CodeMappingService;
 import com.carizon.mapping.MasterMergeService;
 import com.carizon.merge.MergeService;
-import com.carizon.rag.service.LikeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -34,7 +33,6 @@ public class PipelineAdminController {
     private final MasterMergeService masterMergeService;
     private final BatchWorkflowService workflowService;
     private final ApiRunRecorder apiRunRecorder;
-    private final LikeService likeService;
 
     @PostMapping("/full")
     @Operation(summary = "전체 파이프라인 실행", 
@@ -74,7 +72,7 @@ public class PipelineAdminController {
             log.info("[pipeline] stage 2/3 code mapping start (67%)");
             long mappingStart = System.currentTimeMillis();
             int totalMapped = 0;
-            String[] platforms = {"ENCAR", "KCAR", "CHACHACHA", "CHUTCHA", "CHARANCHA", "TCAR"};
+            String[] platforms = {"ENCAR", "ENCAR_TRUCK", "KCAR", "CHACHACHA", "CHUTCHA", "CHARANCHA", "TCAR"};
             for (int i = 0; i < platforms.length; i++) {
                 String platform = platforms[i];
                 try {
@@ -189,7 +187,7 @@ public class PipelineAdminController {
             
             long start = System.currentTimeMillis();
             int totalMapped = 0;
-            String[] platforms = {"ENCAR", "KCAR", "CHACHACHA", "CHUTCHA", "CHARANCHA", "TCAR"};
+            String[] platforms = {"ENCAR", "ENCAR_TRUCK", "KCAR", "CHACHACHA", "CHUTCHA", "CHARANCHA", "TCAR"};
             for (String platform : platforms) {
                 try {
                     int mapped = codeMappingService.runAutoMapping(platform, mappingScope);
@@ -257,12 +255,10 @@ public class PipelineAdminController {
             
             Map<String, Object> result = mergeService.rebuildFromScratch(date);
             long duration = System.currentTimeMillis() - start;
-            long likesCleared = clearLikesOnRebuild();
             
             int platformCarCount = (Integer) result.get("platformCarCount");
             Map<String, Object> response = Map.of(
                     "platformCarCount", platformCarCount,
-                    "likesCleared", likesCleared,
                     "durationMs", duration,
                     "bizDate", date.toString()
             );
@@ -292,12 +288,10 @@ public class PipelineAdminController {
             masterMergeService.updateCarMasterFromMapping();
             int linkedCount = mergeService.linkToMaster();
             long duration = System.currentTimeMillis() - start;
-            long likesCleared = clearLikesOnRebuild();
             
             Map<String, Object> result = Map.of(
                     "carMasterCount", carMasterCount,
                     "linkedCount", linkedCount,
-                    "likesCleared", likesCleared,
                     "durationMs", duration,
                     "bizDate", date.toString()
             );
@@ -346,7 +340,6 @@ public class PipelineAdminController {
             int linkedCount = mergeService.linkToMaster();
             long linkTime = System.currentTimeMillis() - linkStart;
             log.info("[pipeline] platform_car.car_id mapping done: {} rows ({}ms)", linkedCount, linkTime);
-            long likesCleared = clearLikesOnRebuild();
             
             long totalTime = System.currentTimeMillis() - start;
             
@@ -354,7 +347,6 @@ public class PipelineAdminController {
                     "platformCarCount", platformCarCount,
                     "carMasterCount", carMasterCount,
                     "linkedCount", linkedCount,
-                    "likesCleared", likesCleared,
                     "totalDurationMs", totalTime,
                     "mergeDurationMs", mergeTime,
                     "masterDurationMs", masterTime,
@@ -368,22 +360,6 @@ public class PipelineAdminController {
             log.error("[pipeline] rebuildFromScratch run failed", e);
             apiRunRecorder.recordFail(runId, 0, e);
             return ApiResponse.error("rebuildFromScratch 실행 실패: " + e.getMessage());
-        }
-    }
-
-    private long clearLikesOnRebuild() {
-        try {
-            Map<String, Long> cleared = likeService.clearAllLikes();
-            long total = 0L;
-            if (cleared != null) {
-                Long value = cleared.get("totalDeleted");
-                if (value != null) total = value;
-            }
-            log.warn("[pipeline] rebuild like cache cleared: {}", cleared);
-            return total;
-        } catch (Exception e) {
-            log.warn("[pipeline] rebuild like cache clear failed: {}", e.getMessage());
-            return -1L;
         }
     }
 }
