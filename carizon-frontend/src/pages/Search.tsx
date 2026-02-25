@@ -43,12 +43,12 @@ export default function Search() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!loading && savedScrollRef.current !== null) {
-      const y = savedScrollRef.current
-      savedScrollRef.current = null
-      requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
-    }
-  }, [loading])
+    if (loading || filteredVisibleList.length === 0) return
+    if (savedScrollRef.current === null) return
+    const y = savedScrollRef.current
+    savedScrollRef.current = null
+    requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
+  }, [loading, filteredVisibleList.length])
 
   const params = useMemo(() => Object.fromEntries(sp.entries()), [sp])
   const textQuery = useMemo(() => String(sp.get('q') ?? '').trim(), [sp])
