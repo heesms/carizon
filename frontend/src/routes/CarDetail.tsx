@@ -150,6 +150,7 @@ export default function CarDetail(){
                     title={carTitle}
                     description={carDescription}
                     canonicalPath={carCanonicalPath}
+                    noindex
                     keywords="중고차 상세, 차량 스펙, 가격 비교, 차량 플랫폼 비교"
                     ogImage="/favicon.png"
                 />

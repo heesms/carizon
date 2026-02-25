@@ -73,7 +73,7 @@ export default function SeoMeta({
 
         upsertMeta('description', description)
         if (keywords) upsertMeta('keywords', keywords)
-        upsertMeta('robots', noindex ? 'noindex, nofollow' : 'index, follow')
+        upsertMeta('robots', noindex ? 'noindex, follow' : 'index, follow')
 
         upsertMeta('og:title', title, 'property')
         upsertMeta('og:description', description, 'property')

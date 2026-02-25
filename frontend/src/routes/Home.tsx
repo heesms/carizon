@@ -7,8 +7,8 @@ export default function Home() {
     return (
         <>
             <SeoMeta
-                title="중고차 통합 검색 플랫폼 Carizon - 차량 매물 추천과 빠른 검색"
-                description="중고차 매물 검색부터 플랫폼 가격 비교까지 한 번에 확인하세요. 제조사·모델별 중고차 추천, 조건별 필터 검색으로 나에게 맞는 차량을 빠르게 찾을 수 있습니다."
+                title="중고차 통합검색·가격비교 - Carizon | AI 추천으로 빠르게 찾기"
+                description="Carizon은 여러 플랫폼의 중고차 매물을 한곳에서 통합 검색하고 가격·연식·주행거리 조건으로 비교할 수 있는 서비스입니다. AI 추천으로 원하는 차량을 빠르게 찾으세요."
                 keywords="중고차, 중고차 검색, 중고차 매물, 중고차 추천, Carizon, 제조사별 중고차, 가격비교"
                 canonicalPath="/"
                 ogImage="/favicon.png"
