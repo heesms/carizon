@@ -227,6 +227,10 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
       icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /> },
   ].filter(s => s.value)
 
+  const heroLabels = ['연식', '주행거리', '연료', '변속기']
+  const heroSpecs = specs.filter(s => heroLabels.includes(s.label))
+  const tableSpecs = specs.filter(s => !heroLabels.includes(s.label))
+
   return (
     <div className={`space-y-4 sm:space-y-6 animate-fade-in ${isModal ? 'px-3 sm:px-6 lg:px-7 pb-8' : ''}`}>
       {/* 뒤로 (페이지 모드에서만 표시) */}
@@ -406,21 +410,28 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                 </p>
               </div>
             )}
-            <dl className="grid grid-cols-2 gap-2">
-              {specs.map(s => (
-                <div key={s.label} className="flex items-center gap-2.5 p-2.5 sm:p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${s.bg}`}>
-                    <svg className={`w-4 h-4 ${s.ic}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      {s.icon}
-                    </svg>
+            {/* 핵심 4개 hero stats */}
+            {heroSpecs.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                {heroSpecs.map(s => (
+                  <div key={s.label} className={`rounded-xl p-3 sm:p-4 text-center ${s.bg}`}>
+                    <div className={`text-base sm:text-xl font-black ${s.ic} leading-tight mb-0.5`}>{s.value}</div>
+                    <div className="text-[11px] text-gray-500">{s.label}</div>
                   </div>
-                  <div className="min-w-0">
-                    <dt className="text-[10px] sm:text-[11px] text-gray-400 font-medium leading-none mb-0.5">{s.label}</dt>
-                    <dd className="text-xs sm:text-sm font-bold text-gray-900 truncate">{s.value}</dd>
+                ))}
+              </div>
+            )}
+            {/* 나머지 스펙 테이블 */}
+            {tableSpecs.length > 0 && (
+              <dl className="grid grid-cols-2 gap-x-6">
+                {tableSpecs.map(s => (
+                  <div key={s.label} className="flex items-center justify-between py-2 border-b border-gray-100">
+                    <dt className="text-xs text-gray-400 shrink-0">{s.label}</dt>
+                    <dd className="text-xs font-semibold text-gray-800 text-right ml-2 truncate">{s.value}</dd>
                   </div>
-                </div>
-              ))}
-            </dl>
+                ))}
+              </dl>
+            )}
           </div>
 
           {/* 4. 가격 히스토리 차트 */}
