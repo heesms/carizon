@@ -288,56 +288,12 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
             </div>
           </div>
 
-          {/* 상단 사이드 광고: 낮은 높이 */}
-          <AdSlot id="detail-side" variant="leaderboard" />
         </div>
 
         {/* 우측: 상세 정보 */}
         <div className="space-y-4">
-          {/* 기본 스펙 */}
-          <div className="card p-4 sm:p-5">
-            <h2 className="font-bold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2">
-              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              기본 정보
-            </h2>
-            {car.myAccidentCnt != null && car.myAccidentCnt > 0 && (
-              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl bg-red-50 border border-red-200">
-                <svg className="w-5 h-5 text-red-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    d="M8 18v-3a4 4 0 018 0v3Z"
-                    fill="currentColor"
-                    fillOpacity="0.24"
-                    stroke="none"
-                  />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M8 18v-3a4 4 0 018 0v3M7 18h10M12 4v2M5 12h2M17 12h2M7 8.5l1.5 1.5M17 8.5l-1.5 1.5" />
-                </svg>
-                <p className="text-xs text-red-700 font-semibold">
-                  내 차 사고이력 의심 - 구매 전 정비 이력을 꼭 확인하세요
-                </p>
-              </div>
-            )}
-            <dl className="grid grid-cols-2 gap-2">
-              {specs.map(s => (
-                <div key={s.label} className="flex items-center gap-2.5 p-2.5 sm:p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${s.bg}`}>
-                    <svg className={`w-4 h-4 ${s.ic}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      {s.icon}
-                    </svg>
-                  </div>
-                  <div className="min-w-0">
-                    <dt className="text-[10px] sm:text-[11px] text-gray-400 font-medium leading-none mb-0.5">{s.label}</dt>
-                    <dd className="text-xs sm:text-sm font-bold text-gray-900 truncate">{s.value}</dd>
-                  </div>
-                </div>
-              ))}
-            </dl>
-          </div>
 
-          {/* 플랫폼별 가격 비교 - 바 차트 */}
+          {/* 1. 플랫폼별 가격 비교 */}
           <div className="card p-4 sm:p-5">
             <h2 className="font-bold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2">
               <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -426,7 +382,48 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
             )}
           </div>
 
-          {/* 가격 히스토리 차트 */}
+          {/* 2. 광고 */}
+          <AdSlot id="detail-side" variant="leaderboard" />
+
+          {/* 3. 기본 스펙 */}
+          <div className="card p-4 sm:p-5">
+            <h2 className="font-bold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              기본 정보
+            </h2>
+            {car.myAccidentCnt != null && car.myAccidentCnt > 0 && (
+              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl bg-red-50 border border-red-200">
+                <svg className="w-5 h-5 text-red-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 18v-3a4 4 0 018 0v3Z" fill="currentColor" fillOpacity="0.24" stroke="none" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M8 18v-3a4 4 0 018 0v3M7 18h10M12 4v2M5 12h2M17 12h2M7 8.5l1.5 1.5M17 8.5l-1.5 1.5" />
+                </svg>
+                <p className="text-xs text-red-700 font-semibold">
+                  내 차 사고이력 의심 - 구매 전 정비 이력을 꼭 확인하세요
+                </p>
+              </div>
+            )}
+            <dl className="grid grid-cols-2 gap-2">
+              {specs.map(s => (
+                <div key={s.label} className="flex items-center gap-2.5 p-2.5 sm:p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${s.bg}`}>
+                    <svg className={`w-4 h-4 ${s.ic}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      {s.icon}
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-[10px] sm:text-[11px] text-gray-400 font-medium leading-none mb-0.5">{s.label}</dt>
+                    <dd className="text-xs sm:text-sm font-bold text-gray-900 truncate">{s.value}</dd>
+                  </div>
+                </div>
+              ))}
+            </dl>
+          </div>
+
+          {/* 4. 가격 히스토리 차트 */}
           {history.length > 0 && <PriceChart points={history} />}
 
           {/* AI 추천 유도 */}

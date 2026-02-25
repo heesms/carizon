@@ -109,14 +109,14 @@ export default function Home() {
         <div className="relative">
           <div className="inline-flex items-center gap-2 bg-white/15 backdrop-blur-sm border border-white/20 rounded-full px-3 sm:px-4 py-1 sm:py-1.5 text-xs sm:text-sm font-medium mb-4 sm:mb-6">
             <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-            여러 플랫폼 매물 실시간 통합 수집 중
+            중고차 플랫폼 매물 실시간 통합 수집 중
           </div>
 
           <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black mb-2 sm:mb-3 leading-tight">
             중고차, 한 번에 비교하세요
           </h1>
           <p className="text-blue-100 text-sm sm:text-lg mb-6 sm:mb-8">
-            여러 플랫폼 매물을 통합해 최저가를 찾아드립니다
+            중고차 플랫폼 매물을 통합해 최저가를 찾아드립니다
           </p>
 
           {/* 검색 폼 */}
@@ -242,7 +242,7 @@ export default function Home() {
                 <span className="text-[11px] font-bold bg-white/20 px-2 py-0.5 rounded-full">기능 1</span>
               </div>
               <h3 className="font-black text-lg leading-tight">통합 검색</h3>
-              <p className="text-blue-100 text-xs mt-1">여러 플랫폼 매물을 한 번에</p>
+              <p className="text-blue-100 text-xs mt-1">중고차 플랫폼 매물을 한 번에</p>
             </div>
             <div className="p-4 flex-1 flex flex-col">
               <ul className="space-y-2 mb-4 flex-1">
