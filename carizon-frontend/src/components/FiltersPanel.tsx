@@ -1588,7 +1588,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
             <button
               className="inline-flex items-center justify-center h-[38px] w-[38px] rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition"
-              onClick={() => setFiltersCollapsed(true)}
+              onClick={() => { setFiltersCollapsed(true); window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior }) }}
               aria-label="검색 필터 접기"
               title="검색 필터 접기"
             >
@@ -1696,41 +1696,65 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
             <div>
               <label className="text-xs font-semibold text-gray-500 block mb-1">차종</label>
-              <button
-                className="w-full text-left px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white hover:border-gray-300 transition text-sm flex items-center justify-between"
-                onClick={openBodyTypePicker}
-              >
-                <span className="truncate text-gray-800">
-                  {selectedBodyTypes.length > 0 ? `${selectedBodyTypes.length}개 선택` : '전체'}
-                </span>
-                <span className="text-xs text-gray-400">▼</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  className="flex-1 min-w-0 text-left px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white hover:border-gray-300 transition text-sm flex items-center justify-between"
+                  onClick={openBodyTypePicker}
+                >
+                  <span className="truncate text-gray-800">
+                    {selectedBodyTypes.length > 0 ? `${selectedBodyTypes.length}개 선택` : '전체'}
+                  </span>
+                  <span className="text-xs text-gray-400">▼</span>
+                </button>
+                {selectedBodyTypes.length > 0 && (
+                  <ClearIconButton
+                    onClick={e => { e.stopPropagation(); onChange({ ...value, bodyType: undefined }) }}
+                    label="차종 조건 해제"
+                  />
+                )}
+              </div>
             </div>
 
             <div>
               <label className="text-xs font-semibold text-gray-500 block mb-1">차량색상</label>
-              <button
-                className="w-full text-left px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white hover:border-gray-300 transition text-sm flex items-center justify-between"
-                onClick={openColorPicker}
-              >
-                <span className="truncate text-gray-800">
-                  {selectedColors.length > 0 ? `${selectedColors.length}개 선택` : '전체'}
-                </span>
-                <span className="text-xs text-gray-400">▼</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  className="flex-1 min-w-0 text-left px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white hover:border-gray-300 transition text-sm flex items-center justify-between"
+                  onClick={openColorPicker}
+                >
+                  <span className="truncate text-gray-800">
+                    {selectedColors.length > 0 ? `${selectedColors.length}개 선택` : '전체'}
+                  </span>
+                  <span className="text-xs text-gray-400">▼</span>
+                </button>
+                {selectedColors.length > 0 && (
+                  <ClearIconButton
+                    onClick={e => { e.stopPropagation(); onChange({ ...value, color: undefined }) }}
+                    label="차량색상 조건 해제"
+                  />
+                )}
+              </div>
             </div>
 
             <div>
               <label className="text-xs font-semibold text-gray-500 block mb-1">연료</label>
-              <button
-                className="w-full text-left px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white hover:border-gray-300 transition text-sm flex items-center justify-between"
-                onClick={openFuelPicker}
-              >
-                <span className="truncate text-gray-800">
-                  {selectedFuels.length > 0 ? `${selectedFuels.length}개 선택` : '전체'}
-                </span>
-                <span className="text-xs text-gray-400">▼</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  className="flex-1 min-w-0 text-left px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white hover:border-gray-300 transition text-sm flex items-center justify-between"
+                  onClick={openFuelPicker}
+                >
+                  <span className="truncate text-gray-800">
+                    {selectedFuels.length > 0 ? `${selectedFuels.length}개 선택` : '전체'}
+                  </span>
+                  <span className="text-xs text-gray-400">▼</span>
+                </button>
+                {selectedFuels.length > 0 && (
+                  <ClearIconButton
+                    onClick={e => { e.stopPropagation(); onChange({ ...value, fuel: undefined }) }}
+                    label="연료 조건 해제"
+                  />
+                )}
+              </div>
             </div>
 
             <div>
@@ -1756,7 +1780,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
               </button>
               <button
                 className="inline-flex items-center justify-center h-[38px] w-[38px] rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition"
-                onClick={() => setFiltersCollapsed(true)}
+                onClick={() => { setFiltersCollapsed(true); window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior }) }}
                 aria-label="검색 필터 접기"
                 title="검색 필터 접기"
               >
