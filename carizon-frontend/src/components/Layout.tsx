@@ -5,7 +5,7 @@ const PAGE_NAMES: Record<string, string> = {
   '/':               '',
   '/search':         '검색',
   '/recommendation': 'AI 중고차 매물 추천',
-  '/ai-ranking':     'AI 랭킹',
+  '/ai-ranking':     'AI 중고차 매물 랭킹',
   '/likes':          '찜한 차량',
   '/info':           '정보',
 }
@@ -177,7 +177,7 @@ export default function Layout() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
-            <span className="text-[10px] font-medium">랭킹</span>
+            <span className="text-[10px] font-medium">AI랭킹</span>
           </NavLink>
 
           <NavLink to="/likes" className={bottomNavCls}>
