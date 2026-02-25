@@ -12,6 +12,7 @@ import Recommendation from './pages/Recommendation'
 import MyLikes from './pages/MyLikes'
 import AiRankingBest from './pages/AiRankingBest'
 import Info from './pages/Info'
+import NotFound from './pages/NotFound'
 import { applyRouteSeo } from './utils/seo'
 import { initGoogleAnalytics, trackPageView } from './utils/analytics'
 
@@ -43,6 +44,7 @@ function AppRoutes() {
           <Route path="recommendation" element={<Recommendation />} />
           <Route path="ai-ranking" element={<AiRankingBest />} />
           <Route path="info" element={<Info />} />
+          <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
 
