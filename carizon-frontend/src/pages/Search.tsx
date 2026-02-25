@@ -4,6 +4,7 @@ import FiltersPanel from '@/components/FiltersPanel'
 import CarCard from '@/components/CarCard'
 import AdSlot from '@/components/AdSlot'
 import { searchCars, type CarListItem } from '@/api/cars'
+import { getMyLikes } from '@/api/likes'
 import { getRecommendations } from '@/api/recommendations'
 import { trackFilterApply, trackSearch } from '@/lib/analytics'
 
@@ -19,6 +20,7 @@ export default function Search() {
   const [sp, setSp] = useSearchParams()
   const location = useLocation()
   const [list, setList]               = useState<CarListItem[]>([])
+  const [likedCarIds, setLikedCarIds] = useState<Set<number>>(() => new Set())
   const [page, setPage]               = useState(0)
   const [totalPages, setTotalPages]   = useState(0)
   const [totalElements, setTotal]     = useState(0)
@@ -69,6 +71,25 @@ export default function Search() {
     savedScrollRef.current = null
     requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
   }, [loading, filteredVisibleList.length])
+
+  useEffect(() => {
+    let cancelled = false
+    getMyLikes(500)
+      .then((data) => {
+        if (cancelled) return
+        const ids = Array.isArray(data?.carIds) ? data.carIds : []
+        const next = new Set(
+          ids
+            .map((id) => Number(id))
+            .filter((id) => Number.isFinite(id))
+        )
+        setLikedCarIds(next)
+      })
+      .catch(() => {
+        // no-op
+      })
+    return () => { cancelled = true }
+  }, [])
 
   const fetchPage = async (p = 0) => {
     setLoading(true)
@@ -241,6 +262,15 @@ export default function Search() {
                   item={it}
                   showLikeCount={false}
                   loadLikeOnMount={false}
+                  initialLiked={likedCarIds.has(it.carId)}
+                  onLikeChanged={(carId, liked) => {
+                    setLikedCarIds((prev) => {
+                      const next = new Set(prev)
+                      if (liked) next.add(carId)
+                      else next.delete(carId)
+                      return next
+                    })
+                  }}
                 />
               </div>
               {/* 9번째 카드 뒤에 그리드 내 광고 삽입 */}

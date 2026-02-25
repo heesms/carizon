@@ -85,8 +85,10 @@ export default function CarCard({
     e.preventDefault()
     e.stopPropagation()
     if (likeBusy) return
-    const nextLiked = !liked
-    if (!nextLiked && onConfirmUnlike) {
+    const prevLiked = liked
+    const prevCount = likeCount
+    const optimisticLiked = !prevLiked
+    if (!optimisticLiked && onConfirmUnlike) {
       try {
         const confirmed = await Promise.resolve(onConfirmUnlike(item.carId))
         if (!confirmed) return
@@ -95,17 +97,25 @@ export default function CarCard({
       }
     }
 
+    const optimisticCount = Math.max(0, prevCount + (optimisticLiked ? 1 : -1))
+    setLiked(optimisticLiked)
+    setLikeCount(optimisticCount)
+    onLikeChanged?.(item.carId, optimisticLiked, optimisticCount)
+
     setLikeBusy(true)
     try {
       const next = await toggleLike(item.carId)
       const nextLiked = !!next?.liked
-      const nextCount = Number(next?.count ?? 0)
+      const nextCountRaw = Number(next?.count)
+      const nextCount = Number.isFinite(nextCountRaw) ? nextCountRaw : optimisticCount
       setLiked(nextLiked)
       setLikeCount(nextCount)
       onLikeChanged?.(item.carId, nextLiked, nextCount)
       trackLike(item.carId, nextLiked)
     } catch {
-      // no-op
+      setLiked(prevLiked)
+      setLikeCount(prevCount)
+      onLikeChanged?.(item.carId, prevLiked, prevCount)
     } finally {
       setLikeBusy(false)
     }
