@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -73,8 +74,16 @@ public class LikeController {
             HttpServletRequest request) {
         
         String userId = getUserId(request);
-        boolean liked = likeService.toggleLike(carId, userId);
-        long count = likeService.getLikeCount(carId);
+        String carNo = resolveCarNo(carId);
+        if (carNo == null) {
+            return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "liked", false,
+                "count", 0L
+            )));
+        }
+
+        boolean liked = likeService.toggleLike(carNo, userId);
+        long count = likeService.getLikeCount(carNo);
         
         Map<String, Object> result = Map.of(
             "liked", liked,
@@ -91,8 +100,16 @@ public class LikeController {
             HttpServletRequest request) {
         
         String userId = getUserId(request);
-        long count = likeService.getLikeCount(carId);
-        boolean liked = likeService.hasLiked(carId, userId);
+        String carNo = resolveCarNo(carId);
+        if (carNo == null) {
+            return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "count", 0L,
+                "liked", false
+            )));
+        }
+
+        long count = likeService.getLikeCount(carNo);
+        boolean liked = likeService.hasLiked(carNo, userId);
         
         Map<String, Object> result = Map.of(
             "count", count,
@@ -106,7 +123,29 @@ public class LikeController {
     @Operation(summary = "일괄 좋아요 개수 조회", description = "여러 차량의 좋아요 개수를 일괄 조회합니다")
     public ResponseEntity<ApiResponse<Map<Long, Long>>> getLikeCounts(@RequestBody Map<String, java.util.List<Long>> request) {
         java.util.List<Long> carIds = request.get("carIds");
-        Map<Long, Long> counts = likeService.getLikeCounts(carIds);
+        if (carIds == null || carIds.isEmpty()) {
+            return ResponseEntity.ok(ApiResponse.success(Map.of()));
+        }
+
+        List<Map<String, Object>> rows = elasticsearchCarSearchService.findCarsByIds(carIds);
+        Map<Long, String> carNoByCarId = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            Long foundCarId = toLong(row.get("carId"));
+            String carNo = normalizeCarNo(asText(row.get("carNo")));
+            if (foundCarId == null || carNo == null) continue;
+            carNoByCarId.put(foundCarId, carNo);
+        }
+        Map<String, Long> countsByCarNo = likeService.getLikeCountsByCarNos(new ArrayList<>(carNoByCarId.values()));
+        Map<Long, Long> counts = new LinkedHashMap<>();
+        for (Long carId : carIds) {
+            if (carId == null) continue;
+            String carNo = carNoByCarId.get(carId);
+            if (carNo == null) {
+                counts.put(carId, 0L);
+                continue;
+            }
+            counts.put(carId, countsByCarNo.getOrDefault(carNo, 0L));
+        }
         return ResponseEntity.ok(ApiResponse.success(counts));
     }
 
@@ -117,13 +156,48 @@ public class LikeController {
             @RequestParam(defaultValue = "100") int limit) {
 
         String userId = getUserId(request);
-        List<Long> carIds = likeService.getLikedCarIds(userId, limit);
-        Map<Long, Long> counts = likeService.getLikeCounts(carIds);
+        List<String> carNos = likeService.getLikedCarNos(userId, limit);
+        if (carNos.isEmpty()) {
+            return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "carIds", List.of(),
+                "counts", Map.of()
+            )));
+        }
 
-        Map<String, Object> result = Map.of(
-            "carIds", carIds,
-            "counts", counts
-        );
+        List<Map<String, Object>> rows = elasticsearchCarSearchService.findCarsByCarNos(carNos);
+        Map<String, Map<String, Object>> rowByCarNo = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            String carNo = normalizeCarNo(asText(row.get("carNo")));
+            if (carNo == null) continue;
+            rowByCarNo.put(carNo, row);
+        }
+
+        Map<String, Long> countsByCarNo = likeService.getLikeCountsByCarNos(carNos);
+        List<Long> carIds = new ArrayList<>();
+        Map<Long, Long> counts = new LinkedHashMap<>();
+        int removedMissing = 0;
+
+        for (String carNo : carNos) {
+            Map<String, Object> row = rowByCarNo.get(carNo);
+            if (row == null) {
+                likeService.removeLike(userId, carNo);
+                removedMissing++;
+                continue;
+            }
+            Long carId = toLong(row.get("carId"));
+            if (carId == null || carId <= 0) {
+                likeService.removeLike(userId, carNo);
+                removedMissing++;
+                continue;
+            }
+            carIds.add(carId);
+            counts.put(carId, countsByCarNo.getOrDefault(carNo, 0L));
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("carIds", carIds);
+        result.put("counts", counts);
+        result.put("removedMissing", removedMissing);
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 
@@ -134,24 +208,32 @@ public class LikeController {
             @RequestParam(defaultValue = "100") int limit) {
 
         String userId = getUserId(request);
-        List<Long> carIds = likeService.getLikedCarIds(userId, limit);
-        if (carIds.isEmpty()) {
+        List<String> carNos = likeService.getLikedCarNos(userId, limit);
+        if (carNos.isEmpty()) {
             return ResponseEntity.ok(ApiResponse.success(List.of()));
         }
-        Map<Long, Long> counts = likeService.getLikeCounts(carIds);
-        List<Map<String, Object>> rows = elasticsearchCarSearchService.findCarsByIds(carIds);
 
-        Map<Long, Map<String, Object>> byCarId = new LinkedHashMap<>();
+        List<Map<String, Object>> rows = elasticsearchCarSearchService.findCarsByCarNos(carNos);
+        Map<String, Map<String, Object>> byCarNo = new LinkedHashMap<>();
         for (Map<String, Object> row : rows) {
-            Long carId = toLong(row.get("carId"));
-            if (carId == null) continue;
-            byCarId.put(carId, row);
+            String carNo = normalizeCarNo(asText(row.get("carNo")));
+            if (carNo == null) continue;
+            byCarNo.put(carNo, row);
         }
+        Map<String, Long> countsByCarNo = likeService.getLikeCountsByCarNos(carNos);
 
         List<Map<String, Object>> out = new java.util.ArrayList<>();
-        for (Long carId : carIds) {
-            Map<String, Object> row = byCarId.get(carId);
-            if (row == null) continue;
+        for (String carNo : carNos) {
+            Map<String, Object> row = byCarNo.get(carNo);
+            if (row == null) {
+                likeService.removeLike(userId, carNo);
+                continue;
+            }
+            Long carId = toLong(row.get("carId"));
+            if (carId == null || carId <= 0) {
+                likeService.removeLike(userId, carNo);
+                continue;
+            }
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("carId", carId);
             item.put("maker", asText(row.get("maker")));
@@ -165,10 +247,17 @@ public class LikeController {
             item.put("modelCode", asText(row.get("modelCode")));
             item.put("fuel", asText(row.get("fuel")));
             item.put("region", asText(row.get("region")));
-            item.put("likesCount", counts.getOrDefault(carId, 0L));
+            item.put("likesCount", countsByCarNo.getOrDefault(carNo, 0L));
             out.add(item);
         }
         return ResponseEntity.ok(ApiResponse.success(out));
+    }
+
+    private String resolveCarNo(Long carId) {
+        if (carId == null || carId <= 0) return null;
+        List<Map<String, Object>> rows = elasticsearchCarSearchService.findCarsByIds(List.of(carId));
+        if (rows.isEmpty()) return null;
+        return normalizeCarNo(asText(rows.get(0).get("carNo")));
     }
 
     private static Long toLong(Object value) {
@@ -185,5 +274,12 @@ public class LikeController {
         if (value == null) return null;
         String text = String.valueOf(value).trim();
         return text.isEmpty() ? null : text;
+    }
+
+    private static String normalizeCarNo(String value) {
+        if (value == null) return null;
+        String normalized = value.trim();
+        if (normalized.isBlank()) return null;
+        return normalized;
     }
 }
