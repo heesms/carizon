@@ -192,17 +192,39 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
   const hasUniqueLowestPrice = minPrice != null && activePlatforms.filter(p => p.price === minPrice).length === 1
 
   const specs = [
-    { label: '연식',     value: car.year ? `${car.year}년식` : undefined },
-    { label: '주행거리', value: car.mileage ? `${car.mileage.toLocaleString()}km` : undefined },
-    { label: '배기량',   value: car.displacement ? `${car.displacement.toLocaleString()}cc` : undefined },
-    { label: '연료',     value: clean(car.fuel) },
-    { label: '변속기',   value: clean(car.transmission) },
-    { label: '차체',     value: clean(car.bodyType) },
-    { label: '인승',     value: car.seatCount != null ? `${car.seatCount}인승` : undefined },
-    { label: '색상',     value: clean(car.color) },
-    { label: '지역',     value: clean(car.region) },
-    { label: '차량번호', value: clean(car.carNo) },
-    { label: '신차가',   value: car.priceNew ? `${car.priceNew.toLocaleString()}만원` : undefined },
+    { label: '연식',     value: car.year ? `${car.year}년식` : undefined,
+      bg: 'bg-blue-50',   ic: 'text-blue-500',
+      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /> },
+    { label: '주행거리', value: car.mileage ? `${car.mileage.toLocaleString()}km` : undefined,
+      bg: 'bg-green-50',  ic: 'text-green-600',
+      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" /> },
+    { label: '배기량',   value: car.displacement ? `${car.displacement.toLocaleString()}cc` : undefined,
+      bg: 'bg-orange-50', ic: 'text-orange-500',
+      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /> },
+    { label: '연료',     value: clean(car.fuel),
+      bg: 'bg-yellow-50', ic: 'text-yellow-600',
+      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /> },
+    { label: '변속기',   value: clean(car.transmission),
+      bg: 'bg-purple-50', ic: 'text-purple-500',
+      icon: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></> },
+    { label: '차체',     value: clean(car.bodyType),
+      bg: 'bg-brand-50',  ic: 'text-brand-600',
+      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0zM13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" /> },
+    { label: '인승',     value: car.seatCount != null ? `${car.seatCount}인승` : undefined,
+      bg: 'bg-teal-50',   ic: 'text-teal-600',
+      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /> },
+    { label: '색상',     value: clean(car.color),
+      bg: 'bg-pink-50',   ic: 'text-pink-500',
+      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /> },
+    { label: '지역',     value: clean(car.region),
+      bg: 'bg-red-50',    ic: 'text-red-500',
+      icon: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></> },
+    { label: '차량번호', value: clean(car.carNo),
+      bg: 'bg-gray-100',  ic: 'text-gray-500',
+      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" /> },
+    { label: '신차가',   value: car.priceNew ? `${car.priceNew.toLocaleString()}만원` : undefined,
+      bg: 'bg-amber-50',  ic: 'text-amber-600',
+      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /> },
   ].filter(s => s.value)
 
   return (
@@ -298,11 +320,18 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                 </p>
               </div>
             )}
-            <dl className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+            <dl className="grid grid-cols-2 gap-2">
               {specs.map(s => (
-                <div key={s.label} className="bg-gray-50 rounded-xl p-2.5 sm:p-3">
-                  <dt className="text-[11px] sm:text-xs text-gray-400 mb-0.5">{s.label}</dt>
-                  <dd className="font-semibold text-gray-900 text-xs sm:text-sm">{s.value}</dd>
+                <div key={s.label} className="flex items-center gap-2.5 p-2.5 sm:p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${s.bg}`}>
+                    <svg className={`w-4 h-4 ${s.ic}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      {s.icon}
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-[10px] sm:text-[11px] text-gray-400 font-medium leading-none mb-0.5">{s.label}</dt>
+                    <dd className="text-xs sm:text-sm font-bold text-gray-900 truncate">{s.value}</dd>
+                  </div>
                 </div>
               ))}
             </dl>
