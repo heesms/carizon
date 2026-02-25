@@ -5,6 +5,8 @@ import com.carizon.search.config.ElasticsearchConfig;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.FieldValue;
+import co.elastic.clients.elasticsearch._types.mapping.FieldType;
+import co.elastic.clients.elasticsearch._types.mapping.Property;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders;
 import co.elastic.clients.json.JsonData;
@@ -67,7 +69,12 @@ public class ElasticsearchCarSearchService {
                     .from(from)
                     .size(size)
                     .trackTotalHits(t -> t.enabled(true));
-            searchBuilder.sort(s -> s.field(f -> f.field(sortField).order(sortOrder)));
+            // platformCount는 reindex 전 매핑에 없을 수 있으므로 unmappedType으로 방어
+            if ("platformCount".equals(sortField)) {
+                searchBuilder.sort(s -> s.field(f -> f.field(sortField).order(sortOrder).unmappedType(FieldType.Integer)));
+            } else {
+                searchBuilder.sort(s -> s.field(f -> f.field(sortField).order(sortOrder)));
+            }
 
             Map<String, Object> dslForLog = buildDslForLog(queryParams, from, size, sortField, sortOrder);
             if (log.isDebugEnabled()) {
@@ -116,6 +123,7 @@ public class ElasticsearchCarSearchService {
 
     public void indexCar(Map<String, Object> carData) {
         try {
+            ensureIndexWithMapping();
             Object id = carData.get("carId");
             client.index(i -> i.index(INDEX).id(String.valueOf(id)).document(carData));
             log.debug("[Elasticsearch] car index done: carId={}", id);
@@ -127,6 +135,7 @@ public class ElasticsearchCarSearchService {
     public void indexCars(List<Map<String, Object>> carsData) {
         if (carsData == null || carsData.isEmpty()) return;
         try {
+            ensureIndexWithMapping();
             List<BulkOperation> ops = new ArrayList<>();
             for (Map<String, Object> doc : carsData) {
                 Object id = doc.get("carId");
@@ -167,6 +176,25 @@ public class ElasticsearchCarSearchService {
     }
 
     /**
+     * 인덱스를 삭제 후 고정 매핑으로 재생성한다.
+     * 동적 매핑 꼬임(숫자 필드가 text로 생성되는 문제)을 방지한다.
+     */
+    public void resetIndexWithMapping() {
+        try {
+            boolean exists = client.indices().exists(e -> e.index(INDEX)).value();
+            if (exists) {
+                client.indices().delete(d -> d.index(INDEX));
+                log.info("[Elasticsearch] index [{}] deleted", INDEX);
+            }
+            createIndexWithMapping();
+            log.info("[Elasticsearch] index [{}] created with fixed mapping", INDEX);
+        } catch (Exception e) {
+            log.error("[Elasticsearch] reset index with mapping failed", e);
+            throw new RuntimeException("Elasticsearch 인덱스 재생성 실패", e);
+        }
+    }
+
+    /**
      * 전체 문서 수 (대시보드 등)
      */
     public long count() {
@@ -176,6 +204,71 @@ public class ElasticsearchCarSearchService {
             log.warn("[Elasticsearch] count failed", e);
             return 0;
         }
+    }
+
+    private void ensureIndexWithMapping() {
+        try {
+            boolean exists = client.indices().exists(e -> e.index(INDEX)).value();
+            if (!exists) {
+                createIndexWithMapping();
+                log.info("[Elasticsearch] index [{}] created with fixed mapping (auto)", INDEX);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Elasticsearch 인덱스 확인/생성 실패", e);
+        }
+    }
+
+    private void createIndexWithMapping() throws Exception {
+        client.indices().create(c -> c
+            .index(INDEX)
+            .mappings(m -> m
+                .properties("carId", longNumber())
+                .properties("makerCode", keyword())
+                .properties("modelGroupCode", keyword())
+                .properties("modelCode", keyword())
+                .properties("trimCode", keyword())
+                .properties("gradeCode", keyword())
+                .properties("makerName", textWithKeyword())
+                .properties("modelGroupName", textWithKeyword())
+                .properties("modelName", textWithKeyword())
+                .properties("trimName", textWithKeyword())
+                .properties("year", integerNumber())
+                .properties("km", integerNumber())
+                .properties("priceMin", integerNumber())
+                .properties("priceMax", integerNumber())
+                .properties("priceUpdatedAt", dateTime())
+                .properties("platformCount", integerNumber())
+                .properties("fuel", textWithKeyword())
+                .properties("transmission", textWithKeyword())
+                .properties("color", textWithKeyword())
+                .properties("bodyType", textWithKeyword())
+                .properties("region", textWithKeyword())
+                .properties("carNo", textWithKeyword())
+                .properties("representativeImageUrl", keyword())
+            )
+        );
+    }
+
+    private static Property keyword() {
+        return Property.of(p -> p.keyword(k -> k.ignoreAbove(256)));
+    }
+
+    private static Property textWithKeyword() {
+        return Property.of(p -> p.text(t -> t
+            .fields("keyword", f -> f.keyword(k -> k.ignoreAbove(256)))
+        ));
+    }
+
+    private static Property integerNumber() {
+        return Property.of(p -> p.integer(i -> i));
+    }
+
+    private static Property longNumber() {
+        return Property.of(p -> p.long_(l -> l));
+    }
+
+    private static Property dateTime() {
+        return Property.of(p -> p.date(d -> d.format("strict_date_optional_time||epoch_millis")));
     }
 
     /**
@@ -242,6 +335,50 @@ public class ElasticsearchCarSearchService {
             return List.of();
         } catch (Exception e) {
             log.warn("[Elasticsearch] findCarsByIds failed", e);
+            return List.of();
+        }
+    }
+
+    public List<Map<String, Object>> findCarsByCarNos(List<String> carNos) {
+        if (carNos == null || carNos.isEmpty()) return List.of();
+        try {
+            LinkedHashSet<String> uniqueCarNos = new LinkedHashSet<>();
+            for (String carNo : carNos) {
+                if (carNo == null) continue;
+                String normalized = carNo.trim();
+                if (normalized.isEmpty()) continue;
+                uniqueCarNos.add(normalized);
+            }
+            if (uniqueCarNos.isEmpty()) return List.of();
+
+            List<FieldValue> values = new ArrayList<>(uniqueCarNos.size());
+            for (String carNo : uniqueCarNos) values.add(FieldValue.of(carNo));
+
+            SearchRequest request = new SearchRequest.Builder()
+                .index(INDEX)
+                .size(Math.min(values.size(), 500))
+                .trackTotalHits(t -> t.enabled(false))
+                .query(QueryBuilders.terms(t -> t.field("carNo.keyword").terms(v -> v.value(values))))
+                .build();
+
+            SearchResponse<Map> response = client.search(request, Map.class);
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (Hit<Map> hit : response.hits().hits()) {
+                Map<String, Object> source = hit.source();
+                if (source == null) continue;
+                Map<String, Object> item = convertToCardItem(source);
+                if (item != null) out.add(item);
+            }
+            return out;
+        } catch (ElasticsearchException e) {
+            String msg = e.getMessage() != null ? e.getMessage() : "";
+            if (msg.contains("index_not_found") || msg.contains("no such index")) {
+                return List.of();
+            }
+            log.warn("[Elasticsearch] findCarsByCarNos failed", e);
+            return List.of();
+        } catch (Exception e) {
+            log.warn("[Elasticsearch] findCarsByCarNos failed", e);
             return List.of();
         }
     }
@@ -926,9 +1063,12 @@ public class ElasticsearchCarSearchService {
     private static Map<String, Object> convertToCardItem(Map<String, Object> hit) {
         long carId = parseLong(hit.get("carId"), 0L);
         if (carId <= 0) return null;
+        String carNo = getString(hit, "carNo");
+        if (carNo == null || carNo.isBlank()) return null;
 
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("carId", carId);
+        item.put("carNo", carNo);
         item.put("maker", firstNonBlank(getString(hit, "makerName"), getString(hit, "maker")));
         item.put("model", firstNonBlank(getString(hit, "modelName"), getString(hit, "model")));
         item.put("trim", firstNonBlank(getString(hit, "trimName"), getString(hit, "trim")));
