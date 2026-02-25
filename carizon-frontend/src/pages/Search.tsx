@@ -42,14 +42,6 @@ export default function Search() {
     } catch { /* no-op */ }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (loading || filteredVisibleList.length === 0) return
-    if (savedScrollRef.current === null) return
-    const y = savedScrollRef.current
-    savedScrollRef.current = null
-    requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
-  }, [loading, filteredVisibleList.length])
-
   const params = useMemo(() => Object.fromEntries(sp.entries()), [sp])
   const textQuery = useMemo(() => String(sp.get('q') ?? '').trim(), [sp])
   const currentPage = useMemo(() => {
@@ -68,6 +60,15 @@ export default function Search() {
     }),
     [visibleList]
   )
+
+  // 뒤로가기 시 스크롤 복원 - 카드 목록이 실제로 채워진 후 실행
+  useEffect(() => {
+    if (loading || filteredVisibleList.length === 0) return
+    if (savedScrollRef.current === null) return
+    const y = savedScrollRef.current
+    savedScrollRef.current = null
+    requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
+  }, [loading, filteredVisibleList.length])
 
   const fetchPage = async (p = 0) => {
     setLoading(true)
