@@ -2,6 +2,7 @@ package com.carizon.admin;
 
 import com.carizon.batch.ApiRunRecorder;
 import com.carizon.batch.BatchWorkflowService;
+import com.carizon.batch.FridayNightPipelineScheduler;
 import com.carizon.common.dto.ApiResponse;
 import com.carizon.mapping.CodeMappingService;
 import com.carizon.mapping.MasterMergeService;
@@ -33,6 +34,7 @@ public class PipelineAdminController {
     private final MasterMergeService masterMergeService;
     private final BatchWorkflowService workflowService;
     private final ApiRunRecorder apiRunRecorder;
+    private final FridayNightPipelineScheduler fridayNightPipelineScheduler;
 
     @PostMapping("/full")
     @Operation(summary = "전체 파이프라인 실행", 
@@ -360,6 +362,19 @@ public class PipelineAdminController {
             log.error("[pipeline] rebuildFromScratch run failed", e);
             apiRunRecorder.recordFail(runId, 0, e);
             return ApiResponse.error("rebuildFromScratch 실행 실패: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/run-weekly")
+    @Operation(summary = "주간 파이프라인 수동 실행",
+               description = "금요일 22시 스케줄과 동일한 전체 파이프라인을 즉시 수동 실행합니다. (크롤→머지→코드매핑→car_master→ES재인덱스+임베딩 병렬)")
+    public ApiResponse<String> runWeeklyNow() {
+        try {
+            fridayNightPipelineScheduler.runFridayNightPipeline();
+            return ApiResponse.success("주간 파이프라인 실행 완료");
+        } catch (Exception e) {
+            log.error("[pipeline] run-weekly manual failed", e);
+            return ApiResponse.error("실행 실패: " + e.getMessage());
         }
     }
 }
