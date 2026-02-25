@@ -54,17 +54,17 @@ const normalizeOptionText = (value: string) =>
 
 const KEY_OPTION_RULES: Array<{ id: string; label: string; keywords: string[]; iconSrc: string }> = [
   { id: 'sunroof', label: '선루프', keywords: ['선루프', '썬루프'], iconSrc: '/icons/options/1.png' },
-  { id: 'around-view', label: '어라운드뷰', keywords: ['어라운드', '어라운드뷰'], iconSrc: '/icons/options/2.png' },
   { id: 'heated-seat', label: '열선시트', keywords: ['열선시트'], iconSrc: '/icons/options/3.png' },
   { id: 'vent-seat', label: '통풍시트', keywords: ['통풍시트'], iconSrc: '/icons/options/4.png' },
   { id: 'leather-seat', label: '가죽시트', keywords: ['가죽시트'], iconSrc: '/icons/options/5.png' },
+  { id: 'power-seat', label: '전동시트', keywords: ['전동시트'], iconSrc: '/icons/options/12.png' },
   { id: 'parking-sensor', label: '주차센서', keywords: ['주차감지', '주차감지센서', '주차센서'], iconSrc: '/icons/options/6.png' },
   { id: 'heated-wheel', label: '핸들 열선', keywords: ['열선 스티어링', '열선스티어링', '열선핸들'], iconSrc: '/icons/options/7.png' },
   { id: 'blind-spot', label: '후측방경고', keywords: ['후측방', '후측방경보', '후측방경고'], iconSrc: '/icons/options/8.png' },
   { id: 'lane-departure', label: '차선이탈경보', keywords: ['차선이탈 경보', '차선이탈경보'], iconSrc: '/icons/options/9.png' },
   { id: 'hud', label: 'HUD', keywords: ['헤드업 디스플레이', '헤드업디스플레이', 'hud'], iconSrc: '/icons/options/10.png' },
-  { id: 'auto-aircon', label: '풀오토에어컨', keywords: ['풀오토에어컨', '자동에어컨', '오토에어컨'], iconSrc: '/icons/options/11.png' },
-  { id: 'power-seat', label: '전동시트', keywords: ['전동시트'], iconSrc: '/icons/options/12.png' },
+  { id: 'around-view', label: '어라운드뷰', keywords: ['어라운드', '어라운드뷰'], iconSrc: '/icons/options/2.png' },
+  { id: 'auto-aircon', label: '자동에어컨', keywords: ['풀오토에어컨', '자동에어컨', '오토에어컨'], iconSrc: '/icons/options/11.png' },
 ]
 
 function useIsMobile() {
@@ -120,11 +120,6 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
     navigate('/search')
   }
 
-  const backLabel = source === 'ai'
-    ? 'AI 채팅으로'
-    : source === 'search'
-      ? '검색 결과로'
-      : '이전 화면으로'
   const closeButton = (
     <button
       type="button"
@@ -278,16 +273,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
 
   return (
     <div className={`space-y-4 sm:space-y-6 animate-fade-in ${isModal ? 'px-3 sm:px-6 lg:px-7 pb-8' : ''}`}>
-      {/* 뒤로 (페이지 모드에서만 표시) */}
       {modalHeader}
-      {!onClose && (
-        <button type="button" onClick={handleClose} className="btn-ghost text-gray-500 inline-flex">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          {backLabel}
-        </button>
-      )}
 
       <div className={`grid grid-cols-1 gap-4 sm:gap-6 ${isModal ? 'md:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[400px_minmax(0,1fr)]' : 'lg:grid-cols-[380px_1fr]'}`}>
         {/* 좌측: 이미지 + 가격 */}

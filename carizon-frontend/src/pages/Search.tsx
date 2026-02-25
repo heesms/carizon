@@ -34,9 +34,10 @@ export default function Search() {
 
   // 뒤로가기 시 스크롤 위치 복원
   useEffect(() => {
+    const isMobileViewport = window.matchMedia('(max-width: 639px)').matches
     const routeState = (location.state ?? {}) as { restoreSearchScrollFromDetail?: boolean }
-    const shouldRestore =
-      routeState.restoreSearchScrollFromDetail === true || navigationType === 'POP'
+    const shouldRestore = routeState.restoreSearchScrollFromDetail === true
+      || navigationType === 'POP'
 
     const raw = sessionStorage.getItem('search_scroll_y')
     if (!raw) return
