@@ -472,6 +472,9 @@ function ModalPortal({ children }: { children: React.ReactNode }) {
   return createPortal(children, document.body)
 }
 
+// SPA 세션 동안 모델 코드→이름 매핑을 보존 (컴포넌트 언마운트/재마운트 후에도 유지)
+const modelNameSessionCache = new Map<string, string>()
+
 export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   const [makers, setMakers] = useState<CodeItem[]>([])
   const [makersLoading, setMakersLoading] = useState(false)
@@ -495,7 +498,16 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   const [pickerModelsLoadingByGroup, setPickerModelsLoadingByGroup] = useState<Record<string, boolean>>({})
   const [pickerModelsErrorByGroup, setPickerModelsErrorByGroup] = useState<Record<string, string>>({})
   const [selectedModelGroupByCode, setSelectedModelGroupByCode] = useState<Record<string, string>>({})
-  const [selectedModelNameByCode, setSelectedModelNameByCode] = useState<Record<string, string>>({})
+  const [selectedModelNameByCode, setSelectedModelNameByCode] = useState<Record<string, string>>(() => {
+    // 마운트 시 캐시에서 이름 복원 (페이지 이동 후 돌아와도 이름 유지)
+    const codes = String(value.modelCode ?? '').split(',').map(v => v.trim()).filter(Boolean)
+    const initial: Record<string, string> = {}
+    codes.forEach(code => {
+      const cached = modelNameSessionCache.get(code)
+      if (cached) initial[code] = cached
+    })
+    return initial
+  })
   const [nameGroupVisibleCount, setNameGroupVisibleCount] = useState(40)
 
   const [trimPickerOpen, setTrimPickerOpen] = useState(false)
@@ -699,6 +711,13 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
       setSelectedModelNameByCode(prev => ({ ...prev, ...updates }))
     }
   }, [models, modelCode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 이름이 새로 확보될 때마다 모듈 레벨 캐시에 동기화
+  useEffect(() => {
+    Object.entries(selectedModelNameByCode).forEach(([code, name]) => {
+      if (code && name) modelNameSessionCache.set(code, name)
+    })
+  }, [selectedModelNameByCode])
 
   useEffect(() => {
     setTextQueryDraft(String(value.q ?? ''))
