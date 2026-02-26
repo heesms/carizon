@@ -29,15 +29,9 @@ function useScrollHide() {
 
 export default function Layout() {
   const [q, setQ] = useState('')
-  const [menuOpen, setMenuOpen] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
   const headerVisible = useScrollHide()
-
-  // 라우트 이동 시 모바일 메뉴 닫기
-  useEffect(() => {
-    setMenuOpen(false)
-  }, [location.pathname, location.search])
   const isDetailPage = location.pathname.startsWith('/cars/')
   const routeState = (location.state ?? {}) as { from?: string; source?: string; restoreSearchScrollFromDetail?: boolean }
 
@@ -102,15 +96,6 @@ export default function Layout() {
   return (
     <div className="min-h-screen min-h-[100dvh] flex flex-col">
 
-      {/* 모바일 메뉴 백드롭 */}
-      {menuOpen && (
-        <div
-          className="sm:hidden fixed inset-0 z-40"
-          onClick={() => setMenuOpen(false)}
-          aria-hidden="true"
-        />
-      )}
-
       {/* ── 모바일 헤더 (스크롤 시 사라짐) ── */}
       <header
         className="sm:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-100 shadow-sm transition-transform duration-200"
@@ -134,55 +119,11 @@ export default function Layout() {
           )}
           {/* 현재 페이지명 */}
           {pageTitle && (
-            <span className="flex-1 text-center text-sm font-bold text-gray-800 truncate px-2">
+            <span className="flex-1 text-center text-sm font-bold text-gray-800 truncate pr-14">
               {pageTitle}
             </span>
           )}
-          {/* 햄버거 메뉴 버튼 */}
-          <button
-            type="button"
-            onClick={() => setMenuOpen(v => !v)}
-            className="ml-auto shrink-0 w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-            aria-label="메뉴 열기"
-          >
-            {menuOpen ? (
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            )}
-          </button>
         </div>
-
-        {/* 드롭다운 메뉴 */}
-        {menuOpen && (
-          <div className="absolute top-full right-0 w-44 bg-white border border-gray-100 shadow-lg rounded-bl-xl py-1">
-            <Link
-              to="/info?tab=contact"
-              className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              onClick={() => setMenuOpen(false)}
-            >
-              문의하기
-            </Link>
-            <Link
-              to="/info?tab=terms"
-              className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              onClick={() => setMenuOpen(false)}
-            >
-              이용약관
-            </Link>
-            <Link
-              to="/info?tab=privacy"
-              className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              onClick={() => setMenuOpen(false)}
-            >
-              개인정보처리방침
-            </Link>
-          </div>
-        )}
       </header>
 
       {/* ── 헤더 (데스크톱만) ── */}
@@ -229,6 +170,18 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
+
+      {/* ── 모바일 푸터 ── */}
+      <footer className="sm:hidden bg-white border-t border-gray-100">
+        <div className="px-6 py-4 flex flex-col items-center gap-2">
+          <div className="flex flex-wrap justify-center gap-x-5 gap-y-1 text-xs text-gray-400">
+            <Link to="/info?tab=contact" className="hover:text-gray-600 transition">문의하기</Link>
+            <Link to="/info?tab=terms"   className="hover:text-gray-600 transition">이용약관</Link>
+            <Link to="/info?tab=privacy" className="hover:text-gray-600 transition">개인정보처리방침</Link>
+          </div>
+          <p className="text-[11px] text-gray-300">© 2026 Carizon</p>
+        </div>
+      </footer>
 
       {/* ── 푸터 (데스크톱만) ── */}
       <footer className="hidden sm:block bg-white border-t border-gray-100 mt-auto">
