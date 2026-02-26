@@ -7,6 +7,7 @@
 
     <resultMap id="CarPickMap" type="com.carizon.integration.dto.CarPick">
         <result column="model_code" property="modelCode"/>
+        <result column="maker_code" property="makerCode"/>
         <result column="car_code"   property="carCode"/>   <!-- 추가 -->
         <result column="car_seq"    property="carSeq"/>
         <result column="payload"    property="payload"/>
@@ -16,6 +17,7 @@
         WITH candidates AS (
         SELECT
         model_code,
+        maker_code,
         car_code,
         CAST(car_seq AS UNSIGNED) AS car_seq,
         payload,
@@ -54,6 +56,112 @@
         SELECT model_code, car_code, car_seq, payload
         FROM ranked
         WHERE rn = 1
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+        </select>
+
+    <select id="selectRepresentativeCarsByModelCodes" resultMap="CarPickMap">
+        WITH candidates AS (
+        SELECT
+        model_code,
+        maker_code,
+        car_code,
+        CAST(car_seq AS UNSIGNED) AS car_seq,
+        payload,
+        order_dt,
+        CASE WHEN JSON_EXTRACT(payload,'$.kbCertifiedYn')      IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.kbCertifiedYn')))='Y'      THEN 1 ELSE 0 END AS kbCertified,
+        CASE WHEN JSON_EXTRACT(payload,'$.paymentPremiumYn')   IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.paymentPremiumYn')))='Y'   THEN 1 ELSE 0 END AS premium,
+        CASE WHEN JSON_EXTRACT(payload,'$.certifiedShopYn')    IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.certifiedShopYn')))='Y'    THEN 1 ELSE 0 END AS cshop,
+        CASE WHEN JSON_EXTRACT(payload,'$.homeserviceYn2')     IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.homeserviceYn2')))='Y'     THEN 1 ELSE 0 END AS homesvc,
+        CASE WHEN JSON_EXTRACT(payload,'$.diagYn')             IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.diagYn')))='Y'             THEN 1 ELSE 0 END AS diagv
+        FROM raw_chachacha
+        WHERE model_code IN
+        <foreach collection="modelCodes" item="modelCode" open="(" separator="," close=")">
+            #{modelCode}
+        </foreach>
+        AND (
+        JSON_EXTRACT(payload,'$.hasOverThreeFileNames') = TRUE
+        OR JSON_EXTRACT(payload,'$.hasOverThreeFileNames') = 1
+        OR UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.hasOverThreeFileNames'))) IN ('TRUE','Y','1')
+        )
+        ),
+        ranked AS (
+        SELECT
+        model_code,
+        maker_code,
+        car_code,
+        car_seq,
+        payload,
+        ROW_NUMBER() OVER (
+        PARTITION BY car_code
+        ORDER BY (kbCertified + premium + cshop + homesvc + diagv) DESC,
+        order_dt DESC
+        ) AS rn
+        FROM candidates
+        )
+        SELECT model_code, maker_code, car_code, car_seq, payload
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY model_code, order_dt DESC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <select id="selectRepresentativeCarsByMakers" resultMap="CarPickMap">
+        WITH candidates AS (
+        SELECT
+        model_code,
+        maker_code,
+        car_code,
+        CAST(car_seq AS UNSIGNED) AS car_seq,
+        payload,
+        order_dt,
+        CASE WHEN JSON_EXTRACT(payload,'$.kbCertifiedYn')      IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.kbCertifiedYn')))='Y'      THEN 1 ELSE 0 END AS kbCertified,
+        CASE WHEN JSON_EXTRACT(payload,'$.paymentPremiumYn')   IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.paymentPremiumYn')))='Y'   THEN 1 ELSE 0 END AS premium,
+        CASE WHEN JSON_EXTRACT(payload,'$.certifiedShopYn')    IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.certifiedShopYn')))='Y'    THEN 1 ELSE 0 END AS cshop,
+        CASE WHEN JSON_EXTRACT(payload,'$.homeserviceYn2')     IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.homeserviceYn2')))='Y'     THEN 1 ELSE 0 END AS homesvc,
+        CASE WHEN JSON_EXTRACT(payload,'$.diagYn')             IS NOT NULL
+        AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.diagYn')))='Y'             THEN 1 ELSE 0 END AS diagv
+        FROM raw_chachacha
+        WHERE maker_code IN
+        <foreach collection="makerCodes" item="makerCode" open="(" separator="," close=")">
+            #{makerCode}
+        </foreach>
+        AND (
+        JSON_EXTRACT(payload,'$.hasOverThreeFileNames') = TRUE
+        OR JSON_EXTRACT(payload,'$.hasOverThreeFileNames') = 1
+        OR UPPER(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.hasOverThreeFileNames'))) IN ('TRUE','Y','1')
+        )
+        ),
+        ranked AS (
+        SELECT
+        model_code,
+        maker_code,
+        car_code,
+        car_seq,
+        payload,
+        ROW_NUMBER() OVER (
+        PARTITION BY car_code
+        ORDER BY (kbCertified + premium + cshop + homesvc + diagv) DESC,
+        order_dt DESC
+        ) AS rn
+        FROM candidates
+        )
+        SELECT model_code, maker_code, car_code, car_seq, payload
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY maker_code, model_code, order_dt DESC
         <if test="limit != null">
             LIMIT #{limit}
         </if>

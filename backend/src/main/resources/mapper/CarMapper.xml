@@ -217,6 +217,8 @@
   <select id="selectModels" resultType="map">
     SELECT mo.model_code AS code,
            mo.model_name AS name,
+           mo.from_year AS from_year,
+           mo.to_year AS to_year,
            0 AS carCount
     FROM cz_model mo
     WHERE mo.maker_code = #{makerCode}

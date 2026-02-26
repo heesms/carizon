@@ -50,7 +50,7 @@ public class CodeQueryService {
     this.objectMapper = objectMapper;
   }
 
-  public List<Map<String, Object>> makers(Map<String, String> context) {
+    public List<Map<String, Object>> makers(Map<String, String> context) {
     long start = System.currentTimeMillis();
     Map<String, String> ctx = sanitizeContext(context, Set.of("makerCode", "makerCodes"));
 
@@ -58,7 +58,7 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.makers",
-        List.of("makerCode.keyword"),
+        List.of("makerCode", "makerCode.keyword"),
         Collections.emptyMap(),
         Function.identity(),
         ctx
@@ -192,8 +192,8 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.model-groups",
-        List.of("modelGroupCode.keyword"),
-        Map.of("makerCode.keyword", key),
+        List.of("modelGroupCode", "modelGroupCode.keyword"),
+        Map.of("makerCode", key),
         Function.identity(),
         ctx
     );
@@ -217,8 +217,8 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.models",
-        List.of("modelCode.keyword"),
-        Map.of("makerCode.keyword", makerKey, "modelGroupCode.keyword", modelGroupKey),
+        List.of("modelCode", "modelCode.keyword"),
+        Map.of("makerCode", makerKey, "modelGroupCode", modelGroupKey),
         Function.identity(),
         ctx
     );
@@ -246,8 +246,8 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.trims",
-        List.of("trimCode.keyword"),
-        Map.of("makerCode.keyword", makerKey, "modelGroupCode.keyword", modelGroupKey, "modelCode.keyword", modelKey),
+        List.of("trimCode", "trimCode.keyword"),
+        Map.of("makerCode", makerKey, "modelGroupCode", modelGroupKey, "modelCode", modelKey),
         Function.identity(),
         ctx
     );
@@ -333,7 +333,7 @@ public class CodeQueryService {
     for (Map.Entry<String, String> entry : termFilters.entrySet()) {
       String value = entry.getValue();
       if (value == null || value.isBlank()) continue;
-      filters.add(Map.of("term", Map.of(entry.getKey(), value)));
+      filters.addAll(buildTermFilterClauses(entry.getKey(), value));
     }
 
     if (additionalFilters != null && !additionalFilters.isEmpty()) {
@@ -364,6 +364,16 @@ public class CodeQueryService {
         )
     ));
     return objectMapper.writeValueAsString(root);
+  }
+
+  private static List<Map<String, Object>> buildTermFilterClauses(String field, String value) {
+    if (field == null || value == null) return List.of();
+    List<Map<String, Object>> should = new ArrayList<>();
+    for (String candidate : fieldCandidates(field)) {
+      should.add(Map.of("term", Map.of(candidate, value)));
+    }
+    if (should.size() == 1) return should;
+    return List.of(Map.of("bool", Map.of("should", should, "minimum_should_match", "1")));
   }
 
   private static String missingValueForAggField(String aggField) {
@@ -420,10 +430,10 @@ public class CodeQueryService {
     if (context == null || context.isEmpty()) return List.of();
     List<Map<String, Object>> filters = new ArrayList<>();
 
-    addTermFilter(filters, "makerCode.keyword", context.get("makerCode"));
-    addTermFilter(filters, "modelGroupCode.keyword", context.get("modelGroupCode"));
-    addTermsShouldFilter(filters, "modelCode.keyword", context.get("modelCode"));
-    addTermFilter(filters, "trimCode.keyword", context.get("trimCode"));
+    addTermFilter(filters, "makerCode", context.get("makerCode"));
+    addTermFilter(filters, "modelGroupCode", context.get("modelGroupCode"));
+    addTermsShouldFilter(filters, "modelCode", context.get("modelCode"));
+    addTermFilter(filters, "trimCode", context.get("trimCode"));
     addRangeGte(filters, "year", parseInteger(context.get("yearMin")));
     addRangeLte(filters, "year", parseInteger(context.get("yearMax")));
     addRangeGte(filters, "km", parseInteger(context.get("kmMin")));
@@ -433,8 +443,8 @@ public class CodeQueryService {
     addFuelShouldFilter(filters, context.get("fuel"));
     addColorShouldFilter(filters, context.get("color"));
     addBodyTypeShouldFilter(filters, context.get("bodyType"));
-    addTermFilter(filters, "region.keyword", context.get("region"));
-    addTermFilter(filters, "transmission.keyword", context.get("transmission"));
+    addTermFilter(filters, "region", context.get("region"));
+    addTermFilter(filters, "transmission", context.get("transmission"));
     addCarNoFilter(filters, context.get("carNo"));
     return filters;
   }
@@ -443,32 +453,62 @@ public class CodeQueryService {
     if (carNo == null || carNo.isBlank()) return;
     String val = carNo.trim();
     if (val.length() >= 4) {
-      filters.add(Map.of("wildcard", Map.of("carNo.keyword", Map.of("value", "*" + val + "*", "case_insensitive", true))));
+      filters.add(buildWildcardClause("carNo", "*" + val + "*"));
     } else {
-      filters.add(Map.of("term", Map.of("carNo.keyword", val)));
+      addTermFilter(filters, "carNo", val);
     }
   }
 
   private static void addTermFilter(List<Map<String, Object>> filters, String field, String value) {
     if (value == null || value.isBlank()) return;
-    filters.add(Map.of("term", Map.of(field, value.trim())));
+    filters.add(buildTermFilterClause(field, value.trim()));
   }
 
   private static void addTermsShouldFilter(List<Map<String, Object>> filters, String field, String csv) {
     List<String> values = parseCsvValues(csv);
     if (values.isEmpty()) return;
     if (values.size() == 1) {
-      filters.add(Map.of("term", Map.of(field, values.get(0))));
+      filters.add(buildTermFilterClause(field, values.get(0)));
       return;
     }
     List<Map<String, Object>> should = new ArrayList<>();
     for (String value : values) {
-      should.add(Map.of("term", Map.of(field, value)));
+      should.add(buildTermFilterClause(field, value));
     }
     filters.add(Map.of("bool", Map.of(
         "should", should,
         "minimum_should_match", "1"
     )));
+  }
+
+  private static Map<String, Object> buildWildcardClause(String field, String wildcard) {
+    List<Map<String, Object>> should = new ArrayList<>();
+    for (String candidateField : fieldCandidates(field)) {
+      should.add(Map.of("wildcard", Map.of(candidateField, Map.of("value", wildcard, "case_insensitive", true))));
+    }
+    if (should.size() == 1) return should.get(0);
+    return Map.of("bool", Map.of("should", should, "minimum_should_match", "1"));
+  }
+
+  private static Map<String, Object> buildTermFilterClause(String field, String value) {
+    List<String> candidates = fieldCandidates(field);
+    if (candidates.size() == 1) {
+      return Map.of("term", Map.of(candidates.get(0), value));
+    }
+    List<Map<String, Object>> should = new ArrayList<>();
+    for (String candidateField : candidates) {
+      should.add(Map.of("term", Map.of(candidateField, value)));
+    }
+    return Map.of("bool", Map.of("should", should, "minimum_should_match", "1"));
+  }
+
+  private static List<String> fieldCandidates(String field) {
+    LinkedHashSet<String> fields = new LinkedHashSet<>();
+    fields.add(field);
+    if (field != null && !field.endsWith(".keyword")) {
+      fields.add(field + ".keyword");
+    }
+    return new ArrayList<>(fields);
   }
 
   private static void addBodyTypeShouldFilter(List<Map<String, Object>> filters, String csv) {

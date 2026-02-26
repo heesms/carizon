@@ -1,11 +1,21 @@
 package com.carizon.integration.dto;
 
 public class CarPick {
+    private String makerCode;
     private String modelCode;
 
     private String carCode;   // ← 추가
     private Long carSeq;
     private String payload;
+
+
+    public String getMakerCode() {
+        return makerCode;
+    }
+
+    public void setMakerCode(String makerCode) {
+        this.makerCode = makerCode;
+    }
 
     public String getCarCode() {
         return carCode;

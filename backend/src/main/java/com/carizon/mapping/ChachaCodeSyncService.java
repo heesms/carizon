@@ -2,6 +2,7 @@ package com.carizon.mapping;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.carizon.integration.service.ModelImageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -13,6 +14,9 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -30,6 +34,7 @@ import java.util.stream.Collectors;
 public class ChachaCodeSyncService {
 
     private final JdbcTemplate jdbc;
+    private final ModelImageService modelImageService;
     private final ObjectMapper om = new ObjectMapper();
 
     private final WebClient webClient;
@@ -40,6 +45,10 @@ public class ChachaCodeSyncService {
     /* ======================= PUBLIC ENTRY ======================= */
 
     public void syncAll() {
+        syncAll(false, null, null, true);
+    }
+
+    public void syncAll(boolean downloadImages, Integer imageLimit, String imageDir, boolean skipExisting) {
         List<Maker> makers = fetchMakers();
         upsertMakers(makers);
 
@@ -66,6 +75,61 @@ public class ChachaCodeSyncService {
             }
         }
         log.info("[CHACHA] full sync done.");
+
+        if (downloadImages) {
+            try {
+                Path imageBaseDir = resolveImageBaseDir(imageDir);
+                Path modelImageDir = imageBaseDir.resolve("model");
+                Path makerImageDir = imageBaseDir.resolve("maker");
+                Files.createDirectories(modelImageDir);
+                Files.createDirectories(makerImageDir);
+
+                List<String> allModelCodes = jdbc.queryForList(
+                        "SELECT DISTINCT model_code FROM cz_model WHERE model_code IS NOT NULL AND TRIM(model_code) <> ''",
+                        String.class
+                );
+                List<String> allMakerCodes = jdbc.queryForList(
+                        "SELECT DISTINCT maker_code FROM cz_maker WHERE maker_code IS NOT NULL AND TRIM(maker_code) <> ''",
+                        String.class
+                );
+
+                List<String> missingModelCodes = new ArrayList<>(modelImageService.filterMissingModelCodes(allModelCodes, modelImageDir));
+                List<String> missingMakerCodes = new ArrayList<>(modelImageService.filterMissingMakerCodes(allMakerCodes, makerImageDir));
+
+                if (!missingModelCodes.isEmpty()) {
+                    modelImageService.downloadRepresentativeImagesForModelCodes(modelImageDir, missingModelCodes, imageLimit, skipExisting);
+                    log.info("[CHACHA] model image sync done. missingModelCount={}, imageLimit={}", missingModelCodes.size(), imageLimit);
+                }
+
+                if (!missingMakerCodes.isEmpty()) {
+                    modelImageService.downloadRepresentativeImagesForMakers(makerImageDir, missingMakerCodes, imageLimit, skipExisting);
+                    log.info("[CHACHA] maker image sync done. missingMakerCount={}, imageLimit={}", missingMakerCodes.size(), imageLimit);
+                } else if (missingModelCodes.isEmpty()) {
+                    log.info("[CHACHA] image sync skipped: no missing model/maker images");
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("차차차 코드 동기화는 완료됐지만 모델 이미지 다운로드 중 실패했습니다", e);
+            }
+        }
+    }
+
+    private Path resolveImageBaseDir(String imageDir) {
+        if (imageDir != null && !imageDir.isBlank()) {
+            return Paths.get(imageDir);
+        }
+
+        Path cwd = Paths.get("").toAbsolutePath().normalize();
+        Path primary = cwd.resolve("carizon-frontend").resolve("public").resolve("image");
+        if (Files.isDirectory(primary)) {
+            return primary;
+        }
+
+        Path fallback = cwd.getParent() != null ? cwd.getParent().resolve("carizon-frontend").resolve("public").resolve("image") : null;
+        if (fallback != null && Files.isDirectory(fallback)) {
+            return fallback;
+        }
+
+        return primary;
     }
 
     /* ======================= FETCHERS ======================= */
