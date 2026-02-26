@@ -171,7 +171,7 @@ export default function CarCard({
           {item.year    && <span className="badge badge-gray text-[11px]">{item.year}년식</span>}
           {item.km != null && item.km > 0 && <span className="badge badge-gray text-[11px]">{item.km.toLocaleString()}km</span>}
           {item.fuel    && <span className={`badge ${fuelBadge(item.fuel)} text-[11px]`}>{item.fuel}</span>}
-          {item.region  && <span className="badge badge-gray text-[11px]">{item.region}</span>}
+          {item.region  && <span className="badge badge-gray text-[11px]">{item.region.split(' ').slice(0, 2).join(' ')}</span>}
         </div>
 
         {/* 가격 + 좋아요 */}
