@@ -819,6 +819,18 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     }
   }, [colorPickerOpen, countFilterKey])
 
+  // 페이지 진입 시 pre-selected된 색상/연료가 있으면 이름 표시를 위해 미리 로드
+  useEffect(() => {
+    const preColors = parseCsvTokens(value.color)
+    const preFuels = parseCsvTokens(value.fuel)
+    if (preColors.length > 0) {
+      getColors({}).then(setColorItems).catch(() => {})
+    }
+    if (preFuels.length > 0) {
+      getFuels({}).then(setFuelItems).catch(() => {})
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!modelPickerOpen) return
     const prevOverflow = document.body.style.overflow
@@ -1397,6 +1409,16 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   }, [fuelItems])
   const visibleFuels = useMemo(() => fuelItems.slice().sort(sortByCountThenNameWithEtcLast), [fuelItems])
   const visibleColors = useMemo(() => colorItems.slice().sort(sortByCountThenNameWithEtcLast), [colorItems])
+  const colorNameByCode = useMemo(() => {
+    const map: Record<string, string> = {}
+    colorItems.forEach(it => { map[it.code] = it.name })
+    return map
+  }, [colorItems])
+  const fuelNameByCode = useMemo(() => {
+    const map: Record<string, string> = {}
+    fuelItems.forEach(it => { map[it.code] = it.name })
+    return map
+  }, [fuelItems])
 
   return (
     <>
@@ -1713,6 +1735,11 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                   />
                 )}
               </div>
+              {selectedBodyTypes.length > 0 && (
+                <p className="mt-1 text-[11px] text-gray-400 leading-tight truncate">
+                  {selectedBodyTypes.join(' · ')}
+                </p>
+              )}
             </div>
 
             <div>
@@ -1734,6 +1761,11 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                   />
                 )}
               </div>
+              {selectedColors.length > 0 && (
+                <p className="mt-1 text-[11px] text-gray-400 leading-tight truncate">
+                  {selectedColors.map(code => colorNameByCode[code] ?? code).join(' · ')}
+                </p>
+              )}
             </div>
 
             <div>
@@ -1755,6 +1787,11 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                   />
                 )}
               </div>
+              {selectedFuels.length > 0 && (
+                <p className="mt-1 text-[11px] text-gray-400 leading-tight truncate">
+                  {selectedFuels.map(code => fuelNameByCode[code] ?? code).join(' · ')}
+                </p>
+              )}
             </div>
 
             <div>

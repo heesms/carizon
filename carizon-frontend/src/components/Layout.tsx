@@ -35,24 +35,15 @@ export default function Layout() {
   const isDetailPage = location.pathname.startsWith('/cars/')
   const routeState = (location.state ?? {}) as { from?: string; source?: string; restoreSearchScrollFromDetail?: boolean }
 
-  // 라우트 이동 시 기본은 상단으로 이동.
-  // 모바일에서만 적용하고, 상세 -> 검색 복귀(스크롤 복원) 케이스만 예외 처리.
+  // 라우트 이동 시 즉시 상단으로 이동 (애니메이션 없음).
+  // 상세 -> 검색 복귀(스크롤 복원) 케이스만 예외 처리.
   useLayoutEffect(() => {
-    const isMobileViewport = window.matchMedia('(max-width: 639px)').matches
-    if (!isMobileViewport) return
-
     const preserveSearchScroll =
       location.pathname === '/search' && routeState.restoreSearchScrollFromDetail === true
     if (preserveSearchScroll) return
 
-    const html = document.documentElement
-    const prevInlineBehavior = html.style.scrollBehavior
-    html.style.scrollBehavior = 'auto'
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
-    requestAnimationFrame(() => {
-      html.style.scrollBehavior = prevInlineBehavior
-    })
-  }, [location.pathname, location.search, location.hash, routeState.restoreSearchScrollFromDetail])
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
+  }, [location.pathname, routeState.restoreSearchScrollFromDetail])
 
   const clearSearchScrollMemory = () => {
     sessionStorage.removeItem('search_scroll_y')
