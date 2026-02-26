@@ -58,7 +58,7 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.makers",
-        List.of("makerCode.keyword"),
+        List.of("makerCode"),
         Collections.emptyMap(),
         Function.identity(),
         ctx
@@ -192,8 +192,8 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.model-groups",
-        List.of("modelGroupCode.keyword"),
-        Map.of("makerCode.keyword", key),
+        List.of("modelGroupCode"),
+        Map.of("makerCode", key),
         Function.identity(),
         ctx
     );
@@ -217,8 +217,8 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.models",
-        List.of("modelCode.keyword"),
-        Map.of("makerCode.keyword", makerKey, "modelGroupCode.keyword", modelGroupKey),
+        List.of("modelCode"),
+        Map.of("makerCode", makerKey, "modelGroupCode", modelGroupKey),
         Function.identity(),
         ctx
     );
@@ -246,8 +246,8 @@ public class CodeQueryService {
     long esStart = System.currentTimeMillis();
     Map<String, Long> counts = fetchEsCounts(
         "codes.trims",
-        List.of("trimCode.keyword"),
-        Map.of("makerCode.keyword", makerKey, "modelGroupCode.keyword", modelGroupKey, "modelCode.keyword", modelKey),
+        List.of("trimCode"),
+        Map.of("makerCode", makerKey, "modelGroupCode", modelGroupKey, "modelCode", modelKey),
         Function.identity(),
         ctx
     );
@@ -420,10 +420,10 @@ public class CodeQueryService {
     if (context == null || context.isEmpty()) return List.of();
     List<Map<String, Object>> filters = new ArrayList<>();
 
-    addTermFilter(filters, "makerCode.keyword", context.get("makerCode"));
-    addTermFilter(filters, "modelGroupCode.keyword", context.get("modelGroupCode"));
-    addTermsShouldFilter(filters, "modelCode.keyword", context.get("modelCode"));
-    addTermFilter(filters, "trimCode.keyword", context.get("trimCode"));
+    addTermFilter(filters, "makerCode", context.get("makerCode"));
+    addTermFilter(filters, "modelGroupCode", context.get("modelGroupCode"));
+    addTermsShouldFilter(filters, "modelCode", context.get("modelCode"));
+    addTermFilter(filters, "trimCode", context.get("trimCode"));
     addRangeGte(filters, "year", parseInteger(context.get("yearMin")));
     addRangeLte(filters, "year", parseInteger(context.get("yearMax")));
     addRangeGte(filters, "km", parseInteger(context.get("kmMin")));
