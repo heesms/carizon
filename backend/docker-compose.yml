@@ -1,0 +1,220 @@
+version: '3.8'
+
+services:
+  # MySQL 데이터베이스
+  mysql:
+    image: mysql:8.0
+    container_name: carizon-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: carizon
+      MYSQL_USER: carizon
+      MYSQL_PASSWORD: carizon!1
+      MYSQL_BOOTSTRAP_SCHEMA: ${MYSQL_BOOTSTRAP_SCHEMA:-true}
+      MYSQL_BOOTSTRAP_MIGRATIONS: ${MYSQL_BOOTSTRAP_MIGRATIONS:-true}
+      MYSQL_BOOTSTRAP_SCHEMA_SQL: ${MYSQL_BOOTSTRAP_SCHEMA_SQL:-/docker-init/schema_from_excel.sql}
+      MYSQL_BOOTSTRAP_SEED_SQL: ${MYSQL_BOOTSTRAP_SEED_SQL:-/docker-init/carizon_seed.sql}
+      MYSQL_BOOTSTRAP_SEED: ${MYSQL_BOOTSTRAP_SEED:-true}
+      MYSQL_BOOTSTRAP_SKIP_IF_EXISTS: ${MYSQL_BOOTSTRAP_SKIP_IF_EXISTS:-true}
+      MYSQL_BOOTSTRAP_GUARD_TABLE: ${MYSQL_BOOTSTRAP_GUARD_TABLE:-car_master}
+      TZ: Asia/Seoul
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ${MYSQL_BOOTSTRAP_SCHEMA_SQL_HOST:-../schema_from_excel.sql}:/docker-init/schema_from_excel.sql:ro
+      - ${MYSQL_BOOTSTRAP_SEED_SQL_HOST:-../infra/mysql/carizon_seed.sql}:/docker-init/carizon_seed.sql:ro
+      - ../infra/mysql/init:/docker-entrypoint-initdb.d  # 초기 스크립트 (선택사항)
+    command: 
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=Asia/Seoul
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis 캐시
+  redis:
+    image: redis:7-alpine
+    container_name: carizon-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Meilisearch 검색 엔진 (선택, Elasticsearch 전환 후 미사용 가능)
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    container_name: carizon-meilisearch
+    ports:
+      - "7700:7700"
+    environment:
+      - MEILI_MASTER_KEY=XIczFckMSgIl7hflj3Xo91iBznGx1Sej4-oIhEf6pjs
+      - MEILI_ENV=development
+    volumes:
+      - meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Elasticsearch (차량 검색 인덱스)
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: carizon-elasticsearch
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -o /dev/null -w %{http_code} http://localhost:9200/_cluster/health | grep -q 200"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Kafka (차량 인덱스 동기화용, 단건/배치 sync API 사용 시에만 필요)
+  kafka:
+    image: apache/kafka:3.6.0
+    container_name: carizon-kafka
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      # 컴포즈 내 다른 컨테이너(app)가 kafka:9092로 접속하므로 동일하게 광고
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # Ollama (LLM·임베딩, RAG 추천용) — 선택. 넣으면 app이 ollama:11434 사용, 안 넣으면 호스트 Ollama는 RAG_* 환경변수로 지정
+  ollama:
+    image: ollama/ollama:latest
+    container_name: carizon-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # GPU 쓰려면: deploy.resources.reservations.devices (Docker GPU 지원 환경)
+    # 메모리 여유 있으면: deploy.resources.limits.memory: 8g
+
+  # Chroma 벡터 DB
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: carizon-chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Carizon 백엔드 앱 (MySQL, Redis, ES, Kafka, Chroma 모두 사용)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: carizon-backend:latest
+    container_name: carizon-app
+    ports:
+      - "8080:8080"
+    environment:
+      # MySQL (컴포즈 서비스명 = 호스트명)
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/carizon?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: carizon
+      SPRING_DATASOURCE_PASSWORD: carizon!1
+      # Redis
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      # Elasticsearch
+      ELASTICSEARCH_URIS: http://elasticsearch:9200
+      # Kafka (사용 시 KAFKA_ENABLED=true 로 설정)
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_ENABLED: "true"
+      KAFKA_CAR_SYNC_TOPIC: car-index-sync
+      # Chroma (RAG/임베딩)
+      RAG_CHROMA_BASE_URL: http://chroma:8000
+      # Ollama: 컴포즈에 ollama 서비스 있으면 http://ollama:11434, 호스트 Ollama 쓰면 RAG_* 변수로 http://host.docker.internal:11434
+      RAG_LLM_OLLAMA_BASE_URL: ${RAG_LLM_OLLAMA_BASE_URL:-http://ollama:11434}
+      RAG_EMBEDDING_OLLAMA_BASE_URL: ${RAG_EMBEDDING_OLLAMA_BASE_URL:-http://ollama:11434}
+      TZ: Asia/Seoul
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      chroma:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # 사용자용 프론트 (검색·추천·상세 등) — /api, /admin 요청은 nginx가 app:8080으로 프록시
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    image: carizon-frontend:latest
+    container_name: carizon-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      app:
+        condition: service_healthy
+
+  # 관리자용 어드민 (배치·크롤·설정 등)
+  admin:
+    build:
+      context: ./admin-frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ""   # 상대 경로 사용 → 같은 컨테이너 nginx가 /api, /admin을 app:8080으로 프록시
+    image: carizon-admin:latest
+    container_name: carizon-admin
+    ports:
+      - "3001:80"
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+  redis_data:
+  meilisearch_data:
+  elasticsearch_data:
+  chroma_data:
+  ollama_data:

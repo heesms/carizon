@@ -15,6 +15,8 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.Matcher;
@@ -54,7 +56,7 @@ public class ChutchaCrawler {
         int total = 0;
         try {
             jdbc.update("TRUNCATE TABLE raw_chutcha");
-            log.info("[CHUTCHA] TRUNCATE raw_chutcha 완료");
+            log.info("[CHUTCHA] TRUNCATE raw_chutcha done");
 
             String buildId = fetchBuildId();
             log.info("[CHUTCHA] buildId={}", buildId);
@@ -66,11 +68,11 @@ public class ChutchaCrawler {
             PageResult pr = fetchPage(cp, lp, ts);
             while (pr != null && !pr.items.isEmpty()) {
                 total += persistAndEnrich(buildId, pr.items);
-                log.info("[CHUTCHA] 누적 저장 {}건 (np={}, lp={})", total, pr.nextCp, pr.lastLp);
+                log.info("[CHUTCHA] saved total {} (np={}, lp={})", total, pr.nextCp, pr.lastLp);
 
                 if (pr.nextCp == null || pr.nextCp.isBlank()
                         || (pr.lastLp != null && pr.nextCp.equals(pr.lastLp))) {
-                    log.info("[CHUTCHA] 페이지 종료조건 도달 cp=np={}, lp={}", pr.nextCp, pr.lastLp);
+                    log.info("[CHUTCHA] page end condition reached cp=np={}, lp={}", pr.nextCp, pr.lastLp);
                     break;
                 }
 
@@ -82,12 +84,10 @@ public class ChutchaCrawler {
             }
 
             recordSuccess(runId, total);
-            log.info("[CHUTCHA] 완료 total={}", total);
+            log.info("[CHUTCHA] done total={}", total);
         } catch (Exception e) {
             recordFail(runId, total, e.toString());
-            log.error("[CHUTCHA] runOnceFull 실패", e);
-        } finally {
-            detailPool.shutdown();
+            log.error("[CHUTCHA] runOnceFull failed", e);
         }
     }
 
@@ -148,41 +148,75 @@ public class ChutchaCrawler {
         }
     }
 
-    // --------------------- DETAIL + SLIM MERGE SAVE ---------------------
+    // --------------------- DETAIL + SLIM MERGE SAVE (상세 병렬 조회) ---------------------
     private int persistAndEnrich(String buildId, List<Map<String, Object>> items) throws Exception {
-        List<Object[]> batch = new ArrayList<>();
+        // 상세 조회를 병렬로 실행 (detailPool)
+        @SuppressWarnings("unchecked")
+        List<CompletableFuture<DetailResult>> futures = new ArrayList<>(items.size());
+        for (int i = 0; i < items.size(); i++) {
+            final int idx = i;
+            Map<String, Object> car = items.get(i);
+            String hash = optStr(car, "detail_link_hash");
+            if (hash == null || hash.isBlank()) hash = optStr(car, "detailLinkHash");
+            final String finalHash = hash;
 
-        for (Map<String, Object> car : items) {
+            if (finalHash != null && !finalHash.isBlank()) {
+                futures.add(CompletableFuture.supplyAsync(() -> {
+                    try {
+                        DetailSlim d = fetchDetailSlim(buildId, finalHash);
+                        return new DetailResult(idx, d);
+                    } catch (Exception e) {
+                        log.warn("[CHUTCHA] DETAIL fetch/parse fail hash={} {}", finalHash, e.toString());
+                        return new DetailResult(idx, null);
+                    }
+                }, detailPool));
+            } else {
+                futures.add(CompletableFuture.completedFuture(new DetailResult(idx, null)));
+            }
+        }
+
+        DetailSlim[] detailsByIndex = new DetailSlim[items.size()];
+        for (CompletableFuture<DetailResult> f : futures) {
+            try {
+                DetailResult r = f.get();
+                detailsByIndex[r.index()] = r.detail();
+            } catch (InterruptedException ie) {
+                // HTTP 클라이언트 단절/스레드 인터럽트가 와도 크롤링 배치는 가능한 범위에서 진행
+                log.warn("[CHUTCHA] detail future interrupted, fallback to partial save");
+                Thread.interrupted(); // interrupt status clear
+            } catch (ExecutionException ee) {
+                log.warn("[CHUTCHA] detail future execution failed: {}", ee.getCause() != null ? ee.getCause().toString() : ee.toString());
+            }
+        }
+
+        List<Object[]> batch = new ArrayList<>(items.size());
+        for (int i = 0; i < items.size(); i++) {
+            Map<String, Object> car = items.get(i);
             String hash = optStr(car, "detail_link_hash");
             if (hash == null || hash.isBlank()) hash = optStr(car, "detailLinkHash");
 
-            // 목록 JSON
             ObjectNode merged = mapper.valueToTree(car);
-
-            // 상세 JSON에서 필요한 필드만 뽑아 detail에 슬림 구조로 붙인다
-            if (hash != null && !hash.isBlank()) {
-                try {
-                    DetailSlim d = fetchDetailSlim(buildId, hash);
-                    if (d != null) {
-                        ObjectNode detail = mapper.createObjectNode();
-                        if (d.options != null) detail.set("options", d.options);
-                        if (d.imgList != null) detail.set("img_list", d.imgList);
-                        if (d.baseInfo != null) detail.set("base_info", d.baseInfo);
-                        merged.set("detail", detail);
-                    }
-                } catch (Exception e) {
-                    log.warn("[CHUTCHA] DETAIL fetch/parse fail hash={} {}", hash, e.toString());
-                }
+            DetailSlim d = detailsByIndex[i];
+            if (d != null) {
+                ObjectNode detail = mapper.createObjectNode();
+                if (d.options != null) detail.set("options", d.options);
+                if (d.imgList != null) detail.set("img_list", d.imgList);
+                if (d.baseInfo != null) detail.set("base_info", d.baseInfo);
+                merged.set("detail", detail);
             }
 
             String mergedPayload = mapper.writeValueAsString(merged);
-            batch.add(new Object[]{ mergedPayload, hash });
+            Map<String, Object> mergedMap = mapper.convertValue(merged, new TypeReference<Map<String, Object>>() {});
+            String carImageUrl = buildChutchaImageUrl(mergedMap);
+            String optionArray = buildChutchaOptionArray(mergedMap);
+            Timestamp adDate = resolveChutchaAdDate(mergedMap);
+            batch.add(new Object[]{ mergedPayload, hash, carImageUrl, optionArray, adDate, Timestamp.from(Instant.now()) });
         }
 
         if (!batch.isEmpty()) {
             jdbc.batchUpdate(
-                    "INSERT INTO raw_chutcha(payload, share_hash) VALUES (CAST(? AS JSON), ?) " +
-                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload)",
+                    "INSERT INTO raw_chutcha(payload, share_hash, car_image_url, option_array, ad_date, fetched_at) VALUES (CAST(? AS JSON), ?, ?, ?, ?, ?) " +
+                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload), car_image_url=VALUES(car_image_url), option_array=VALUES(option_array), ad_date=VALUES(ad_date), fetched_at=VALUES(fetched_at)",
                     batch
             );
         }
@@ -318,7 +352,113 @@ public class ChutchaCrawler {
         return s.length() <= max ? s : s.substring(0, max);
     }
 
+    /** during_date_str(예: "3일전", "오늘")를 실제 ad_date(00:00:00)로 변환 */
+    private Timestamp resolveChutchaAdDate(Map<String, Object> payload) {
+        String raw = optStr(payload, "during_date_str");
+        if (raw == null || raw.isBlank()) raw = optStr(payload, "duringDateStr");
+        if (raw == null || raw.isBlank()) return null;
+
+        String compact = raw.replaceAll("\\s+", "");
+        LocalDate base = LocalDate.now();
+        LocalDateTime adDateTime;
+
+        if ("오늘".equals(compact) || "금일".equals(compact)) {
+            adDateTime = LocalDateTime.of(base, java.time.LocalTime.MIDNIGHT);
+        } else if ("어제".equals(compact)) {
+            adDateTime = LocalDateTime.of(base.minusDays(1), java.time.LocalTime.MIDNIGHT);
+        } else if (compact.matches("^\\d+시간전$")) {
+            long hours = Long.parseLong(compact.replace("시간전", ""));
+            // 요구사항: 오늘 00시를 기준으로 N시간 전 계산
+            adDateTime = LocalDateTime.of(base, java.time.LocalTime.MIDNIGHT).minusHours(hours);
+        } else {
+            Matcher m = Pattern.compile("(\\d+)일전").matcher(compact);
+            if (!m.find()) return null;
+            long days = Long.parseLong(m.group(1));
+            adDateTime = LocalDateTime.of(base.minusDays(days), java.time.LocalTime.MIDNIGHT);
+        }
+        return Timestamp.valueOf(adDateTime);
+    }
+
+    private static final String CHUTCHA_IMG_BASE = "https://img.chutcha.kr";
+
+    /**
+     * CHUTCHA car_image_url 생성
+     * 1) payload.detail.img_list[0].img_path 우선 사용 (상세 첫 번째 이미지)
+     * 2) 없으면 list_img_path 사용 (목록 썸네일)
+     * URL 형식: https://img.chutcha.kr/files/car_resist/202512/04/xxx.jpg (앞 / 제거 후 베이스 붙임)
+     */
+    private String buildChutchaImageUrl(Map<String, Object> payload) {
+        try {
+            String path = getFirstImgPathFromDetail(payload);
+            if (path == null) path = optStr(payload, "list_img_path");
+            if (path == null || path.isBlank()) return null;
+
+            if (path.startsWith("/")) path = path.substring(1);
+            return CHUTCHA_IMG_BASE + "/" + path;
+        } catch (Exception e) {
+            log.warn("[CHUTCHA] car_image_url build failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** payload.detail.img_list[0].img_path 추출 */
+    @SuppressWarnings("unchecked")
+    private String getFirstImgPathFromDetail(Map<String, Object> payload) {
+        Object detailObj = payload != null ? payload.get("detail") : null;
+        if (!(detailObj instanceof Map)) return null;
+        Map<String, Object> detail = (Map<String, Object>) detailObj;
+        Object imgListObj = detail.get("img_list");
+        if (!(imgListObj instanceof List) || ((List<?>) imgListObj).isEmpty()) return null;
+        Object first = ((List<?>) imgListObj).get(0);
+        if (!(first instanceof Map)) return null;
+        return optStr((Map<String, ?>) first, "img_path");
+    }
+
+    /** payload.detail.options에서 val=Y 항목의 kor_name을 "|" join */
+    @SuppressWarnings("unchecked")
+    private String buildChutchaOptionArray(Map<String, Object> payload) {
+        try {
+            Object detailObj = payload != null ? payload.get("detail") : null;
+            if (!(detailObj instanceof Map)) return null;
+            Map<String, Object> detail = (Map<String, Object>) detailObj;
+
+            Object optionsObj = detail.get("options");
+            if (!(optionsObj instanceof List<?> options)) return null;
+
+            LinkedHashSet<String> names = new LinkedHashSet<>();
+            for (Object item : options) {
+                if (!(item instanceof Map<?, ?> option)) continue;
+
+                Object val = option.get("val");
+                if (!isPositiveOptionValue(val)) continue;
+
+                String korName = null;
+                Object korNameObj = option.get("kor_name");
+                if (korNameObj != null) korName = String.valueOf(korNameObj).trim();
+                if (korName == null || korName.isBlank()) {
+                    Object korNameCamel = option.get("korName");
+                    if (korNameCamel != null) korName = String.valueOf(korNameCamel).trim();
+                }
+                if (korName != null && !korName.isBlank()) names.add(korName);
+            }
+
+            if (names.isEmpty()) return null;
+            return String.join("|", names);
+        } catch (Exception e) {
+            log.warn("[CHUTCHA] option_array build failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private boolean isPositiveOptionValue(Object val) {
+        if (val == null) return false;
+        String s = String.valueOf(val).trim();
+        if (s.isEmpty()) return false;
+        return "Y".equalsIgnoreCase(s) || "1".equals(s) || "TRUE".equalsIgnoreCase(s);
+    }
+
     // --------------------- record types ---------------------
     private record PageResult(List<Map<String, Object>> items, String nextCp, String lastLp) {}
     private record DetailSlim(ArrayNode options, ArrayNode imgList, ObjectNode baseInfo) {}
+    private record DetailResult(int index, DetailSlim detail) {}
 }

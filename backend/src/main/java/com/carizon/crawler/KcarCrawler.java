@@ -40,7 +40,7 @@ public class KcarCrawler {
         try {
             // 스냅샷 전략: 싹 비우고 시작 (원하면 upsert-only로 바꿔도 됨)
             jdbc.update("TRUNCATE TABLE raw_kcar");
-            log.info("[KCAR] TRUNCATE raw_kcar 완료");
+            log.info("[KCAR] TRUNCATE raw_kcar done");
 
             int page = 1;
             int emptyCount = 0;
@@ -56,7 +56,7 @@ public class KcarCrawler {
                 try {
                     enc = KcarCrypto.encrypt(paramJson);
                 } catch (Exception e) {
-                    log.warn("[KCAR] 암호화 실패 page={} err={}", page, e.toString());
+                    log.warn("[KCAR] encrypt failed page={} err={}", page, e.toString());
                     break;
                 }
 
@@ -103,7 +103,7 @@ public class KcarCrawler {
                         emptyCount++;
                         // 두 페이지 연속으로 비면 종료 (안정 종료)
                         if (emptyCount >= 2) {
-                            log.info("[KCAR] 연속 빈 페이지 → 종료");
+                            log.info("[KCAR] consecutive empty pages → stop");
                             break;
                         }
                         page++;
@@ -112,12 +112,13 @@ public class KcarCrawler {
                     }
                     emptyCount = 0;
 
-                    // UPSERT (car_cd UNIQUE)
-                    String sql = "INSERT INTO raw_kcar(payload) VALUES (CAST(? AS JSON)) " +
-                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload), fetched_at=CURRENT_TIMESTAMP";
+                    // UPSERT (car_cd UNIQUE) + option_array(optnNm) 저장
+                    String sql = "INSERT INTO raw_kcar(payload, option_array) VALUES (CAST(? AS JSON), ?) " +
+                            "ON DUPLICATE KEY UPDATE payload=VALUES(payload), option_array=VALUES(option_array), fetched_at=CURRENT_TIMESTAMP";
                     List<Object[]> params = new ArrayList<>(rows.size());
                     for (Map<String, Object> r : rows) {
-                        params.add(new Object[]{ mapper.writeValueAsString(r) });
+                        String optionArray = extractOptionArray(r);
+                        params.add(new Object[]{ mapper.writeValueAsString(r), optionArray });
                     }
                     int[] res = jdbc.batchUpdate(sql, params);
                     totalInserted += res.length;
@@ -131,7 +132,15 @@ public class KcarCrawler {
             recorder.recordEnd(runId, totalInserted, Instant.now());
         } catch (Exception e) {
             recorder.recordFail(runId, totalInserted, Instant.now(), e.toString());
-            log.error("[KCAR] runOnceFull 실패", e);
+            log.error("[KCAR] runOnceFull failed", e);
         }
+    }
+
+    private String extractOptionArray(Map<String, Object> row) {
+        if (row == null) return null;
+        Object optnNm = row.get("optnNm");
+        if (optnNm == null) return null;
+        String value = String.valueOf(optnNm).trim();
+        return value.isEmpty() ? null : value;
     }
 }

@@ -1,0 +1,47 @@
+-- platform_car 테이블 DDL 참고 (기존 테이블 존재 가정, price_new 추가 반영)
+-- 실제 초기 생성은 인프라/스키마에서 수행되었을 수 있음. 컬럼 추가는 010_add_price_new_columns.sql 사용.
+
+/*
+CREATE TABLE platform_car (
+  platform_car_id    BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  platform_name     VARCHAR(50)  NOT NULL,
+  platform_car_key  VARCHAR(100) NOT NULL,
+  car_no            VARCHAR(50)  NULL,
+  car_id            BIGINT       NULL,
+  maker_code        VARCHAR(50)  NULL,
+  model_group_code  VARCHAR(50)  NULL,
+  model_code        VARCHAR(50)  NULL,
+  trim_code         VARCHAR(50)  NULL,
+  grade_code        VARCHAR(50)  NULL,
+  maker_name        VARCHAR(100) NULL,
+  model_group_name  VARCHAR(100) NULL,
+  model_name        VARCHAR(100) NULL,
+  trim_name         VARCHAR(100) NULL,
+  grade_name        VARCHAR(100) NULL,
+  price             INT          NULL,
+  price_new         INT          NULL COMMENT '신차가격(만원)',
+  km                INT          NULL,
+  displacement      INT          NULL,
+  yymm              VARCHAR(20)  NULL,
+  status            VARCHAR(20)  NULL,
+  color             VARCHAR(50)  NULL,
+  fuel              VARCHAR(50)  NULL,
+  transmission      VARCHAR(50)  NULL,
+  body_type         VARCHAR(50)  NULL,
+  region            VARCHAR(100) NULL,
+  m_url             VARCHAR(500) NULL,
+  pc_url            VARCHAR(500) NULL,
+  first_ad_day      VARCHAR(20)  NULL,
+  created_at        DATETIME     NULL,
+  updated_at        DATETIME     NULL,
+  extra             JSON         NULL,
+  last_seen_date    DATE         NULL,
+  car_image_url     VARCHAR(500) NULL,
+  UNIQUE KEY uk_platform_car (platform_name, platform_car_key),
+  INDEX idx_platform_car_car_id (car_id),
+  INDEX idx_platform_car_last_seen_date (last_seen_date),
+  INDEX idx_platform_car_car_no (car_no),
+  INDEX idx_platform_car_platform_car_no (platform_name, car_no),
+  INDEX idx_platform_car_last_seen_car_no (last_seen_date, car_no)
+);
+*/

@@ -1,0 +1,501 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.carizon.domain.mapper.CarMapper">
+
+    <!-- 플랫폼 우선순위에 따른 대표 이미지 (platform_car.car_image_url) -->
+  <sql id="RepresentativeImageByPriority">
+    (SELECT pc2.car_image_url
+     FROM platform_car pc2
+     LEFT JOIN cz_platform_priority pp ON pp.platform_name = pc2.platform_name
+     WHERE pc2.car_id = cm.car_id
+       AND pc2.car_image_url IS NOT NULL AND TRIM(IFNULL(pc2.car_image_url,'')) != ''
+     ORDER BY pp.priority ASC
+     LIMIT 1)
+  </sql>
+
+  <sql id="CommonWhere">
+    <where>
+      <if test="makerCode != null and makerCode != ''"> AND cm.maker_code = #{makerCode} </if>
+      <if test="modelGroupCode != null and modelGroupCode != ''"> AND cm.model_group_code = #{modelGroupCode} </if>
+      <if test="modelCode != null and modelCode != ''"> AND cm.model_code = #{modelCode} </if>
+      <if test="trimCode != null and trimCode != ''"> AND cm.trim_code = #{trimCode} </if>
+      <if test="gradeCode != null and gradeCode != ''"> AND cm.grade_code = #{gradeCode} </if>
+      <if test="yearMin != null"> AND cm.year &gt;= #{yearMin} </if>
+      <if test="yearMax != null"> AND cm.year &lt;= #{yearMax} </if>
+      <if test="kmMax != null"> AND cm.mileage &lt;= #{kmMax} </if>
+      <if test="priceMin != null"> AND pc.price &gt;= #{priceMin} </if>
+      <if test="priceMax != null"> AND pc.price &lt;= #{priceMax} </if>
+      <if test="fuel != null and fuel != ''"> AND cm.fuel = #{fuel} </if>
+      <if test="transmission != null and transmission != ''"> AND cm.transmission = #{transmission} </if>
+      <if test="bodyType != null and bodyType != ''"> AND cm.body_type = #{bodyType} </if>
+      <if test="region != null and region != ''"> AND cm.region = #{region} </if>
+    </where>
+  </sql>
+
+  <select id="selectCars" parameterType="map" resultType="com.carizon.dto.CarListItemDto">
+    SELECT cm.car_id AS carId,
+           (SELECT MAKER_NAME FROM CZ_MAKER Z WHERE CM.MAKER_CODE = Z.MAKER_CODE) MAKER_NAME,
+           (SELECT MODEL_NAME FROM CZ_MODEL Z WHERE CM.MODEL_CODE = Z.MODEL_CODE) MODEL_NAME,
+           (SELECT TRIM_NAME FROM CZ_TRIM Z WHERE CM.TRIM_CODE = Z.TRIM_CODE) TRIM_NAME,
+           cm.year AS year,
+           cm.mileage AS km,
+           MIN(pc.price) AS priceMin,
+           MAX(pc.price) AS priceMax,
+           MAX(pc.updated_at) AS priceUpdatedAt,
+           <include refid="RepresentativeImageByPriority"/> AS representativeImageUrl,
+           cm.MODEL_CODE,
+           COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
+           COALESCE(MAX(pc.region), cm.region) AS region
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+    <include refid="CommonWhere"/>
+    GROUP BY cm.car_id
+    <choose>
+      <when test="sort == 'LOW_PRICE'"> ORDER BY priceMin ASC </when>
+      <when test="sort == 'LOW_KM'"> ORDER BY km ASC </when>
+      <when test="sort == 'NEW_YEAR'"> ORDER BY year DESC </when>
+      <otherwise> ORDER BY priceUpdatedAt DESC </otherwise>
+    </choose>
+    LIMIT #{limit} OFFSET #{offset}
+  </select>
+
+  <select id="countCars" parameterType="map" resultType="long">
+    SELECT COUNT(DISTINCT cm.car_id)
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+    <include refid="CommonWhere"/>
+  </select>
+
+  <!-- 상세: 플랫폼별 행 조회. 플랫폼별 순위 조인, 행별 이미지(car_image_url), 가격순 정렬 -->
+  <select id="selectCarDetail" parameterType="long" resultType="com.carizon.dto.CarDetailRow">
+    SELECT cm.car_id AS carId,
+           pc.maker_name, pc.model_group_name, pc.model_name, pc.trim_name,
+           cm.year, cm.mileage, cm.displacement,
+           COALESCE(pc.fuel, cm.fuel) AS fuel,
+           COALESCE(pc.transmission, cm.transmission) AS transmission,
+           COALESCE(pc.color, cm.color) AS color,
+           COALESCE(pc.body_type, cm.body_type) AS body_type,
+           COALESCE(pc.region, cm.region) AS region,
+           COALESCE(pc.seat_count, cm.seat_count) AS seatCount,
+           cm.my_accident_cnt AS myAccidentCnt,
+           pc.platform_car_id AS platformCarId, pc.platform_name, pc.price, pc.status, pc.pc_url, pc.m_url,
+           DATE_FORMAT(pc.last_seen_date, '%Y-%m-%d') AS lastSeenDate,
+           pc.option_array AS optionArray,
+           pc.car_image_url AS representativeImageUrl
+    FROM car_master cm
+    INNER JOIN platform_car pc ON pc.car_id = cm.car_id
+    LEFT JOIN cz_platform_priority pp ON pp.platform_name = pc.platform_name
+    WHERE cm.car_id = #{carId}
+    ORDER BY pc.price ASC, COALESCE(pp.priority, 999) ASC
+  </select>
+
+  <!-- RAG/추천용: URL만 경량 조회 (selectCarDetail 대신 사용해 루프 지연 감소) -->
+  <select id="selectCarUrl" parameterType="long" resultType="map">
+    SELECT pc_url AS pcUrl, m_url AS mUrl
+    FROM platform_car
+    WHERE car_id = #{carId}
+    ORDER BY updated_at DESC
+    LIMIT 1
+  </select>
+
+  <select id="selectCarIdModelCodes" resultType="map">
+    SELECT car_id AS carId, model_code AS modelCode
+    FROM car_master
+    <where>
+      <if test="carIds != null and !carIds.isEmpty()">
+        car_id IN
+        <foreach collection="carIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+      </if>
+    </where>
+  </select>
+
+  <select id="selectCarsByModelCodes" resultType="map">
+    SELECT cm.car_id AS carId,
+           m.maker_name AS maker,
+           mo.model_name AS model,
+           t.trim_name AS trim,
+           cm.year AS year,
+           cm.mileage AS mileage,
+           COALESCE(MIN(pc.price), 0) AS price,
+           COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
+           COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
+           COALESCE(MAX(pc.color), cm.color) AS color,
+           COALESCE(MAX(pc.region), cm.region) AS region
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+    LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
+    LEFT JOIN cz_model mo ON mo.maker_code = cm.maker_code AND mo.model_group_code = cm.model_group_code AND mo.model_code = cm.model_code
+    LEFT JOIN cz_trim t ON t.maker_code = cm.maker_code AND t.model_group_code = cm.model_group_code AND t.model_code = cm.model_code AND t.trim_code = cm.trim_code
+    WHERE cm.adv_status IN ('ONSALE', 'ADVERTISE')
+    <if test="modelCodes != null and !modelCodes.isEmpty()">
+      AND cm.model_code IN
+      <foreach collection="modelCodes" item="code" open="(" separator="," close=")">#{code}</foreach>
+    </if>
+    GROUP BY cm.car_id, m.maker_name, mo.model_name, t.trim_name, cm.year, cm.mileage, cm.fuel, cm.transmission, cm.color, cm.region
+    ORDER BY cm.car_id
+    LIMIT #{limit}
+  </select>
+
+  <!-- 대표 이미지 1건 조회 (상세 페이지 응답용, 플랫폼별 순위로 1건 선택) -->
+  <select id="selectCarRepresentativeImageUrl" parameterType="long" resultType="string">
+    SELECT pc2.car_image_url
+    FROM platform_car pc2
+    LEFT JOIN cz_platform_priority pp ON pp.platform_name = pc2.platform_name
+    WHERE pc2.car_id = #{carId}
+      AND pc2.car_image_url IS NOT NULL AND TRIM(IFNULL(pc2.car_image_url,'')) != ''
+    ORDER BY COALESCE(pp.priority, 999) ASC
+    LIMIT 1
+  </select>
+
+  <select id="selectAnyPlatformCarId" parameterType="long" resultType="long">
+    SELECT pc.platform_car_id
+    FROM platform_car pc
+    WHERE pc.car_id = #{carId}
+    ORDER BY pc.updated_at DESC
+    LIMIT 1
+  </select>
+
+  <select id="selectPriceHistory" parameterType="long" resultType="com.carizon.dto.PricePoint">
+    SELECT checked_at AS ts, price
+    FROM car_price_history
+    WHERE platform_car_id = #{platformCarId}
+    ORDER BY checked_at ASC
+  </select>
+
+  <select id="selectModelImages" parameterType="string" resultType="com.carizon.dto.ModelImageDto">
+    SELECT image_url AS imageUrl, is_main AS isMain, sort_order AS sortOrder
+    FROM cz_model_image
+    WHERE model_code = #{modelCode}
+    ORDER BY is_main DESC, sort_order ASC, id ASC
+  </select>
+
+  <select id="selectMakers" resultType="map">
+    SELECT m.maker_code AS code,
+           m.maker_name AS name,
+           IFNULL(m.country_code, '') AS countryCode,
+           CASE
+             WHEN UPPER(IFNULL(m.country_code, '')) IN ('KR', 'KOR', 'KO') THEN 1
+             WHEN IFNULL(m.country_code, '') = '국산' THEN 1
+             ELSE 0
+           END AS domestic,
+           0 AS carCount
+    FROM cz_maker m
+    ORDER BY domestic DESC, m.maker_name ASC
+  </select>
+
+  <select id="selectBodyTypes" resultType="map">
+    SELECT bt.code AS code,
+           bt.name AS name,
+           0 AS carCount
+    FROM (
+      SELECT '경차' AS code, '경차' AS name
+      UNION ALL SELECT '소형', '소형'
+      UNION ALL SELECT '준중형', '준중형'
+      UNION ALL SELECT '중형', '중형'
+      UNION ALL SELECT '대형', '대형'
+      UNION ALL SELECT 'SUV', 'SUV'
+      UNION ALL SELECT 'RV', 'RV'
+      UNION ALL SELECT '승합', '승합'
+      UNION ALL SELECT '스포츠카', '스포츠카'
+      UNION ALL SELECT '트럭', '트럭'
+      UNION ALL SELECT '화물', '화물'
+      UNION ALL SELECT '상용', '상용'
+      UNION ALL SELECT '기타', '기타'
+    ) bt
+    ORDER BY FIELD(bt.code, '경차','소형','준중형','중형','대형','SUV','RV','승합','스포츠카','트럭','화물','상용','기타')
+  </select>
+
+  <select id="selectModelGroups" resultType="map">
+    SELECT mg.model_group_code AS code,
+           mg.model_group_name AS name,
+           0 AS carCount
+    FROM cz_model_group mg
+    WHERE mg.maker_code = #{makerCode}
+    ORDER BY mg.model_group_name
+  </select>
+
+  <select id="selectModels" resultType="map">
+    SELECT mo.model_code AS code,
+           mo.model_name AS name,
+           mo.from_year AS from_year,
+           mo.to_year AS to_year,
+           0 AS carCount
+    FROM cz_model mo
+    WHERE mo.maker_code = #{makerCode}
+      AND mo.model_group_code = #{modelGroupCode}
+    ORDER BY mo.model_name
+  </select>
+
+  <select id="selectTrims" resultType="map">
+    SELECT trim_code AS code, trim_name AS name
+    FROM cz_trim
+    WHERE MAKER_CODE = #{makerCode}
+      AND model_group_code = #{modelGroupCode}
+      AND MODEL_CODE = #{modelCode}
+    ORDER BY name
+  </select>
+
+  <select id="selectGrades" resultType="map">
+    SELECT grade_code AS code, grade_name AS name
+    FROM cz_grade
+    WHERE MAKER_CODE = #{makerCode}
+      AND model_group_code = #{modelGroupCode}
+      AND MODEL_CODE = #{modelCode}
+      AND TRIM_CODE = #{trimCode}
+    ORDER BY name
+  </select>
+
+  <!-- Elasticsearch 인덱싱용 쿼리: 필터링에 필요한 모든 필드 포함 -->
+  <!-- Keyset 페이지네이션 + LEFT JOIN 최적화 (배치 인덱싱용) -->
+  <select id="selectCarsForIndexing" parameterType="map" resultType="map">
+    SELECT cm.car_id AS carId,
+           cm.maker_code AS makerCode,
+           cm.model_group_code AS modelGroupCode,
+           cm.model_code AS modelCode,
+           cm.trim_code AS trimCode,
+           cm.grade_code AS gradeCode,
+           COALESCE(NULLIF(TRIM(MAX(m.maker_name)), ''), NULLIF(TRIM(MAX(pc.maker_name)), '')) AS makerName,
+           COALESCE(NULLIF(TRIM(MAX(mg.model_group_name)), ''), NULLIF(TRIM(MAX(pc.model_group_name)), '')) AS modelGroupName,
+           COALESCE(NULLIF(TRIM(MAX(mo.model_name)), ''), NULLIF(TRIM(MAX(pc.model_name)), '')) AS modelName,
+           COALESCE(NULLIF(TRIM(MAX(t.trim_name)), ''), NULLIF(TRIM(MAX(pc.trim_name)), '')) AS trimName,
+           cm.year AS year,
+           cm.mileage AS km,
+           MIN(pc.price) AS priceMin,
+           MAX(pc.price) AS priceMax,
+           MAX(pc.updated_at) AS priceUpdatedAt,
+           COUNT(DISTINCT pc.platform_name) AS platformCount,
+           COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
+           COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
+           COALESCE(MAX(pc.color), cm.color) AS color,
+           COALESCE(MAX(pc.body_type), cm.body_type) AS bodyType,
+           COALESCE(MAX(pc.region), cm.region) AS region,
+           cm.car_no AS carNo,
+           MAX(CASE
+             WHEN pc.car_image_url IS NOT NULL AND TRIM(IFNULL(pc.car_image_url,'')) != ''
+             THEN pc.car_image_url
+             ELSE NULL
+           END) AS representativeImageUrl
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+      AND (
+        pc.status = 'ONSALE'
+        OR (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK') AND pc.status = 'ADVERTISE')
+      )
+    LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
+    LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
+    LEFT JOIN cz_model mo ON mo.maker_code = cm.maker_code AND mo.model_group_code = cm.model_group_code AND mo.model_code = cm.model_code
+    LEFT JOIN cz_trim t ON t.maker_code = cm.maker_code AND t.model_group_code = cm.model_group_code AND t.model_code = cm.model_code AND t.trim_code = cm.trim_code
+    WHERE cm.adv_status = 'ONSALE'
+    <if test="lastCarId != null"> AND cm.car_id &gt; #{lastCarId}</if>
+    GROUP BY cm.car_id, cm.maker_code, cm.model_group_code, cm.model_code, cm.trim_code,
+             cm.grade_code, cm.year, cm.mileage, cm.fuel, cm.transmission, cm.color, cm.body_type, cm.region, cm.car_no,
+             m.maker_name, mo.model_name, t.trim_name
+    HAVING MAX(CASE WHEN pc.car_image_url IS NOT NULL AND TRIM(IFNULL(pc.car_image_url,'')) != '' THEN 1 ELSE 0 END) = 1
+    ORDER BY cm.car_id
+    LIMIT #{limit}
+  </select>
+
+  <!-- Keyset 페이지네이션. 대표 이미지는 JOIN+ROW_NUMBER로 한 번에 계산 (상관 서브쿼리 제거로 배치 속도 개선) -->
+  <select id="selectCarsForIndexingAfterId" parameterType="map" resultType="map">
+    SELECT cm.car_id AS carId,
+           cm.maker_code AS makerCode,
+           cm.model_group_code AS modelGroupCode,
+           cm.model_code AS modelCode,
+           cm.trim_code AS trimCode,
+           cm.grade_code AS gradeCode,
+           COALESCE(NULLIF(TRIM(MAX(m.maker_name)), ''), NULLIF(TRIM(MAX(pc.maker_name)), '')) AS makerName,
+           COALESCE(NULLIF(TRIM(MAX(mg.model_group_name)), ''), NULLIF(TRIM(MAX(pc.model_group_name)), '')) AS modelGroupName,
+           COALESCE(NULLIF(TRIM(MAX(mo.model_name)), ''), NULLIF(TRIM(MAX(pc.model_name)), '')) AS modelName,
+           COALESCE(NULLIF(TRIM(MAX(t.trim_name)), ''), NULLIF(TRIM(MAX(pc.trim_name)), '')) AS trimName,
+           cm.year AS year,
+           cm.mileage AS km,
+           MIN(pc.price) AS priceMin,
+           MAX(pc.price) AS priceMax,
+           MAX(pc.updated_at) AS priceUpdatedAt,
+           COUNT(DISTINCT pc.platform_name) AS platformCount,
+           COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
+           COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
+           COALESCE(MAX(pc.color), cm.color) AS color,
+           COALESCE(MAX(pc.body_type), cm.body_type) AS bodyType,
+           COALESCE(MAX(pc.region), cm.region) AS region,
+           cm.car_no AS carNo,
+           MAX(CASE
+             WHEN pc.car_image_url IS NOT NULL AND TRIM(IFNULL(pc.car_image_url,'')) != ''
+             THEN pc.car_image_url
+             ELSE NULL
+           END) AS representativeImageUrl
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+      AND (
+        pc.status = 'ONSALE'
+        OR (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK') AND pc.status = 'ADVERTISE')
+      )
+    LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
+    LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
+    LEFT JOIN cz_model mo ON mo.maker_code = cm.maker_code AND mo.model_group_code = cm.model_group_code AND mo.model_code = cm.model_code
+    LEFT JOIN cz_trim t ON t.maker_code = cm.maker_code AND t.model_group_code = cm.model_group_code AND t.model_code = cm.model_code AND t.trim_code = cm.trim_code
+    WHERE cm.adv_status = 'ONSALE'
+    <if test="lastCarId != null"> AND cm.car_id &gt; #{lastCarId}</if>
+    GROUP BY cm.car_id, cm.maker_code, cm.model_group_code, cm.model_code, cm.trim_code,
+             cm.grade_code, cm.year, cm.mileage, cm.fuel, cm.transmission, cm.color, cm.body_type, cm.region, cm.car_no,
+             m.maker_name, mo.model_name, t.trim_name
+    HAVING MAX(CASE WHEN pc.car_image_url IS NOT NULL AND TRIM(IFNULL(pc.car_image_url,'')) != '' THEN 1 ELSE 0 END) = 1
+    ORDER BY cm.car_id
+    LIMIT #{limit}
+  </select>
+
+  <!-- 증분 인덱싱용: 업데이트된 차량만 조회 (Keyset + LEFT JOIN 최적화) -->
+  <select id="selectCarsForIndexingUpdated" parameterType="map" resultType="map">
+    SELECT cm.car_id AS carId,
+           cm.maker_code AS makerCode,
+           cm.model_group_code AS modelGroupCode,
+           cm.model_code AS modelCode,
+           cm.trim_code AS trimCode,
+           cm.grade_code AS gradeCode,
+           COALESCE(NULLIF(TRIM(MAX(m.maker_name)), ''), NULLIF(TRIM(MAX(pc.maker_name)), '')) AS makerName,
+           COALESCE(NULLIF(TRIM(MAX(mg.model_group_name)), ''), NULLIF(TRIM(MAX(pc.model_group_name)), '')) AS modelGroupName,
+           COALESCE(NULLIF(TRIM(MAX(mo.model_name)), ''), NULLIF(TRIM(MAX(pc.model_name)), '')) AS modelName,
+           COALESCE(NULLIF(TRIM(MAX(t.trim_name)), ''), NULLIF(TRIM(MAX(pc.trim_name)), '')) AS trimName,
+           cm.year AS year,
+           cm.mileage AS km,
+           MIN(pc.price) AS priceMin,
+           MAX(pc.price) AS priceMax,
+           MAX(pc.updated_at) AS priceUpdatedAt,
+           COUNT(DISTINCT pc.platform_name) AS platformCount,
+           COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
+           COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
+           COALESCE(MAX(pc.color), cm.color) AS color,
+           COALESCE(MAX(pc.body_type), cm.body_type) AS bodyType,
+           COALESCE(MAX(pc.region), cm.region) AS region,
+           cm.car_no AS carNo,
+           MAX(CASE
+             WHEN pc.car_image_url IS NOT NULL AND TRIM(IFNULL(pc.car_image_url,'')) != ''
+             THEN pc.car_image_url
+             ELSE NULL
+           END) AS representativeImageUrl
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+      AND (
+        pc.status = 'ONSALE'
+        OR (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK') AND pc.status = 'ADVERTISE')
+      )
+    LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
+    LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
+    LEFT JOIN cz_model mo ON mo.maker_code = cm.maker_code AND mo.model_group_code = cm.model_group_code AND mo.model_code = cm.model_code
+    LEFT JOIN cz_trim t ON t.maker_code = cm.maker_code AND t.model_group_code = cm.model_group_code AND t.model_code = cm.model_code AND t.trim_code = cm.trim_code
+    WHERE cm.adv_status = 'ONSALE'
+      AND cm.updated_at &gt;= #{updatedSince}
+    <if test="lastCarId != null"> AND cm.car_id &gt; #{lastCarId}</if>
+    GROUP BY cm.car_id, cm.maker_code, cm.model_group_code, cm.model_code, cm.trim_code,
+             cm.grade_code, cm.year, cm.mileage, cm.fuel, cm.transmission, cm.color, cm.body_type, cm.region, cm.car_no,
+             m.maker_name, mo.model_name, t.trim_name
+    HAVING MAX(CASE WHEN pc.car_image_url IS NOT NULL AND TRIM(IFNULL(pc.car_image_url,'')) != '' THEN 1 ELSE 0 END) = 1
+    ORDER BY cm.car_id
+    LIMIT #{limit}
+  </select>
+
+  <!-- 단일 차량 인덱싱용: carId로 조회 (LEFT JOIN 최적화) -->
+  <select id="selectCarsForIndexingById" parameterType="map" resultType="map">
+    SELECT cm.car_id AS carId,
+           cm.maker_code AS makerCode,
+           cm.model_group_code AS modelGroupCode,
+           cm.model_code AS modelCode,
+           cm.trim_code AS trimCode,
+           cm.grade_code AS gradeCode,
+           COALESCE(NULLIF(TRIM(MAX(m.maker_name)), ''), NULLIF(TRIM(MAX(pc.maker_name)), '')) AS makerName,
+           COALESCE(NULLIF(TRIM(MAX(mg.model_group_name)), ''), NULLIF(TRIM(MAX(pc.model_group_name)), '')) AS modelGroupName,
+           COALESCE(NULLIF(TRIM(MAX(mo.model_name)), ''), NULLIF(TRIM(MAX(pc.model_name)), '')) AS modelName,
+           COALESCE(NULLIF(TRIM(MAX(t.trim_name)), ''), NULLIF(TRIM(MAX(pc.trim_name)), '')) AS trimName,
+           cm.year AS year,
+           cm.mileage AS km,
+           MIN(pc.price) AS priceMin,
+           MAX(pc.price) AS priceMax,
+           MAX(pc.updated_at) AS priceUpdatedAt,
+           COUNT(DISTINCT pc.platform_name) AS platformCount,
+           COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
+           COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
+           COALESCE(MAX(pc.color), cm.color) AS color,
+           COALESCE(MAX(pc.body_type), cm.body_type) AS bodyType,
+           COALESCE(MAX(pc.region), cm.region) AS region,
+           COALESCE(MAX(pc.option_array), '') AS optionArray,
+           COALESCE(MAX(pc.sel_option_array), '') AS selOptionArray,
+           cm.car_no AS carNo,
+           MAX(img.representativeImageUrl) AS representativeImageUrl
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+    LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
+    LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
+    LEFT JOIN cz_model mo ON mo.maker_code = cm.maker_code AND mo.model_group_code = cm.model_group_code AND mo.model_code = cm.model_code
+    LEFT JOIN cz_trim t ON t.maker_code = cm.maker_code AND t.model_group_code = cm.model_group_code AND t.model_code = cm.model_code AND t.trim_code = cm.trim_code
+    LEFT JOIN (
+      SELECT car_id, car_image_url AS representativeImageUrl
+      FROM (
+        SELECT pc2.car_id, pc2.car_image_url,
+               ROW_NUMBER() OVER (PARTITION BY pc2.car_id ORDER BY COALESCE(pp.priority, 999) ASC) rn
+        FROM platform_car pc2
+        LEFT JOIN cz_platform_priority pp ON pp.platform_name = pc2.platform_name
+        WHERE pc2.car_image_url IS NOT NULL AND TRIM(IFNULL(pc2.car_image_url,'')) != ''
+      ) x
+      WHERE rn = 1
+    ) img ON img.car_id = cm.car_id
+    WHERE cm.car_id = #{carId}
+    GROUP BY cm.car_id, cm.maker_code, cm.model_group_code, cm.model_code, cm.trim_code,
+             cm.grade_code, cm.year, cm.mileage, cm.fuel, cm.transmission, cm.color, cm.body_type, cm.region, cm.car_no,
+             m.maker_name, mo.model_name, t.trim_name
+    LIMIT 1
+  </select>
+
+  <!-- 다건 차량 인덱싱용: carIds IN 절 (Kafka 배치용) -->
+  <select id="selectCarsForIndexingByIds" parameterType="map" resultType="map">
+    SELECT cm.car_id AS carId,
+           cm.maker_code AS makerCode,
+           cm.model_group_code AS modelGroupCode,
+           cm.model_code AS modelCode,
+           cm.trim_code AS trimCode,
+           cm.grade_code AS gradeCode,
+           COALESCE(NULLIF(TRIM(MAX(m.maker_name)), ''), NULLIF(TRIM(MAX(pc.maker_name)), '')) AS makerName,
+           COALESCE(NULLIF(TRIM(MAX(mg.model_group_name)), ''), NULLIF(TRIM(MAX(pc.model_group_name)), '')) AS modelGroupName,
+           COALESCE(NULLIF(TRIM(MAX(mo.model_name)), ''), NULLIF(TRIM(MAX(pc.model_name)), '')) AS modelName,
+           COALESCE(NULLIF(TRIM(MAX(t.trim_name)), ''), NULLIF(TRIM(MAX(pc.trim_name)), '')) AS trimName,
+           cm.year AS year,
+           cm.mileage AS km,
+           MIN(pc.price) AS priceMin,
+           MAX(pc.price) AS priceMax,
+           MAX(pc.updated_at) AS priceUpdatedAt,
+           COUNT(DISTINCT pc.platform_name) AS platformCount,
+           COALESCE(MAX(pc.fuel), cm.fuel) AS fuel,
+           COALESCE(MAX(pc.transmission), cm.transmission) AS transmission,
+           COALESCE(MAX(pc.color), cm.color) AS color,
+           COALESCE(MAX(pc.body_type), cm.body_type) AS bodyType,
+           COALESCE(MAX(pc.region), cm.region) AS region,
+           COALESCE(MAX(pc.option_array), '') AS optionArray,
+           COALESCE(MAX(pc.sel_option_array), '') AS selOptionArray,
+           cm.car_no AS carNo,
+           MAX(img.representativeImageUrl) AS representativeImageUrl
+    FROM car_master cm
+    LEFT JOIN platform_car pc ON pc.car_id = cm.car_id
+    LEFT JOIN cz_maker m ON m.maker_code = cm.maker_code
+    LEFT JOIN cz_model_group mg ON mg.maker_code = cm.maker_code AND mg.model_group_code = cm.model_group_code
+    LEFT JOIN cz_model mo ON mo.maker_code = cm.maker_code AND mo.model_group_code = cm.model_group_code AND mo.model_code = cm.model_code
+    LEFT JOIN cz_trim t ON t.maker_code = cm.maker_code AND t.model_group_code = cm.model_group_code AND t.model_code = cm.model_code AND t.trim_code = cm.trim_code
+    LEFT JOIN (
+      SELECT car_id, car_image_url AS representativeImageUrl
+      FROM (
+        SELECT pc2.car_id, pc2.car_image_url,
+               ROW_NUMBER() OVER (PARTITION BY pc2.car_id ORDER BY COALESCE(pp.priority, 999) ASC) rn
+        FROM platform_car pc2
+        LEFT JOIN cz_platform_priority pp ON pp.platform_name = pc2.platform_name
+        WHERE pc2.car_image_url IS NOT NULL AND TRIM(IFNULL(pc2.car_image_url,'')) != ''
+      ) x
+      WHERE rn = 1
+    ) img ON img.car_id = cm.car_id
+    WHERE cm.car_id IN
+    <foreach collection="carIds" item="id" open="(" separator="," close=")">
+      #{id}
+    </foreach>
+    GROUP BY cm.car_id, cm.maker_code, cm.model_group_code, cm.model_code, cm.trim_code,
+             cm.grade_code, cm.year, cm.mileage, cm.fuel, cm.transmission, cm.color, cm.body_type, cm.region, cm.car_no,
+             m.maker_name, mo.model_name, t.trim_name
+  </select>
+
+</mapper>

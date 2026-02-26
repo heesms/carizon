@@ -1,0 +1,152 @@
+package com.carizon.batch;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 워크플로우 관리 서비스
+ * 여러 배치 작업을 순차/병렬로 실행
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class BatchWorkflowService {
+
+    private final JdbcTemplate jdbc;
+    private final BatchJobService batchJobService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /**
+     * 워크플로우 실행
+     */
+    @Transactional
+    public Long executeWorkflow(String workflowId, Map<String, Object> config) {
+        long workflowStart = System.currentTimeMillis();
+        // 워크플로우 정의 조회
+        Map<String, Object> workflowDef = jdbc.queryForMap(
+            "SELECT * FROM batch_workflow_definition WHERE workflow_id = ?", workflowId);
+        
+        String workflowName = (String) workflowDef.get("workflow_name");
+        String jobSequenceJson = (String) workflowDef.get("job_sequence");
+        
+        // 실행 이력 생성
+        Long executionId = createWorkflowExecution(workflowId, workflowName);
+        
+        try {
+            updateWorkflowExecutionStatus(executionId, "RUNNING");
+            
+            // 작업 순서 파싱
+            List<Map<String, Object>> jobSequence = objectMapper.readValue(
+                jobSequenceJson, new TypeReference<List<Map<String, Object>>>() {});
+            int totalSteps = jobSequence.size();
+            log.info("[workflow] start: {} (executionId: {}, totalSteps={})", workflowId, executionId, totalSteps);
+            
+            // 순차 실행
+            for (int i = 0; i < jobSequence.size(); i++) {
+                Map<String, Object> jobStep = jobSequence.get(i);
+                long stepStart = System.currentTimeMillis();
+                String jobId = (String) jobStep.get("jobId");
+                @SuppressWarnings("unchecked")
+                List<String> dependsOn = (List<String>) jobStep.get("dependsOn");
+                int stepNo = i + 1;
+                int percent = totalSteps == 0 ? 100 : (int) Math.round(stepNo * 100.0 / totalSteps);
+                
+                // 의존성 확인 (간단한 구현)
+                if (dependsOn != null && !dependsOn.isEmpty()) {
+                    log.info("[workflow] job {} waiting deps: {}", jobId, dependsOn);
+                }
+                
+                log.info("[workflow] step {}/{} start ({}%) job={}", stepNo, totalSteps, percent, jobId);
+                batchJobService.executeJob(jobId, config);
+                long stepMs = System.currentTimeMillis() - stepStart;
+                long elapsedMs = System.currentTimeMillis() - workflowStart;
+                log.info("[workflow] step {}/{} done ({}%) job={} stepMs={} elapsedMs={}",
+                        stepNo, totalSteps, percent, jobId, stepMs, elapsedMs);
+            }
+            
+            updateWorkflowExecutionStatus(executionId, "SUCCESS");
+            log.info("[workflow] done: {} (executionId: {}, elapsedMs={})",
+                    workflowId, executionId, System.currentTimeMillis() - workflowStart);
+            
+            return executionId;
+        } catch (Exception e) {
+            updateWorkflowExecutionFailure(executionId, e.getMessage());
+            log.error("[workflow] failed: {} (executionId: {})", workflowId, executionId, e);
+            throw new RuntimeException("워크플로우 실행 실패: " + workflowId, e);
+        }
+    }
+
+    /**
+     * 워크플로우 실행 이력 생성
+     */
+    private Long createWorkflowExecution(String workflowId, String workflowName) {
+        jdbc.update("""
+            INSERT INTO batch_workflow_execution (workflow_id, workflow_name, status, started_at)
+            VALUES (?, ?, 'PENDING', NOW())
+            """, workflowId, workflowName);
+        
+        return jdbc.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+    }
+
+    /**
+     * 워크플로우 실행 상태 업데이트
+     */
+    private void updateWorkflowExecutionStatus(Long executionId, String status) {
+        if ("SUCCESS".equals(status) || "FAILED".equals(status)) {
+            jdbc.update("""
+                UPDATE batch_workflow_execution
+                SET status = ?,
+                    ended_at = NOW(),
+                    duration_ms = TIMESTAMPDIFF(MICROSECOND, started_at, NOW()) / 1000
+                WHERE execution_id = ?
+                """, status, executionId);
+        } else {
+            jdbc.update("""
+                UPDATE batch_workflow_execution
+                SET status = ?
+                WHERE execution_id = ?
+                """, status, executionId);
+        }
+    }
+
+    /**
+     * 워크플로우 실행 실패 처리
+     */
+    private void updateWorkflowExecutionFailure(Long executionId, String errorMessage) {
+        jdbc.update("""
+            UPDATE batch_workflow_execution
+            SET status = 'FAILED',
+                ended_at = NOW(),
+                duration_ms = TIMESTAMPDIFF(MICROSECOND, started_at, NOW()) / 1000,
+                error_message = ?
+            WHERE execution_id = ?
+            """, errorMessage, executionId);
+    }
+
+    /**
+     * 모든 워크플로우 정의 조회
+     */
+    public List<Map<String, Object>> getAllWorkflowDefinitions() {
+        return jdbc.queryForList("SELECT * FROM batch_workflow_definition ORDER BY workflow_name");
+    }
+
+    /**
+     * 워크플로우 실행 이력 조회
+     */
+    public List<Map<String, Object>> getWorkflowExecutions(String workflowId, int limit) {
+        return jdbc.queryForList("""
+            SELECT * FROM batch_workflow_execution
+            WHERE workflow_id = ?
+            ORDER BY started_at DESC
+            LIMIT ?
+            """, workflowId, limit);
+    }
+}

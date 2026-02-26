@@ -1,0 +1,404 @@
+# 추천 문구: 한 줄에 "태그1,태그2|문구" (태그 조합으로 매칭, # 은 주석)
+# 태그: LOW_MILEAGE, AVERAGE_MILEAGE, HIGH_MILEAGE, FRESH_YEAR, AVERAGE_YEAR, OLD_YEAR,
+#       GASOLINE, DIESEL, HYBRID, ELECTRIC, LPG, AUTO_TRANS, MANUAL_TRANS, REASONABLE_PRICE,
+#       POPULAR_COLOR, COLOR_BLACK, COLOR_WHITE, COLOR_GRAY, COLOR_SILVER, COLOR_PEARL, COLOR_BLUE, COLOR_RED, COLOR_GREEN, COLOR_OTHER,
+#       MILEAGE_0_10K ~ MILEAGE_90K_100K, MILEAGE_100K_PLUS (만 단위 구간),
+#       YEAR_1 ~ YEAR_20, YEAR_20_PLUS (올해 기준 연차)
+# 단일 조건
+LOW_MILEAGE|주행거리가 적어 마모가 적을 가능성이 높습니다.
+LOW_MILEAGE|저주행으로 차량 상태가 양호할 것으로 예상됩니다.
+LOW_MILEAGE|주행거리가 짧아 실사용에 적합합니다.
+LOW_MILEAGE|낮은 주행거리로 관리가 잘 된 매물일 가능성이 있습니다.
+LOW_MILEAGE|주행이 적어 마일리지 부담이 적습니다.
+LOW_MILEAGE|저주행 매물로 내구성 면에서 유리합니다.
+LOW_MILEAGE|주행이 적어 오래 탈 수 있는 조건입니다.
+LOW_MILEAGE|낮은 키로수로 실사용 관점에서 매력적입니다.
+LOW_MILEAGE|주행거리가 적어 중고차로서 조건이 좋습니다.
+LOW_MILEAGE|저주행으로 상태 점검 시 유리할 수 있습니다.
+AVERAGE_MILEAGE|주행거리가 적정 수준으로 실사용에 무난합니다.
+AVERAGE_MILEAGE|연식 대비 보통 수준의 주행거리입니다.
+AVERAGE_MILEAGE|주행이 과하지 않아 선택할 만합니다.
+AVERAGE_MILEAGE|적정 주행거리로 가성비를 고려한 매물입니다.
+AVERAGE_MILEAGE|일반적인 사용 패턴을 반영한 주행거리입니다.
+AVERAGE_MILEAGE|주행 수준이 보통이라 실매물감이 있습니다.
+HIGH_MILEAGE|주행이 많아 가격 대비 검토해 볼 만합니다.
+HIGH_MILEAGE|고주행이지만 연식과 함께 보면 선택지가 됩니다.
+HIGH_MILEAGE|주행은 있으나 사양·가격으로 보완된 매물입니다.
+HIGH_MILEAGE|주행거리 대비 가격이 부담이 적을 수 있습니다.
+HIGH_MILEAGE|장거리용이나 예산 우선이면 고려할 수 있습니다.
+FRESH_YEAR|최신 연식으로 사양이 잘 갖춰져 있습니다.
+FRESH_YEAR|신차에 가까운 연식으로 사양이 풍부합니다.
+FRESH_YEAR|최신 연식으로 안전·편의 사양이 잘 반영되었습니다.
+FRESH_YEAR|최근 연식으로 디자인·기술이 최신에 가깝습니다.
+FRESH_YEAR|신형에 가까워 중고차 중에서도 선택도가 높습니다.
+FRESH_YEAR|최신 연식으로 유지비·부품 구입이 수월할 수 있습니다.
+FRESH_YEAR|연식이 빠른 편이라 오래 타기에 유리합니다.
+FRESH_YEAR|최신 연식으로 시장에서 인기 있는 편입니다.
+FRESH_YEAR|신차감이 나는 연식입니다.
+FRESH_YEAR|최근 연식으로 실사용에 적합합니다.
+AVERAGE_YEAR|연식이 적당해 가격 대비 무난한 선택입니다.
+AVERAGE_YEAR|보통 연식으로 실용적인 매물입니다.
+AVERAGE_YEAR|연식이 너무 오래되지 않아 무난합니다.
+AVERAGE_YEAR|적정 연식으로 가성비를 고려할 수 있습니다.
+AVERAGE_YEAR|연식이 중간이라 선택 폭이 넓은 편입니다.
+AVERAGE_YEAR|실사용 관점에서 적당한 연식입니다.
+OLD_YEAR|연식이 있지만 가격 부담이 적은 편입니다.
+OLD_YEAR|구형이라 초기 비용을 줄이고 싶을 때 고려할 수 있습니다.
+OLD_YEAR|연식은 있으나 저렴하게 타기 좋은 조건입니다.
+OLD_YEAR|오래된 연식으로 가격 대비 검토해 볼 만합니다.
+OLD_YEAR|연식은 있지만 실용적으로 쓰기 좋은 매물입니다.
+GASOLINE|가솔린으로 정비·연비가 예측하기 쉽습니다.
+GASOLINE|가솔린 엔진으로 유지비가 무난한 편입니다.
+GASOLINE|휘발유 차종으로 널리 사용되는 연료입니다.
+GASOLINE|가솔린이라 정비소·부품 구입이 수월합니다.
+GASOLINE|가솔린으로 일상·장거리 모두 무난합니다.
+GASOLINE|휘발유 차량으로 선택지가 넓은 편입니다.
+GASOLINE|가솔린 엔진으로 중고 시장에서 선호도가 높습니다.
+GASOLINE|가솔린이라 연비·정비를 쉽게 파악할 수 있습니다.
+DIESEL|디젤로 연비·장거리 주행에 유리합니다.
+DIESEL|디젤 엔진으로 고속·장거리 사용에 적합합니다.
+DIESEL|디젤이라 연비 부담이 적은 편입니다.
+DIESEL|디젤 차량으로 장거리·짐 운반에 강점이 있습니다.
+DIESEL|디젤 엔진으로 토크·연비가 좋은 편입니다.
+DIESEL|디젤로 주로 고속·장거리 타시는 분에게 적합합니다.
+HYBRID|하이브리드로 연비·연료비 절감에 유리합니다.
+HYBRID|하이브리드라 도심 주행 시 연비가 좋습니다.
+HYBRID|연비를 중시하시면 하이브리드가 적합합니다.
+HYBRID|하이브리드로 유지비 부담을 줄일 수 있습니다.
+HYBRID|하이브리드 차량으로 친환경·연비를 함께 고려한 선택입니다.
+HYBRID|하이브리드라 실사용 연비가 뛰어난 편입니다.
+ELECTRIC|전기차로 연료비·유지비가 적게 듭니다.
+ELECTRIC|전기차라 친환경·연비를 동시에 만족할 수 있습니다.
+ELECTRIC|전기 차량으로 일상 주행에 충전 부담이 적습니다.
+ELECTRIC|전기차로 정비 항목이 적어 유지가 수월합니다.
+ELECTRIC|전기차라 도심·단거리 사용에 적합합니다.
+LPG|LPG로 연료비 부담이 적은 편입니다.
+LPG|LPG 차량으로 경제적인 운행이 가능합니다.
+LPG|LPG라 연료비를 아끼고 싶을 때 고려할 수 있습니다.
+LPG|LPG로 장거리·택시용으로도 많이 쓰이는 연료입니다.
+AUTO_TRANS|자동변속기로 운전이 편하고 선택 비중이 높습니다.
+AUTO_TRANS|오토매틱으로 일상·장거리 모두 무난합니다.
+AUTO_TRANS|자동변속이라 교통 상황에서 부담이 적습니다.
+AUTO_TRANS|자동으로 널리 선호되는 변속 방식입니다.
+AUTO_TRANS|오토매틱이라 가족·공용으로도 적합합니다.
+AUTO_TRANS|자동변속기로 중고 시장에서 인기가 많습니다.
+MANUAL_TRANS|수동이라 운전 재미·연비를 동시에 고려한 선택입니다.
+MANUAL_TRANS|수동변속으로 선호하시는 분에게 적합합니다.
+MANUAL_TRANS|수동이라 가격·연비 면에서 유리할 수 있습니다.
+MANUAL_TRANS|수동 변속기로 드라이빙 감각을 살리고 싶을 때 좋습니다.
+REASONABLE_PRICE|가격 대비 조건이 무난한 매물입니다.
+REASONABLE_PRICE|합리적인 가격대로 선택할 만합니다.
+REASONABLE_PRICE|가격이 부담되지 않는 수준입니다.
+REASONABLE_PRICE|적정 가격대의 매물입니다.
+REASONABLE_PRICE|가성비를 고려한 가격입니다.
+REASONABLE_PRICE|가격 대비 사양·연식이 균형 잡힌 편입니다.
+REASONABLE_PRICE|부담 없는 가격대로 검토해 볼 만합니다.
+REASONABLE_PRICE|적정선의 가격으로 실사용에 무난합니다.
+# 2조합
+LOW_MILEAGE,FRESH_YEAR|최신 연식에 주행도 적어 실사용에 적합합니다.
+LOW_MILEAGE,FRESH_YEAR|신차에 가까운 연식에 저주행으로 조건이 좋습니다.
+LOW_MILEAGE,FRESH_YEAR|연식·주행 모두 만족스러운 편입니다.
+LOW_MILEAGE,FRESH_YEAR|최신 연식과 낮은 주행거리로 매력적입니다.
+LOW_MILEAGE,FRESH_YEAR|빠른 연식에 주행이 적어 오래 탈 수 있는 조건입니다.
+LOW_MILEAGE,FRESH_YEAR|신형에 가깝고 주행이 적어 인기 있는 유형입니다.
+LOW_MILEAGE,FRESH_YEAR|최근 연식에 저주행으로 상태가 좋을 가능성이 높습니다.
+LOW_MILEAGE,FRESH_YEAR|연식·주행 모두 무난해 실사용에 잘 맞습니다.
+LOW_MILEAGE,GASOLINE|가솔린에 저주행으로 유지비·상태 모두 무난합니다.
+LOW_MILEAGE,GASOLINE|휘발유에 주행이 적어 관리가 잘 된 매물일 수 있습니다.
+LOW_MILEAGE,GASOLINE|가솔린이라 정비가 쉽고 주행도 적어 실용적입니다.
+LOW_MILEAGE,GASOLINE|가솔린·저주행으로 일상용으로 적합합니다.
+LOW_MILEAGE,GASOLINE|가솔린에 낮은 키로수로 선택하기 좋은 조건입니다.
+LOW_MILEAGE,DIESEL|디젤에 저주행으로 연비·상태를 함께 고려한 매물입니다.
+LOW_MILEAGE,DIESEL|디젤이라 연비가 좋고 주행도 적어 무난합니다.
+LOW_MILEAGE,DIESEL|디젤·저주행으로 장거리용으로 적합합니다.
+LOW_MILEAGE,DIESEL|디젤에 주행이 적어 오래 타기 좋은 조건입니다.
+LOW_MILEAGE,DIESEL|디젤 엔진에 낮은 마일리지로 조건이 좋습니다.
+LOW_MILEAGE,HYBRID|하이브리드에 저주행으로 연비·상태 모두 유리합니다.
+LOW_MILEAGE,HYBRID|하이브리드라 연비가 좋고 주행도 적어 실사용에 적합합니다.
+LOW_MILEAGE,HYBRID|연비형에 주행이 적어 오래 타기 좋은 매물입니다.
+LOW_MILEAGE,HYBRID|하이브리드·저주행으로 유지비 부담이 적은 편입니다.
+LOW_MILEAGE,AUTO_TRANS|자동변속에 저주행으로 운전·상태 모두 무난합니다.
+LOW_MILEAGE,AUTO_TRANS|오토에 주행이 적어 실사용에 잘 맞습니다.
+LOW_MILEAGE,AUTO_TRANS|자동에 낮은 키로수로 선택도가 높은 유형입니다.
+LOW_MILEAGE,AUTO_TRANS|자동변속·저주행으로 가족용으로도 적합합니다.
+LOW_MILEAGE,REASONABLE_PRICE|저주행에 가격이 무난해 가성비가 좋은 편입니다.
+LOW_MILEAGE,REASONABLE_PRICE|주행이 적고 가격 부담이 적어 선택하기 좋습니다.
+LOW_MILEAGE,REASONABLE_PRICE|낮은 주행에 합리적인 가격으로 실용적입니다.
+LOW_MILEAGE,REASONABLE_PRICE|저주행·적정 가격으로 검토해 볼 만합니다.
+FRESH_YEAR,GASOLINE|최신 연식 가솔린으로 사양·유지비가 무난합니다.
+FRESH_YEAR,GASOLINE|신차감 나는 연식에 가솔린이라 정비가 수월합니다.
+FRESH_YEAR,GASOLINE|최근 연식 휘발유로 일상·장거리 모두 적합합니다.
+FRESH_YEAR,GASOLINE|빠른 연식에 가솔린이라 선택지로 좋습니다.
+FRESH_YEAR,GASOLINE|최신 연식 가솔린으로 인기 있는 조합입니다.
+FRESH_YEAR,DIESEL|최신 연식 디젤로 연비·사양을 함께 만족할 수 있습니다.
+FRESH_YEAR,DIESEL|신형 디젤이라 장거리·연비에 유리합니다.
+FRESH_YEAR,DIESEL|최근 연식 디젤로 고속·장거리용으로 적합합니다.
+FRESH_YEAR,DIESEL|빠른 연식에 디젤이라 연비·사양 모두 좋은 편입니다.
+FRESH_YEAR,HYBRID|최신 연식 하이브리드로 연비·사양이 뛰어납니다.
+FRESH_YEAR,HYBRID|신형 하이브리드라 연료비 절감에 유리합니다.
+FRESH_YEAR,HYBRID|최근 연식 하이브리드로 실사용에 적합합니다.
+FRESH_YEAR,HYBRID|빠른 연식에 하이브리드라 인기 있는 유형입니다.
+FRESH_YEAR,AUTO_TRANS|최신 연식 자동변속으로 사양·운전 편의성이 좋습니다.
+FRESH_YEAR,AUTO_TRANS|신차에 가까운 연식에 오토라 무난한 선택입니다.
+FRESH_YEAR,AUTO_TRANS|최근 연식 자동으로 널리 선호되는 조합입니다.
+FRESH_YEAR,AUTO_TRANS|빠른 연식에 자동변속이라 실사용에 잘 맞습니다.
+FRESH_YEAR,REASONABLE_PRICE|최신 연식에 가격이 무난해 가성비가 좋습니다.
+FRESH_YEAR,REASONABLE_PRICE|빠른 연식에 합리적인 가격으로 선택하기 좋습니다.
+FRESH_YEAR,REASONABLE_PRICE|최근 연식에 적정 가격대로 검토해 볼 만합니다.
+AVERAGE_YEAR,LOW_MILEAGE|연식이 적당하고 주행이 적어 실사용에 무난합니다.
+AVERAGE_YEAR,LOW_MILEAGE|보통 연식에 저주행으로 조건이 좋은 편입니다.
+AVERAGE_YEAR,LOW_MILEAGE|적정 연식·저주행으로 가성비를 고려할 수 있습니다.
+AVERAGE_YEAR,LOW_MILEAGE|연식 대비 주행이 적어 오래 탈 수 있는 조건입니다.
+AVERAGE_YEAR,GASOLINE|적정 연식 가솔린으로 가격 대비 무난한 선택입니다.
+AVERAGE_YEAR,GASOLINE|보통 연식 휘발유로 실용적인 매물입니다.
+AVERAGE_YEAR,GASOLINE|연식·연료 모두 무난해 일상용으로 적합합니다.
+AVERAGE_YEAR,DIESEL|적정 연식 디젤로 연비·가격 균형이 좋습니다.
+AVERAGE_YEAR,DIESEL|보통 연식 디젤이라 장거리용으로 고려할 만합니다.
+AVERAGE_YEAR,HYBRID|적정 연식 하이브리드로 연비·가성비를 함께 고려한 매물입니다.
+AVERAGE_YEAR,HYBRID|보통 연식 하이브리드라 실사용에 적합합니다.
+AVERAGE_YEAR,REASONABLE_PRICE|연식이 적당하고 가격이 무난해 선택하기 좋습니다.
+AVERAGE_YEAR,REASONABLE_PRICE|적정 연식에 합리적인 가격으로 실용적입니다.
+OLD_YEAR,REASONABLE_PRICE|연식은 있지만 가격 부담이 적어 검토할 만합니다.
+OLD_YEAR,REASONABLE_PRICE|구형이라 초기 비용을 줄이고 싶을 때 적합합니다.
+OLD_YEAR,REASONABLE_PRICE|오래된 연식이지만 가격이 무난한 편입니다.
+OLD_YEAR,GASOLINE|구형 가솔린으로 정비·부품이 수월한 편입니다.
+OLD_YEAR,GASOLINE|연식은 있으나 가솔린이라 유지비가 예측하기 쉽습니다.
+GASOLINE,AUTO_TRANS|가솔린 자동변속으로 가장 널리 쓰이는 조합입니다.
+GASOLINE,AUTO_TRANS|휘발유 오토라 일상·가족용으로 무난합니다.
+GASOLINE,AUTO_TRANS|가솔린 자동으로 선택도가 높은 매물입니다.
+GASOLINE,AUTO_TRANS|가솔린·자동변속으로 실사용에 적합합니다.
+DIESEL,AUTO_TRANS|디젤 자동으로 장거리·연비를 함께 고려한 선택입니다.
+DIESEL,AUTO_TRANS|디젤 오토라 고속·장거리용으로 적합합니다.
+DIESEL,AUTO_TRANS|디젤 자동변속으로 연비·운전 편의가 좋습니다.
+HYBRID,AUTO_TRANS|하이브리드 자동으로 연비·편의성을 동시에 만족합니다.
+HYBRID,AUTO_TRANS|하이브리드 오토라 도심 주행에 적합합니다.
+HYBRID,AUTO_TRANS|하이브리드 자동변속으로 유지비가 적은 편입니다.
+AVERAGE_MILEAGE,FRESH_YEAR|주행은 적정 수준이고 연식이 빠른 편입니다.
+AVERAGE_MILEAGE,FRESH_YEAR|적정 주행에 최신 연식으로 무난한 조건입니다.
+AVERAGE_MILEAGE,GASOLINE|주행이 보통이고 가솔린이라 실사용에 무난합니다.
+AVERAGE_MILEAGE,GASOLINE|적정 주행 가솔린으로 가성비를 고려할 수 있습니다.
+HIGH_MILEAGE,REASONABLE_PRICE|주행은 있으나 가격이 부담이 적어 검토해 볼 만합니다.
+HIGH_MILEAGE,REASONABLE_PRICE|고주행이지만 가격 대비 고려할 수 있는 매물입니다.
+HIGH_MILEAGE,OLD_YEAR|주행은 많지만 연식과 함께 보면 선택지가 됩니다.
+# 3조합
+LOW_MILEAGE,FRESH_YEAR,GASOLINE|최신 연식 가솔린에 저주행으로 조건이 매우 좋습니다.
+LOW_MILEAGE,FRESH_YEAR,GASOLINE|신차감·저주행·가솔린으로 실사용에 적합한 조합입니다.
+LOW_MILEAGE,FRESH_YEAR,GASOLINE|연식·주행·연료 모두 무난해 인기 있는 유형입니다.
+LOW_MILEAGE,FRESH_YEAR,AUTO_TRANS|최신 연식 자동에 저주행으로 선택도가 높은 매물입니다.
+LOW_MILEAGE,FRESH_YEAR,AUTO_TRANS|빠른 연식 오토에 주행이 적어 실사용에 잘 맞습니다.
+LOW_MILEAGE,FRESH_YEAR,REASONABLE_PRICE|최신 연식·저주행에 가격이 무난해 가성비가 좋습니다.
+LOW_MILEAGE,FRESH_YEAR,REASONABLE_PRICE|연식·주행·가격 모두 만족스러운 조건입니다.
+LOW_MILEAGE,GASOLINE,AUTO_TRANS|가솔린 자동에 저주행으로 무난한 일상용입니다.
+LOW_MILEAGE,GASOLINE,AUTO_TRANS|휘발유 오토에 주행이 적어 실용적입니다.
+LOW_MILEAGE,GASOLINE,REASONABLE_PRICE|가솔린·저주행·적정 가격으로 선택하기 좋습니다.
+LOW_MILEAGE,DIESEL,AUTO_TRANS|디젤 자동에 저주행으로 장거리용으로 적합합니다.
+LOW_MILEAGE,HYBRID,AUTO_TRANS|하이브리드 자동에 저주행으로 연비·상태 모두 유리합니다.
+FRESH_YEAR,GASOLINE,AUTO_TRANS|최신 연식 가솔린 자동으로 가장 선호되는 조합입니다.
+FRESH_YEAR,GASOLINE,AUTO_TRANS|신차감·가솔린·오토라 실사용에 무난합니다.
+FRESH_YEAR,GASOLINE,AUTO_TRANS|빠른 연식 휘발유 자동으로 선택도가 높습니다.
+FRESH_YEAR,DIESEL,AUTO_TRANS|최신 연식 디젤 자동으로 연비·사양이 좋습니다.
+FRESH_YEAR,HYBRID,AUTO_TRANS|최신 연식 하이브리드 자동으로 연비·편의가 뛰어납니다.
+FRESH_YEAR,HYBRID,AUTO_TRANS|신형 하이브리드 오토라 실사용에 적합합니다.
+AVERAGE_YEAR,LOW_MILEAGE,GASOLINE|적정 연식·저주행·가솔린으로 가성비가 좋은 편입니다.
+AVERAGE_YEAR,LOW_MILEAGE,GASOLINE|보통 연식에 주행이 적고 가솔린이라 무난합니다.
+AVERAGE_YEAR,LOW_MILEAGE,REASONABLE_PRICE|연식·주행·가격 모두 적정해 실용적입니다.
+AVERAGE_YEAR,GASOLINE,AUTO_TRANS|적정 연식 가솔린 자동으로 무난한 선택입니다.
+AVERAGE_YEAR,GASOLINE,REASONABLE_PRICE|보통 연식 가솔린에 가격이 무난해 검토할 만합니다.
+OLD_YEAR,GASOLINE,REASONABLE_PRICE|구형 가솔린에 가격이 부담이 적어 경제적으로 탈 수 있습니다.
+OLD_YEAR,GASOLINE,AUTO_TRANS|구형 가솔린 자동으로 저렴하게 타기 좋은 조건입니다.
+# 기본(태그 없음 또는 매칭 실패 시)
+DEFAULT|검색 조건과 잘 맞는 매물입니다.
+DEFAULT|요청하신 조건에 부합하는 차량입니다.
+DEFAULT|선정 기준에 맞춰 추천한 매물입니다.
+DEFAULT|조건에 맞는 매물로 실사용을 고려해 볼 만합니다.
+DEFAULT|검색 조건을 반영해 선정했습니다.
+DEFAULT|요구사항에 맞는 선택입니다.
+DEFAULT|선정 기준에 맞는 매물입니다.
+DEFAULT|조건에 부합하는 차량으로 검토해 보시면 좋겠습니다.
+DEFAULT|추천 조건과 잘 맞는 매물입니다.
+DEFAULT|선정한 조건에 맞춰 골라 본 차량입니다.
+# 추가 단일·조합
+LOW_MILEAGE|키로수가 적어 중고차로서 매력적입니다.
+LOW_MILEAGE|주행이 적어 수리·점검 이력 확인이 유리합니다.
+FRESH_YEAR|연식이 빠른 편이라 중고 시장에서 선호도가 높습니다.
+FRESH_YEAR|최신에 가까운 연식으로 디자인이 세련되었습니다.
+GASOLINE|가솔린이라 겨울 시동·연비가 안정적인 편입니다.
+DIESEL|디젤로 장거리 출퇴근에 적합합니다.
+HYBRID|하이브리드라 정차 시 연료 소모가 적습니다.
+AUTO_TRANS|자동이라 누구나 운전하기 편합니다.
+REASONABLE_PRICE|가격대가 무난해 부담 없이 검토할 수 있습니다.
+LOW_MILEAGE,FRESH_YEAR|연식과 주행 모두 만족스러운 조건입니다.
+LOW_MILEAGE,FRESH_YEAR|신차에 가깝고 주행이 적어 인기 있는 매물입니다.
+LOW_MILEAGE,AVERAGE_YEAR|연식이 적당하고 주행이 적어 실용적입니다.
+LOW_MILEAGE,AVERAGE_YEAR|보통 연식에 저주행으로 오래 타기 좋습니다.
+LOW_MILEAGE,OLD_YEAR|연식은 있지만 주행이 적어 상태가 좋을 수 있습니다.
+FRESH_YEAR,REASONABLE_PRICE|최신 연식에 가격이 부담되지 않는 매물입니다.
+AVERAGE_YEAR,AVERAGE_MILEAGE|연식·주행 모두 적정해 무난한 선택입니다.
+AVERAGE_YEAR,AVERAGE_MILEAGE|보통 연식에 보통 주행으로 실매물감이 있습니다.
+AVERAGE_YEAR,LOW_MILEAGE|적정 연식에 저주행으로 조건이 좋은 편입니다.
+GASOLINE,REASONABLE_PRICE|가솔린에 가격이 무난해 일상용으로 적합합니다.
+DIESEL,REASONABLE_PRICE|디젤로 연비가 좋고 가격도 부담이 적은 편입니다.
+HYBRID,REASONABLE_PRICE|하이브리드에 가격이 무난해 연비·비용 모두 고려할 만합니다.
+LPG,AUTO_TRANS|LPG 자동으로 연료비·운전 편의가 좋습니다.
+LOW_MILEAGE,FRESH_YEAR,DIESEL|최신 디젤에 저주행으로 장거리용으로 적합합니다.
+LOW_MILEAGE,FRESH_YEAR,HYBRID|최신 하이브리드에 주행이 적어 연비·상태 모두 좋습니다.
+LOW_MILEAGE,AVERAGE_YEAR,GASOLINE|적정 연식 가솔린에 저주행으로 무난한 매물입니다.
+LOW_MILEAGE,AVERAGE_YEAR,AUTO_TRANS|보통 연식 자동에 저주행으로 실사용에 적합합니다.
+FRESH_YEAR,GASOLINE,REASONABLE_PRICE|최신 연식 가솔린에 가격이 무난해 가성비가 좋습니다.
+FRESH_YEAR,DIESEL,REASONABLE_PRICE|최신 디젤에 가격 부담이 적어 검토할 만합니다.
+AVERAGE_YEAR,LOW_MILEAGE,AUTO_TRANS|적정 연식 자동에 저주행으로 선택하기 좋습니다.
+AVERAGE_YEAR,GASOLINE,REASONABLE_PRICE|보통 연식 가솔린에 가격이 무난합니다.
+OLD_YEAR,LOW_MILEAGE,REASONABLE_PRICE|연식은 있으나 주행이 적고 가격이 부담이 적습니다.
+LOW_MILEAGE,DIESEL,AUTO_TRANS|디젤 자동에 저주행으로 장거리용으로 좋습니다.
+LOW_MILEAGE,HYBRID,REASONABLE_PRICE|하이브리드 저주행에 가격이 무난해 연비형으로 적합합니다.
+FRESH_YEAR,ELECTRIC|최신 연식 전기차로 연료비·사양이 좋습니다.
+AVERAGE_MILEAGE,FRESH_YEAR,GASOLINE|최신 연식 가솔린에 주행이 적정해 무난합니다.
+AVERAGE_MILEAGE,DIESEL,AUTO_TRANS|적정 주행 디젤 자동으로 장거리용에 적합합니다.
+HIGH_MILEAGE,GASOLINE,REASONABLE_PRICE|고주행 가솔린에 가격이 무난해 예산 우선이면 고려할 수 있습니다.
+LOW_MILEAGE,MANUAL_TRANS|저주행 수동으로 선호하시는 분에게 적합합니다.
+FRESH_YEAR,MANUAL_TRANS|최신 연식 수동으로 드라이빙 감각을 살리고 싶을 때 좋습니다.
+AVERAGE_YEAR,DIESEL,AUTO_TRANS|적정 연식 디젤 자동으로 실용적인 조합입니다.
+AVERAGE_YEAR,HYBRID,AUTO_TRANS|보통 연식 하이브리드 자동으로 연비·편의가 좋습니다.
+OLD_YEAR,DIESEL,REASONABLE_PRICE|구형 디젤에 가격이 부담이 적어 장거리용으로 검토할 만합니다.
+LOW_MILEAGE,ELECTRIC|전기차에 저주행으로 배터리 상태가 좋을 가능성이 있습니다.
+FRESH_YEAR,LPG,AUTO_TRANS|최신 연식 LPG 자동으로 연료비가 적게 듭니다.
+AVERAGE_YEAR,AVERAGE_MILEAGE,GASOLINE|연식·주행·연료 모두 적정해 무난한 일상용입니다.
+AVERAGE_YEAR,AVERAGE_MILEAGE,AUTO_TRANS|적정 연식·주행에 자동변속으로 실사용에 잘 맞습니다.
+LOW_MILEAGE,FRESH_YEAR,REASONABLE_PRICE|최신·저주행·적정 가격으로 조건이 매우 좋습니다.
+HIGH_MILEAGE,AVERAGE_YEAR,REASONABLE_PRICE|주행은 있으나 연식·가격이 무난해 검토해 볼 만합니다.
+GASOLINE,AUTO_TRANS,REASONABLE_PRICE|가솔린 자동에 가격이 무난해 가장 무난한 선택입니다.
+DIESEL,AUTO_TRANS,REASONABLE_PRICE|디젤 자동에 가격이 부담이 적어 장거리용으로 적합합니다.
+HYBRID,AUTO_TRANS,REASONABLE_PRICE|하이브리드 자동에 가격이 무난해 연비·비용 모두 고려할 만합니다.
+LOW_MILEAGE,FRESH_YEAR,AUTO_TRANS|최신 연식 자동에 저주행으로 인기 있는 매물입니다.
+AVERAGE_YEAR,LOW_MILEAGE,REASONABLE_PRICE|적정 연식·저주행·가격으로 가성비가 좋습니다.
+FRESH_YEAR,AVERAGE_MILEAGE,GASOLINE|최신 연식 가솔린에 주행이 적정해 무난합니다.
+LOW_MILEAGE,OLD_YEAR,GASOLINE|연식은 있으나 저주행 가솔린으로 경제적으로 탈 수 있습니다.
+AVERAGE_MILEAGE,AVERAGE_YEAR,REASONABLE_PRICE|연식·주행·가격 모두 적정해 실용적입니다.
+FRESH_YEAR,AVERAGE_MILEAGE,AUTO_TRANS|최신 연식 자동에 주행이 적정해 무난한 조건입니다.
+LOW_MILEAGE,GASOLINE,REASONABLE_PRICE|가솔린 저주행에 가격이 무난해 일상용으로 좋습니다.
+AVERAGE_YEAR,LOW_MILEAGE,GASOLINE,AUTO_TRANS|적정 연식 가솔린 자동에 저주행으로 무난한 매물입니다.
+LOW_MILEAGE,FRESH_YEAR,GASOLINE,AUTO_TRANS|최신 가솔린 자동에 저주행으로 조건이 매우 좋습니다.
+FRESH_YEAR,GASOLINE,AUTO_TRANS,REASONABLE_PRICE|최신 연식 가솔린 자동에 가격이 무난해 인기 있는 조합입니다.
+AVERAGE_YEAR,LOW_MILEAGE,GASOLINE,REASONABLE_PRICE|적정 연식·저주행·가솔린·가격으로 가성비가 좋습니다.
+LOW_MILEAGE,AVERAGE_YEAR,AUTO_TRANS,REASONABLE_PRICE|보통 연식 자동에 저주행·적정 가격으로 실사용에 적합합니다.
+# ---- 색상 (인기 색상·검정·흰·회·은·진주·파랑·빨강·녹색 등) ----
+POPULAR_COLOR|인기 색상이라 선호도가 높습니다.
+POPULAR_COLOR|검정·흰색·회색 등 인기 색상으로 중고 시장에서 선호됩니다.
+POPULAR_COLOR|인기 색상이라 재판매 시에도 유리할 수 있습니다.
+POPULAR_COLOR|선호하는 분이 많은 인기 색상입니다.
+COLOR_BLACK|검정색이라 실내가 더러워 보이지 않아 관리가 편합니다.
+COLOR_BLACK|검정색으로 무난하고 선호도가 높은 색상입니다.
+COLOR_BLACK|검정색이라 차체 스크래치가 덜 눈에 띄는 편입니다.
+COLOR_WHITE|흰색이라 더러움이 잘 보여 관리하기 좋습니다.
+COLOR_WHITE|흰색은 인기 색상이라 선호하시는 분이 많습니다.
+COLOR_WHITE|흰색이라 여름철 열 흡수가 적은 편입니다.
+COLOR_GRAY|회색이라 무난하고 인기 있는 색상입니다.
+COLOR_GRAY|회색은 검정·흰색 다음으로 선호도가 높은 편입니다.
+COLOR_SILVER|은색이라 관리가 쉽고 인기 있는 색상입니다.
+COLOR_SILVER|은색은 스크래치가 덜 눈에 띄어 실용적입니다.
+COLOR_PEARL|진주색이라 고급스러운 인상에 인기 있는 색상입니다.
+COLOR_PEARL|진주색은 선호하시는 분이 많은 인기 색상입니다.
+COLOR_BLUE|파란색이라 개성 있으면서도 무난한 선택입니다.
+COLOR_BLUE|파란색으로 선호하시는 분에게 적합합니다.
+COLOR_RED|빨간색이라 눈에 띄는 색상을 원하시면 좋습니다.
+COLOR_RED|빨간색으로 개성 있는 선택입니다.
+COLOR_GREEN|녹색 계열로 무난한 색상입니다.
+COLOR_OTHER|색상이 무난해 다양한 분이 선택하실 수 있습니다.
+# ---- 주행 구간 (만 단위: 0~1만, 1만~2만, ... 10만 이상) ----
+MILEAGE_0_10K|주행 1만 km 미만으로 신차에 가까운 조건입니다.
+MILEAGE_0_10K|0~1만 km 구간으로 주행이 매우 적습니다.
+MILEAGE_0_10K|주행이 1만 km도 안 되어 마모가 적을 가능성이 높습니다.
+MILEAGE_10K_20K|주행 1만~2만 km로 저주행 매물입니다.
+MILEAGE_10K_20K|1만~2만 km 구간이라 상태가 좋을 가능성이 높습니다.
+MILEAGE_10K_20K|주행이 2만 km 전후로 실사용에 매우 유리합니다.
+MILEAGE_20K_30K|주행 2만~3만 km로 적은 편입니다.
+MILEAGE_20K_30K|2만~3만 km 구간이라 저주행 매물에 가깝습니다.
+MILEAGE_20K_30K|주행이 3만 km 미만으로 조건이 좋은 편입니다.
+MILEAGE_30K_40K|주행 3만~4만 km로 적정 수준입니다.
+MILEAGE_30K_40K|3만~4만 km 구간으로 실사용에 무난합니다.
+MILEAGE_40K_50K|주행 4만~5만 km로 적정 주행거리입니다.
+MILEAGE_40K_50K|4만~5만 km 구간이라 연식 대비 무난한 수준입니다.
+MILEAGE_50K_60K|주행 5만~6만 km로 보통 수준입니다.
+MILEAGE_50K_60K|5만~6만 km 구간으로 실매물감이 있는 조건입니다.
+MILEAGE_60K_70K|주행 6만~7만 km로 적정 범위입니다.
+MILEAGE_60K_70K|6만~7만 km 구간이라 가성비를 고려할 수 있습니다.
+MILEAGE_70K_80K|주행 7만~8만 km로 사용도가 있는 편입니다.
+MILEAGE_70K_80K|7만~8만 km 구간으로 가격 대비 검토해 볼 만합니다.
+MILEAGE_80K_90K|주행 8만~9만 km로 적정선의 주행거리입니다.
+MILEAGE_80K_90K|8만~9만 km 구간이라 예산에 맞추기 좋을 수 있습니다.
+MILEAGE_90K_100K|주행 9만~10만 km로 관리 상태 확인이 중요합니다.
+MILEAGE_90K_100K|9만~10만 km 구간으로 가격 대비 고려할 수 있습니다.
+MILEAGE_100K_PLUS|주행 10만 km 이상으로 가격 대비 검토해 볼 만합니다.
+MILEAGE_100K_PLUS|10만 km 이상이라 예산 우선이면 선택지가 됩니다.
+MILEAGE_100K_PLUS|고주행이지만 사양·가격으로 보완된 매물입니다.
+# ---- 연차 (올해 기준 1년차~20년차, 20년 이상) ----
+YEAR_1|올해 기준 1년차라 신차에 가장 가깝습니다.
+YEAR_1|1년차로 사양·상태가 최신에 가깝습니다.
+YEAR_2|올해 기준 2년차로 신차감이 나는 조건입니다.
+YEAR_2|2년차라 디자인·사양이 최신에 가깝습니다.
+YEAR_3|올해 기준 3년차로 연식이 빠른 편입니다.
+YEAR_3|3년차라 상태가 좋을 가능성이 높습니다.
+YEAR_4|올해 기준 4년차로 적정 연식입니다.
+YEAR_4|4년차라 가격 대비 무난한 연식입니다.
+YEAR_5|올해 기준 5년차로 실사용에 무난한 연식입니다.
+YEAR_5|5년차라 가성비를 고려할 수 있는 조건입니다.
+YEAR_6|올해 기준 6년차로 적정선의 연식입니다.
+YEAR_6|6년차라 실용적으로 쓰기 좋은 매물입니다.
+YEAR_7|올해 기준 7년차로 가격 대비 검토할 만한 연식입니다.
+YEAR_7|7년차라 예산에 맞춰 선택할 수 있습니다.
+YEAR_8|올해 기준 8년차로 실용적인 연식입니다.
+YEAR_8|8년차라 저렴하게 타기 좋은 조건입니다.
+YEAR_9|올해 기준 9년차로 가격 부담이 적은 편입니다.
+YEAR_9|9년차라 초기 비용을 줄이고 싶을 때 적합합니다.
+YEAR_10|올해 기준 10년차로 경제적으로 탈 수 있는 연식입니다.
+YEAR_10|10년차라 예산 우선이면 고려할 만합니다.
+YEAR_11|올해 기준 11년차로 가격 대비 검토해 볼 만합니다.
+YEAR_12|올해 기준 12년차로 저렴한 매물입니다.
+YEAR_13|올해 기준 13년차로 예산에 맞춘 선택입니다.
+YEAR_14|올해 기준 14년차로 경제적인 조건입니다.
+YEAR_15|올해 기준 15년차로 초기 비용을 최소화하고 싶을 때 적합합니다.
+YEAR_16|올해 기준 16년차로 가격 부담이 적은 매물입니다.
+YEAR_17|올해 기준 17년차로 저비용 운행을 원하시면 검토할 만합니다.
+YEAR_18|올해 기준 18년차로 예산형 매물입니다.
+YEAR_19|올해 기준 19년차로 경제적 선택입니다.
+YEAR_20|올해 기준 20년차로 저렴하게 타기 좋은 조건입니다.
+YEAR_20_PLUS|연식이 20년 이상이라 예산 최소화용으로 검토해 볼 수 있습니다.
+YEAR_20_PLUS|20년 이상 경과한 연식으로 저비용용입니다.
+# ---- 색상 + 연식/주행/연료 조합 ----
+POPULAR_COLOR,FRESH_YEAR|인기 색상에 최신 연식으로 선호도가 높습니다.
+POPULAR_COLOR,LOW_MILEAGE|인기 색상에 저주행으로 조건이 좋은 편입니다.
+POPULAR_COLOR,GASOLINE|인기 색상 가솔린으로 무난한 조합입니다.
+POPULAR_COLOR,AUTO_TRANS|인기 색상 자동변속으로 선호하시는 분이 많습니다.
+COLOR_BLACK,FRESH_YEAR|검정색에 최신 연식으로 인기 있는 매물입니다.
+COLOR_WHITE,LOW_MILEAGE|흰색에 저주행으로 관리·상태 모두 좋은 조건입니다.
+COLOR_SILVER,AVERAGE_YEAR|은색에 적정 연식으로 무난한 선택입니다.
+POPULAR_COLOR,LOW_MILEAGE,FRESH_YEAR|인기 색상에 최신 연식·저주행으로 조건이 매우 좋습니다.
+# ---- 연차 + 주행 구간 조합 ----
+YEAR_1,MILEAGE_0_10K|1년차에 주행 1만 km 미만이라 신차에 가깝습니다.
+YEAR_1,MILEAGE_10K_20K|1년차에 1만~2만 km로 상태가 좋을 가능성이 높습니다.
+YEAR_2,MILEAGE_0_10K|2년차에 주행 1만 km 미만으로 조건이 매우 좋습니다.
+YEAR_2,MILEAGE_10K_20K|2년차에 1만~2만 km로 실사용에 유리합니다.
+YEAR_2,MILEAGE_20K_30K|2년차에 2만~3만 km로 무난한 조건입니다.
+YEAR_3,MILEAGE_0_10K|3년차에 주행 1만 km 미만이라 저주행 매물입니다.
+YEAR_3,MILEAGE_10K_20K|3년차에 1만~2만 km로 선택하기 좋은 조건입니다.
+YEAR_3,MILEAGE_20K_30K|3년차에 2만~3만 km로 실용적입니다.
+YEAR_4,MILEAGE_20K_30K|4년차에 2만~3만 km로 연식·주행 균형이 좋습니다.
+YEAR_4,MILEAGE_30K_40K|4년차에 3만~4만 km로 무난한 매물입니다.
+YEAR_5,MILEAGE_30K_40K|5년차에 3만~4만 km로 적정 조건입니다.
+YEAR_5,MILEAGE_40K_50K|5년차에 4만~5만 km로 가성비를 고려할 수 있습니다.
+YEAR_1,POPULAR_COLOR|1년차에 인기 색상이라 선호도가 높습니다.
+YEAR_2,POPULAR_COLOR|2년차에 검정·흰색 등 인기 색상으로 무난한 선택입니다.
+YEAR_1,COLOR_BLACK|1년차 검정색으로 인기 있는 조합입니다.
+YEAR_1,COLOR_WHITE|1년차 흰색으로 선호하시는 분이 많습니다.
+MILEAGE_0_10K,POPULAR_COLOR|주행 1만 km 미만에 인기 색상으로 조건이 좋습니다.
+MILEAGE_10K_20K,POPULAR_COLOR|1만~2만 km에 인기 색상이라 무난한 매물입니다.
+MILEAGE_0_10K,COLOR_BLACK|주행 1만 km 미만 검정색으로 신차에 가까운 조건입니다.
+MILEAGE_0_10K,COLOR_WHITE|주행 1만 km 미만 흰색으로 관리·상태 모두 유리합니다.
+YEAR_1,MILEAGE_0_10K,GASOLINE|1년차 주행 1만 km 미만 가솔린으로 조건이 매우 좋습니다.
+YEAR_2,MILEAGE_10K_20K,AUTO_TRANS|2년차 1만~2만 km 자동으로 실사용에 적합합니다.
+YEAR_3,MILEAGE_20K_30K,POPULAR_COLOR|3년차 2만~3만 km 인기 색상으로 무난한 선택입니다.
+FRESH_YEAR,POPULAR_COLOR|최신 연식에 인기 색상이라 선호도가 높습니다.
+FRESH_YEAR,COLOR_BLACK|최신 연식 검정색으로 인기 있는 매물입니다.
+FRESH_YEAR,COLOR_WHITE|최신 연식 흰색으로 조건이 좋은 편입니다.
+LOW_MILEAGE,POPULAR_COLOR|저주행에 인기 색상으로 조건이 좋습니다.
+LOW_MILEAGE,COLOR_SILVER|저주행 은색으로 실용적인 조합입니다.

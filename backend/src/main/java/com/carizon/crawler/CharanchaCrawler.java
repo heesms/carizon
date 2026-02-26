@@ -51,11 +51,11 @@ public class CharanchaCrawler {
         try {
             // 초기화(원하면 주석 처리)
             try {
-                log.warn("[CHARANCHA] TRUNCATE raw_charancha 시작");
+                log.warn("[CHARANCHA] TRUNCATE raw_charancha start");
                 jdbc.execute("TRUNCATE TABLE raw_charancha");
-                log.warn("[CHARANCHA] TRUNCATE raw_charancha 완료");
+                log.warn("[CHARANCHA] TRUNCATE raw_charancha done");
             } catch (Exception e) {
-                log.error("[CHARANCHA] TRUNCATE 실패: {}", e.toString(), e);
+                log.error("[CHARANCHA] TRUNCATE failed: {}", e.toString(), e);
                 return;
             }
 
@@ -70,7 +70,7 @@ public class CharanchaCrawler {
                         .post(RequestBody.create(json, MediaType.parse("application/json; charset=utf-8")))
                         .build();
 
-                log.info("[CHARANCHA] page={} perPage={} 요청", page, perPage);
+                log.info("[CHARANCHA] page={} perPage={} request", page, perPage);
 
                 try (Response resp = http.newCall(req).execute()) {
                     if (!resp.isSuccessful()) {
@@ -79,7 +79,7 @@ public class CharanchaCrawler {
                     }
                     String body = resp.body() != null ? resp.body().string() : "";
                     if (body.isBlank()) {
-                        log.info("[CHARANCHA] 빈 응답(page={}) → 종료", page);
+                        log.info("[CHARANCHA] empty response(page={}) → stop", page);
                         break;
                     }
 
@@ -87,31 +87,33 @@ public class CharanchaCrawler {
                     List<Map<String, Object>> list = (List<Map<String, Object>>) root.get("list");
                     int batchCount = (list == null) ? 0 : list.size();
                     if (batchCount == 0) {
-                        log.info("[CHARANCHA] 더 이상 데이터 없음(page={}) → 종료", page);
+                        log.info("[CHARANCHA] no more data(page={}) → stop", page);
                         break;
                     }
 
-                    // 원본 item 그대로 저장 (raw_charancha.payload JSON)
-                    String sql = "INSERT INTO raw_charancha(payload) VALUES (CAST(? AS JSON))";
+                    // 원본 item 그대로 저장 (raw_charancha.payload JSON) + car_image_url 생성
+                    String sql = "INSERT INTO raw_charancha(payload, car_image_url) VALUES (CAST(? AS JSON), ?)";
                     List<Object[]> params = new ArrayList<>(batchCount);
                     for (Map<String, Object> item : list) {
-                        params.add(new Object[]{ mapper.writeValueAsString(item) });
+                        String payloadJson = mapper.writeValueAsString(item);
+                        String carImageUrl = buildCharanchaImageUrl(item);
+                        params.add(new Object[]{ payloadJson, carImageUrl });
                     }
                     int[] res = jdbc.batchUpdate(sql, params);
                     fetchedTotal += res.length;
 
-                    log.info("[CHARANCHA] page={} 저장 {}건 (누적={})", page, res.length, fetchedTotal);
+                    log.info("[CHARANCHA] page={} saved {} (total={})", page, res.length, fetchedTotal);
 
                     // 마지막 페이지 추정: list 크기가 페이지 사이즈보다 작으면 종료
                     if (batchCount < perPage) {
-                        log.info("[CHARANCHA] 마지막 페이지로 추정(list < perPage) → 종료 (page={}, items={})", page, batchCount);
+                        log.info("[CHARANCHA] last page (list < perPage) → stop (page={}, items={})", page, batchCount);
                         break;
                     }
 
                     page++;
                     Thread.sleep(600); // 서버 부하 완화
                 } catch (Exception e) {
-                    log.error("[CHARANCHA] 예외 page={} → 종료: {}", page, e.toString(), e);
+                    log.error("[CHARANCHA] exception page={} → stop: {}", page, e.toString(), e);
                     break;
                 }
             }
@@ -121,7 +123,7 @@ public class CharanchaCrawler {
             recorder.recordFail(runId, fetchedTotal, Instant.now(), e.toString());
         }
 
-        log.info("[CHARANCHA] 완료 totalItems={} elapsed={}s", fetchedTotal, Duration.between(started, Instant.now()).toSeconds());
+        log.info("[CHARANCHA] done totalItems={} elapsed={}s", fetchedTotal, Duration.between(started, Instant.now()).toSeconds());
     }
 
     /** 요청에 필요한 payload — 네가 준 캡처 그대로 기본값을 유지하고 페이지/사이즈만 바꿔서 보냄 */
@@ -154,5 +156,66 @@ public class CharanchaCrawler {
         p.put("optionCnt", "");
         p.put("optionSearch", "");
         return p;
+    }
+
+    private static final String CARIMG_BASE = "https://charancha.com/uploads/carimg/xxlarge";
+    private static final String CARIMG_QUERY = "?w=480&h=360&f=webp";
+
+    /**
+     * CHARANCHA 차량 이미지 URL 생성
+     * - API 응답에서 이미지 식별자 추출 (carImg, car_img, carImage 등 시도)
+     * - URL 형식: https://charancha.com/uploads/carimg/xxlarge/{연도}/{파일명}?w=480&h=360&f=webp
+     * - UUID만 오면 연도는 payload.regDt 기준 (예: "2025-10-23 14:31:59" → 2025), 없으면 올해
+     */
+    private String buildCharanchaImageUrl(Map<String, Object> item) {
+        try {
+            String carImg = getFirstNonBlank(item, "carImg", "car_img", "carImage", "mainImg", "imgUrl", "thumbnail", "img");
+            if (carImg == null || carImg.isBlank()) return null;
+
+            carImg = carImg.trim();
+            if (carImg.startsWith("http://") || carImg.startsWith("https://")) return carImg;
+
+            if (carImg.startsWith("/")) carImg = carImg.substring(1);
+            if (carImg.isBlank()) return null;
+
+            String path;
+            if (carImg.contains("/")) {
+                path = carImg;
+            } else {
+                // UUID만 오면 연도 = payload.regDt 기준, 없으면 올해
+                String year = extractYearFromRegDt(item);
+                if (!carImg.contains(".")) carImg = carImg + ".jpg";
+                path = year + "/" + carImg;
+            }
+
+            return CARIMG_BASE + "/" + path + CARIMG_QUERY;
+        } catch (Exception e) {
+            log.warn("[CHARANCHA] car_image_url build failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** payload.regDt 에서 연도 추출 (예: "2025-10-23 14:31:59" → "2025"), 실패 시 올해 */
+    private String extractYearFromRegDt(Map<String, Object> item) {
+        Object regDtObj = item != null ? item.get("regDt") : null;
+        if (regDtObj != null) {
+            String regDt = String.valueOf(regDtObj).trim();
+            if (!regDt.isBlank() && regDt.length() >= 4) {
+                // "2025-10-23 ..." 또는 "20251023" 등 앞 4자리가 연도
+                String y = regDt.substring(0, 4);
+                if (y.matches("\\d{4}")) return y;
+            }
+        }
+        return String.valueOf(java.time.Year.now().getValue());
+    }
+
+    private String getFirstNonBlank(Map<String, Object> map, String... keys) {
+        for (String key : keys) {
+            Object v = map.get(key);
+            if (v == null) continue;
+            String s = String.valueOf(v).trim();
+            if (!s.isBlank() && !"null".equalsIgnoreCase(s)) return s;
+        }
+        return null;
     }
 }

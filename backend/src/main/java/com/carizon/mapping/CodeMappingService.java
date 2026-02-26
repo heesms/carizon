@@ -38,23 +38,45 @@ public class CodeMappingService {
        부분매칭 허용: 결정된 부모는 그대로 존중하고, 자식만 매칭/보류
        ======================================================================= */
     public int runAutoMapping(String platformName, Scope scope) {
+        long start = System.currentTimeMillis();
         final String platform = platformName.toUpperCase();
 
         // 1) 입력로우 수집 (필요컬럼만)
         var rows = fetchPlatformRows(platform, scope);
-        if (rows.isEmpty()) return 0;
+        if (rows.isEmpty()) {
+            log.info("[code mapping] start platform={} scope={} totalRows=0 (skip)", platform, scope);
+            return 0;
+        }
+        log.info("[code mapping] start platform={} scope={} totalRows={}", platform, scope, rows.size());
 
         // 2) 캐시/사전 한 번만 로드
         var plateStd = preloadPlateStd(rows);
         log.debug("preloadPlateStd : {}", plateStd) ;
         var forced = preloadForced(platform);
         var dict = preloadStandardDictionaries(); // maker→groups→models→trims→grades 이름 캐시
+        Set<String> existingKeys = preloadLockedMappings(platform, rows); // LOCKED만 스킵
 
         // 3) 배치 업서트 버퍼
         List<Param> buffer = new ArrayList<>(BATCH_SIZE);
         int total = 0;
+        int skipped = 0;
+        int processed = 0;
+        int totalRows = rows.size();
+        int progressUnit = Math.max(1000, totalRows / 20); // 약 5% 단위
 
         for (Row r : rows) {
+            processed++;
+            // 이미 cz_code_map에 있는 매핑은 스킵 (모든 status)
+            String key = makeKey(platform, r.p_maker_code, r.p_model_group_code, r.p_model_code, r.p_trim_code, r.p_grade_code);
+            if (existingKeys.contains(key)) {
+                skipped++;
+                if (processed % progressUnit == 0 || processed == totalRows) {
+                    int percent = (int) Math.round(processed * 100.0 / totalRows);
+                    log.info("[code mapping] progress platform={} {}/{} ({}%) affected={} skipped={}",
+                            platform, processed, totalRows, percent, total, skipped);
+                }
+                continue;
+            }
             // 플랫폼 정규화 이름
             String pmkN = normalize(r.p_maker_name, Level.MAKER);
             String pmgN = normalize(r.p_model_group_name, Level.MODEL_GROUP);
@@ -66,6 +88,10 @@ public class CodeMappingService {
             Std std = findForced(forced, r);
             String reason = null;
             double score = 0.0;
+            if (std != null) {
+                reason = "FORCED";
+                score = 1.0;
+            }
 
             // ---------- 우선순위 1: 차량번호 동일(CHACHACHA) ----------
             if (std == null && r.plate != null) {
@@ -110,7 +136,9 @@ public class CodeMappingService {
                 score = dict.lastScore;
             }
 
-            String status = ( "PLATE_EQUAL".equals(reason) || score >= THRESH_FINAL ) ? "AUTO" : "REVIEW";
+            String status = ("PLATE_EQUAL".equals(reason) || "FORCED".equals(reason) || score >= THRESH_FINAL)
+                    ? "AUTO"
+                    : "REVIEW";
 
             // 부분 매칭이라도 **결정된 부모는 그대로 채워 저장**(비워두지 않음)
             buffer.add(new Param(platform, r, pmkN, pmgN, pmdN, ptrN, pgrN, std, score, reason, status));
@@ -119,10 +147,16 @@ public class CodeMappingService {
                 total += upsertBatch(buffer);
                 buffer.clear();
             }
+            if (processed % progressUnit == 0 || processed == totalRows) {
+                int percent = (int) Math.round(processed * 100.0 / totalRows);
+                log.info("[code mapping] progress platform={} {}/{} ({}%) affected={} skipped={}",
+                        platform, processed, totalRows, percent, total, skipped);
+            }
         }
         if (!buffer.isEmpty()) total += upsertBatch(buffer);
 
-        log.info("auto-mapping v2 platform={} scope={} affected={}", platform, scope, total);
+        log.info("auto-mapping v2 platform={} scope={} affected={} skipped={} elapsedMs={}",
+                platform, scope, total, skipped, System.currentTimeMillis() - start);
         return total;
     }
 
@@ -192,6 +226,12 @@ public class CodeMappingService {
                    maker_code, model_group_code, model_code, trim_code, grade_code
               FROM cz_forced_map
              WHERE platform_name=?
+             ORDER BY depth DESC,
+                      p_maker_code,
+                      p_model_group_code,
+                      p_model_code,
+                      p_trim_code,
+                      p_grade_code
         """, (rs, i) -> new Forced(
                 rs.getInt("depth"),
                 n(rs.getString("p_maker_code")), n(rs.getString("p_model_group_code")), n(rs.getString("p_model_code")),
@@ -290,6 +330,38 @@ public class CodeMappingService {
     }
     private Dict preloadStandardDictionaries() { return new Dict(); }
 
+    // LOCKED 매핑만 선스킵: AUTO/REVIEW는 로직 개선 시 재평가되도록 유지
+    private Set<String> preloadLockedMappings(String platform, List<Row> rows) {
+        if (rows.isEmpty()) return new HashSet<>();
+        
+        // cz_code_map에서 해당 플랫폼의 LOCKED 매핑 조회
+        // unique key는 (platform_name, p_maker_code, p_model_group_code, p_model_code, p_trim_code, p_grade_code) 조합
+        List<String> existing = jdbc.query("""
+            SELECT CONCAT(COALESCE(platform_name, ''), '|',
+                   COALESCE(p_maker_code, ''), '|',
+                   COALESCE(p_model_group_code, ''), '|',
+                   COALESCE(p_model_code, ''), '|',
+                   COALESCE(p_trim_code, ''), '|',
+                   COALESCE(p_grade_code, '')) AS mapping_key
+            FROM cz_code_map
+            WHERE platform_name = ?
+              AND status = 'LOCKED'
+        """, (rs, i) -> rs.getString(1), platform);
+        
+        return new HashSet<>(existing);
+    }
+    
+    // 매핑 unique key 생성 (platform_name|p_maker_code|p_model_group_code|p_model_code|p_trim_code|p_grade_code)
+    private String makeKey(String platform, String mk, String mg, String md, String tr, String gr) {
+        return String.format("%s|%s|%s|%s|%s|%s",
+            platform != null ? platform : "",
+            mk != null ? mk : "",
+            mg != null ? mg : "",
+            md != null ? md : "",
+            tr != null ? tr : "",
+            gr != null ? gr : "");
+    }
+
     private Std findForced(List<Forced> forced, Row r) {
         for (Forced f : forced) {
             if (f.depth>=1 && neq(f.p_mk, r.p_maker_code)) continue;
@@ -337,6 +409,9 @@ public class CodeMappingService {
                 Param p = list.get(i);
                 int x=1;
                 // 1) platform_name
+                if (i == 0) { // 첫 번째 행만 로그
+                    log.debug("[code mapping] platform={}, reason={}, status={}", p.platform, p.reason, p.status);
+                }
                 ps.setString(x++, p.platform);
                 // 2~6) p_*_code
                 ps.setString(x++, p.row.p_maker_code);

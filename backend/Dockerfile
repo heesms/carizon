@@ -3,7 +3,7 @@ WORKDIR /w
 COPY pom.xml .
 RUN mvn -q -B -DskipTests dependency:go-offline
 COPY src ./src
-RUN mvn -q -B -DskipTests package
+RUN mvn -q -B -DskipTests package spring-boot:repackage
 
 FROM gcr.io/distroless/java21-debian12
 COPY --from=build /w/target/backend-0.0.1-SNAPSHOT.jar /app.jar

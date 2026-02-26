@@ -1,0 +1,21 @@
+spring:
+  elasticsearch:
+    uris: http://localhost:19200
+  mvc:
+    log-request-details: true
+
+logging:
+  level:
+    com.carizon.controller: INFO
+    com.carizon.service.CarQueryService: DEBUG
+    com.carizon.service.CodeQueryService: INFO
+    com.carizon.search.service.ElasticsearchCarSearchService: DEBUG
+    org.springframework.web.servlet.DispatcherServlet: DEBUG
+
+server:
+  tomcat:
+    accesslog:
+      enabled: true
+      directory: logs
+      prefix: access-local
+      suffix: .log

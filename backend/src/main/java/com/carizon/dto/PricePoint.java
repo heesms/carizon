@@ -1,0 +1,1 @@
+package com.carizon.dto; import java.time.LocalDateTime; public record PricePoint(LocalDateTime ts,Integer price) {}

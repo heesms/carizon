@@ -1,0 +1,70 @@
+name: Deploy MVP Stack
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "backend/**"
+      - "carizon-frontend/**"
+      - "docker-compose.mvp.yml"
+      - ".github/workflows/deploy-mvp-stack.yml"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build backend
+        working-directory: backend
+        run: mvn -q -B -DskipTests package
+
+      - name: Build & push backend image
+        run: |
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} --password-stdin
+          IMAGE=ghcr.io/${{ secrets.GHCR_USERNAME }}/carizon-backend
+          TAG=main-${{ github.sha }}
+          docker build -t $IMAGE:$TAG -t $IMAGE:latest backend
+          docker push $IMAGE:$TAG
+          docker push $IMAGE:latest
+
+      - name: Build frontend
+        working-directory: carizon-frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build & push frontend image
+        run: |
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} --password-stdin
+          IMAGE=ghcr.io/${{ secrets.GHCR_USERNAME }}/carizon-frontend
+          TAG=main-${{ github.sha }}
+          docker build \
+            --build-arg VITE_GA_MEASUREMENT_ID="${{ secrets.GA_MEASUREMENT_ID }}" \
+            -t $IMAGE:$TAG -t $IMAGE:latest carizon-frontend
+          docker push $IMAGE:$TAG
+          docker push $IMAGE:latest
+
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/app
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} --password-stdin
+            sed -i "s/REPLACE_GH_USER/${{ secrets.GHCR_USERNAME }}/g" docker-compose.mvp.yml
+            docker compose -f docker-compose.mvp.yml pull app frontend mysql redis elasticsearch chroma ollama || true
+            docker compose -f docker-compose.mvp.yml up -d --remove-orphans
+            docker image prune -f

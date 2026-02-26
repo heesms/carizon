@@ -1,0 +1,1 @@
+package com.carizon.dto; public record ModelImageDto(String imageUrl, boolean isMain, int sortOrder) {}
