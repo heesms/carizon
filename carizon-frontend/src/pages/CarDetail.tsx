@@ -20,11 +20,11 @@ const clean = (v: any): string | undefined => {
 const PLATFORM_NAMES: Record<string, string> = {
   encar: '엔카', ENCAR: '엔카',
   encar_truck: '엔카', ENCAR_TRUCK: '엔카',
-  kcar: 'K캐어', KCAR: 'K캐어',
-  chachacha: '차차차', CHACHACHA: '차차차',
+  kcar: 'K Car', KCAR: 'K Car',
+  chachacha: 'KB차차차', CHACHACHA: 'KB차차차',
   chutcha: '첫차', CHUTCHA: '첫차',
   charancha: '차란차', CHARANCHA: '차란차',
-  tcar: 'TCAR', TCAR: 'TCAR',
+  tcar: 'T Car', TCAR: 'T Car',
 }
 
 const normalizePlatformKey = (platformName: string) => {

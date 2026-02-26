@@ -330,7 +330,7 @@ export default function Home() {
           <div className="flex items-center justify-between mb-3 sm:mb-4">
             <div>
               <h2 className="section-title">이번 주 인기 차량</h2>
-              <p className="section-sub">좋아요가 많은 인기 매물</p>
+              <p className="section-sub">이번 주 주목받는 인기 매물</p>
             </div>
             <Link to="/search" className="btn-ghost text-brand-600 text-sm">전체보기 →</Link>
           </div>
