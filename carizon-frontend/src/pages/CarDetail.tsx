@@ -275,9 +275,30 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
     <div className={`space-y-4 sm:space-y-6 animate-fade-in ${isModal ? 'px-3 sm:px-6 lg:px-7 pb-8' : ''}`}>
       {modalHeader}
 
-      <div className={`grid grid-cols-1 gap-4 sm:gap-6 ${isModal ? 'md:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[400px_minmax(0,1fr)]' : 'lg:grid-cols-[380px_1fr]'}`}>
+      {/* PC 비모달 뒤로가기 breadcrumb */}
+      {!isModal && (
+        <div className="hidden lg:flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleClose}
+            className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors group"
+          >
+            <svg className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            목록으로
+          </button>
+          <span className="text-gray-200 select-none">|</span>
+          <span className="text-sm font-semibold text-gray-700 truncate">
+            {[clean(car.maker), clean(car.model)].filter(Boolean).join(' ')}
+            {clean(car.trim) && <span className="text-gray-400 font-normal ml-1">{car.trim}</span>}
+          </span>
+        </div>
+      )}
+
+      <div className={`grid grid-cols-1 gap-4 sm:gap-6 ${isModal ? 'md:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[400px_minmax(0,1fr)]' : 'lg:grid-cols-[420px_1fr] lg:gap-8'}`}>
         {/* 좌측: 이미지 + 가격 */}
-        <div className="space-y-4">
+        <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
           <div className="card overflow-hidden">
             <div className="aspect-[4/3] bg-gray-50">
               <img
@@ -318,6 +339,18 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                   <div className="shrink-0 pb-0.5">
                     <LikeButton carId={Number(id)} />
                   </div>
+                </div>
+              )}
+
+              {/* PC 전용 핵심 스펙 블록 */}
+              {heroSpecs.length > 0 && (
+                <div className="hidden lg:grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-gray-100">
+                  {heroSpecs.map(s => (
+                    <div key={s.label} className={`rounded-xl p-2.5 text-center ${s.bg}`}>
+                      <div className={`text-sm font-black ${s.ic} leading-tight`}>{s.value}</div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">{s.label}</div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -443,7 +476,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
             )}
             {/* 핵심 4개 hero stats */}
             {heroSpecs.length > 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4 lg:hidden">
                 {heroSpecs.map(s => (
                   <div key={s.label} className={`rounded-xl p-3 sm:p-4 text-center ${s.bg}`}>
                     <div className={`text-base sm:text-xl font-black ${s.ic} leading-tight mb-0.5`}>{s.value}</div>
