@@ -437,7 +437,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                     d="M8 18v-3a4 4 0 018 0v3M7 18h10M12 4v2M5 12h2M17 12h2M7 8.5l1.5 1.5M17 8.5l-1.5 1.5" />
                 </svg>
                 <p className="text-xs text-red-700 font-semibold">
-                  내 차 사고이력 의심 - 구매 전 정비 이력을 꼭 확인하세요
+                  내 차 사고이력 의심 - 구매 전 수리 이력을 꼭 확인하세요
                 </p>
               </div>
             )}
