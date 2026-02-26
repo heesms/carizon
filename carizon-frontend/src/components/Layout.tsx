@@ -172,7 +172,7 @@ export default function Layout() {
       </main>
 
       {/* ── 모바일 푸터 ── */}
-      <footer className="sm:hidden bg-white border-t border-gray-100">
+      <footer className="sm:hidden bg-white border-t border-gray-100 mb-14">
         <div className="px-6 py-4 flex flex-col items-center gap-2">
           <div className="flex flex-wrap justify-center gap-x-5 gap-y-1 text-xs text-gray-400">
             <Link to="/info?tab=contact" className="hover:text-gray-600 transition">문의하기</Link>
