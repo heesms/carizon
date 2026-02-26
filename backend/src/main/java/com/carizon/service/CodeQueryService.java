@@ -435,8 +435,18 @@ public class CodeQueryService {
     addBodyTypeShouldFilter(filters, context.get("bodyType"));
     addTermFilter(filters, "region.keyword", context.get("region"));
     addTermFilter(filters, "transmission.keyword", context.get("transmission"));
-    addTermFilter(filters, "carNo.keyword", context.get("carNo"));
+    addCarNoFilter(filters, context.get("carNo"));
     return filters;
+  }
+
+  private static void addCarNoFilter(List<Map<String, Object>> filters, String carNo) {
+    if (carNo == null || carNo.isBlank()) return;
+    String val = carNo.trim();
+    if (val.length() >= 4) {
+      filters.add(Map.of("wildcard", Map.of("carNo.keyword", Map.of("value", "*" + val + "*", "case_insensitive", true))));
+    } else {
+      filters.add(Map.of("term", Map.of("carNo.keyword", val)));
+    }
   }
 
   private static void addTermFilter(List<Map<String, Object>> filters, String field, String value) {

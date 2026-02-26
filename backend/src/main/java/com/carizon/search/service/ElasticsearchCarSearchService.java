@@ -557,7 +557,12 @@ public class ElasticsearchCarSearchService {
             }));
         }
         if (params.get("carNo") != null && !String.valueOf(params.get("carNo")).trim().isEmpty()) {
-            filter.add(QueryBuilders.term(t -> t.field("carNo.keyword").value(String.valueOf(params.get("carNo")).trim())));
+            String carNoVal = String.valueOf(params.get("carNo")).trim();
+            if (carNoVal.length() >= 4) {
+                filter.add(QueryBuilders.wildcard(w -> w.field("carNo.keyword").value("*" + carNoVal + "*").caseInsensitive(true)));
+            } else {
+                filter.add(QueryBuilders.term(t -> t.field("carNo.keyword").value(carNoVal)));
+            }
         }
 
         // 기본 필터: 가격이 0보다 큰 매물만
@@ -707,7 +712,14 @@ public class ElasticsearchCarSearchService {
             }
             filter.add(Map.of("bool", Map.of("must_not", mustNot)));
         }
-        if (params.get("carNo") != null && !String.valueOf(params.get("carNo")).trim().isEmpty()) filter.add(Map.of("term", Map.of("carNo.keyword", String.valueOf(params.get("carNo")).trim())));
+        if (params.get("carNo") != null && !String.valueOf(params.get("carNo")).trim().isEmpty()) {
+            String carNoVal = String.valueOf(params.get("carNo")).trim();
+            if (carNoVal.length() >= 4) {
+                filter.add(Map.of("wildcard", Map.of("carNo.keyword", Map.of("value", "*" + carNoVal + "*", "case_insensitive", true))));
+            } else {
+                filter.add(Map.of("term", Map.of("carNo.keyword", carNoVal)));
+            }
+        }
 
         // 기본 필터: 가격이 0보다 큰 매물만
         filter.add(Map.of("range", Map.of("priceMin", Map.of("gt", 0))));
