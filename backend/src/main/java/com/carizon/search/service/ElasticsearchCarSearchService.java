@@ -163,6 +163,29 @@ public class ElasticsearchCarSearchService {
     }
 
     /**
+     * 단건 차량 삭제 (carId 기준)
+     */
+    public boolean deleteByCarId(long carId) {
+        try {
+            var response = client.delete(d -> d.index(INDEX).id(String.valueOf(carId)));
+            boolean deleted = "deleted".equals(response.result().jsonValue());
+            log.info("[Elasticsearch] deleteByCarId: carId={}, result={}", carId, response.result().jsonValue());
+            return deleted;
+        } catch (ElasticsearchException e) {
+            String msg = e.getMessage() != null ? e.getMessage() : "";
+            if (msg.contains("index_not_found") || msg.contains("no such index")) {
+                log.warn("[Elasticsearch] deleteByCarId: index not found, carId={}", carId);
+                return false;
+            }
+            log.error("[Elasticsearch] deleteByCarId failed: carId={}", carId, e);
+            throw new RuntimeException("ES 삭제 실패: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("[Elasticsearch] deleteByCarId failed: carId={}", carId, e);
+            throw new RuntimeException("ES 삭제 실패: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * 인덱스 전체 삭제 (재인덱싱 전 호출). 인덱스가 없으면 무시하고 진행.
      */
     public void deleteAllDocuments() {

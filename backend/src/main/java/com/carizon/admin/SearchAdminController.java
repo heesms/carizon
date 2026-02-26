@@ -139,6 +139,40 @@ public class SearchAdminController {
         }
     }
 
+    @PostMapping("/car/{carId}")
+    @Operation(summary = "단건 차량 ES 등록/갱신", description = "car_id 기준으로 DB에서 조회해 Elasticsearch에 등록(또는 갱신)합니다.")
+    public ApiResponse<Map<String, Object>> indexCarById(@PathVariable long carId) {
+        log.info("[search admin] index car by id: carId={}", carId);
+        try {
+            indexingService.indexCar(carId);
+            return ApiResponse.success(Map.of(
+                "message", "ES 등록/갱신 완료",
+                "carId", carId
+            ));
+        } catch (Exception e) {
+            log.error("[search admin] index car failed: carId={}", carId, e);
+            return ApiResponse.error("ES 등록/갱신 실패: " + e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/car/{carId}")
+    @Operation(summary = "단건 차량 ES 삭제", description = "car_id 기준으로 Elasticsearch에서 해당 차량 문서를 삭제합니다.")
+    public ApiResponse<Map<String, Object>> deleteCarById(@PathVariable long carId) {
+        log.info("[search admin] delete car from ES: carId={}", carId);
+        try {
+            boolean deleted = indexingService.getCarSearchService().deleteByCarId(carId);
+            String message = deleted ? "ES 삭제 완료" : "해당 차량이 ES에 없음 (이미 삭제됐거나 미인덱싱)";
+            return ApiResponse.success(Map.of(
+                "message", message,
+                "carId", carId,
+                "deleted", deleted
+            ));
+        } catch (Exception e) {
+            log.error("[search admin] delete car failed: carId={}", carId, e);
+            return ApiResponse.error("ES 삭제 실패: " + e.getMessage());
+        }
+    }
+
     @PostMapping("/test")
     @Operation(summary = "Elasticsearch 검색 테스트", description = "Elasticsearch 검색 API를 테스트합니다.")
     public ApiResponse<Map<String, Object>> testSearch(
