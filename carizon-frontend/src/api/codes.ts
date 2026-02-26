@@ -17,6 +17,8 @@ export type CodeItem = {
   countryName?: string
   domestic?: number | boolean | string
   carCount?: number
+  fromYear?: number
+  toYear?: number
 }
 
 const getAny = (obj: RawCodeItem, keys: string[]) =>
@@ -88,7 +90,9 @@ const normalizeCodeItem = (item: unknown): CodeItem => {
       'isDomesticCar',
       'is_domestic',
     ]) ?? undefined,
-    carCount: parseCodeItemNumber(raw, ['carCount', 'car_count', 'CARCOUNT', 'CAR_COUNT', 'COUNT']) ,
+    carCount: parseCodeItemNumber(raw, ['carCount', 'car_count', 'CARCOUNT', 'CAR_COUNT', 'COUNT']),
+    fromYear: parseCodeItemNumber(raw, ['fromYear', 'from_year', 'FROM_YEAR', 'FROMYEAR']),
+    toYear: parseCodeItemNumber(raw, ['toYear', 'to_year', 'TO_YEAR', 'TOYEAR']),
   }
 }
 

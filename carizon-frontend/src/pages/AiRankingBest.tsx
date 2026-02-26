@@ -25,11 +25,27 @@ const isDomesticMaker = (m: CodeItem) => {
   return (m as any).domestic === 1 || (m as any).domestic === true || raw === '국산' || raw === 'KR' || raw === 'KOR' || raw === 'KO'
 }
 const countOf = (item: CodeItem) => Number((item as any).carCount ?? 0)
+const launchYearOf = (item: CodeItem) => {
+  const raw = (item as any).fromYear ?? (item as any).from_year
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : undefined
+}
 /** AI 랭킹 BEST 분석 가능 최소 매물 수 */
 const MIN_CAR_COUNT_FOR_RANKING = 50
 const sortByCount = (a: CodeItem, b: CodeItem) => {
   const diff = countOf(b) - countOf(a)
   return diff !== 0 ? diff : a.name.localeCompare(b.name, 'ko')
+}
+const sortByLaunchYearDescCountThenName = (a: CodeItem, b: CodeItem) => {
+  const ay = launchYearOf(a)
+  const by = launchYearOf(b)
+  const aHas = ay !== undefined
+  const bHas = by !== undefined
+  if (aHas !== bHas) return aHas ? -1 : 1
+  if (aHas && bHas && by !== ay) return by - ay
+  const diff = countOf(b) - countOf(a)
+  if (diff !== 0) return diff
+  return a.name.localeCompare(b.name, 'ko')
 }
 
 // ── 공용 컴포넌트 ─────────────────────────────────────────────────────────────
@@ -225,7 +241,7 @@ export default function AiRankingBest() {
     [modelGroups]
   )
   const visibleByGroup = (groupCode: string) =>
-    (modelsByGroup[groupCode] ?? []).filter(match).sort(sortByCount)
+    (modelsByGroup[groupCode] ?? []).filter(match).sort(sortByLaunchYearDescCountThenName)
 
   const activeMaker = makers.find(m => m.code === pickerMakerCode)
 

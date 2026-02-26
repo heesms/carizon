@@ -104,6 +104,21 @@ const sortByCountThenName = (a: CodeItem, b: CodeItem) => {
   return a.name.localeCompare(b.name, 'ko')
 }
 
+const sortByLaunchYearDescCountThenName = (a: CodeItem, b: CodeItem) => {
+  const ayRaw = (a as any).fromYear ?? (a as any).from_year
+  const byRaw = (b as any).fromYear ?? (b as any).from_year
+  const ay = Number(ayRaw)
+  const by = Number(byRaw)
+  const aHas = Number.isFinite(ay) && ayRaw !== null && ayRaw !== undefined
+  const bHas = Number.isFinite(by) && byRaw !== null && byRaw !== undefined
+  if (aHas !== bHas) return aHas ? -1 : 1
+  if (by !== ay) return by - ay
+  const ac = countOf(a)
+  const bc = countOf(b)
+  if (bc !== ac) return bc - ac
+  return a.name.localeCompare(b.name, 'ko')
+}
+
 const isEtcItem = (item: CodeItem) => item.code === '기타' || item.name === '기타'
 
 const sortByCountThenNameWithEtcLast = (a: CodeItem, b: CodeItem) => {
@@ -1369,7 +1384,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   )
   const canLoadMoreNameGroups = !keyword && visibleNameGroups.length < filteredNameGroups.length
   const visibleModelsByGroup = (groupCode: string) =>
-    (pickerModelsByGroup[groupCode] ?? []).filter(matchByKeyword).slice().sort(sortByCountThenName)
+    (pickerModelsByGroup[groupCode] ?? []).filter(matchByKeyword).slice().sort(sortByLaunchYearDescCountThenName)
 
   const goBackInPicker = () => {
     setMakerPickerOpen(false)
