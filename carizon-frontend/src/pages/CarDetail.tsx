@@ -66,9 +66,6 @@ const buildCarShareText = (car: CarDetailData['car']) => {
   if (fuel) {
     lines.push(`연료: ${fuel}`)
   }
-  if (car.price != null) {
-    lines.push(`가격: ${car.price.toLocaleString()}만원`)
-  }
   return lines.join('\n')
 }
 
@@ -150,12 +147,9 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
     const shareUrl = window.location.href
 
     try {
-      if ('share' in navigator) {
-        await navigator.share({
-          title: 'Carizon 매물',
-          text: shareText,
-          url: shareUrl,
-        })
+      const shareApi = (navigator as unknown as { share?: (d: ShareData) => Promise<void> }).share
+      if (shareApi) {
+        await shareApi({ title: 'Carizon 매물', text: shareText, url: shareUrl })
         return
       }
 
