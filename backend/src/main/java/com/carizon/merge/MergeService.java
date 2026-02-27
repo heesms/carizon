@@ -1421,58 +1421,6 @@ public class MergeService {
                 return null;
             }));
 
-        // car_id 링크 후: option_array/sel_option_array 동기화 (최신 ENCAR 계열 우선)
-        runWithRetry(3, 200L, () ->
-            requiresNew().execute(status -> {
-                int synced = jdbc.update("""
-                    UPDATE car_master cm
-                    SET cm.option_array = COALESCE((
-                            SELECT pc.option_array
-                            FROM platform_car pc
-                            WHERE pc.car_id = cm.car_id
-                              AND pc.option_array IS NOT NULL
-                              AND TRIM(pc.option_array) <> ''
-                            ORDER BY (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK')) DESC,
-                                     pc.ad_date DESC,
-                                     pc.updated_at DESC,
-                                     pc.platform_car_id DESC
-                            LIMIT 1
-                        ), cm.option_array),
-                        cm.sel_option_array = COALESCE((
-                            SELECT pc.sel_option_array
-                            FROM platform_car pc
-                            WHERE pc.car_id = cm.car_id
-                              AND pc.sel_option_array IS NOT NULL
-                              AND TRIM(pc.sel_option_array) <> ''
-                            ORDER BY (pc.platform_name IN ('ENCAR', 'ENCAR_TRUCK')) DESC,
-                                     pc.ad_date DESC,
-                                     pc.updated_at DESC,
-                                     pc.platform_car_id DESC
-                            LIMIT 1
-                        ), cm.sel_option_array),
-                        cm.updated_at = NOW()
-                    WHERE cm.car_id IS NOT NULL
-                      AND (
-                           (cm.option_array IS NULL AND EXISTS (
-                               SELECT 1
-                               FROM platform_car p1
-                               WHERE p1.car_id = cm.car_id
-                                 AND p1.option_array IS NOT NULL
-                                 AND TRIM(p1.option_array) <> ''
-                           ))
-                        OR (cm.sel_option_array IS NULL AND EXISTS (
-                               SELECT 1
-                               FROM platform_car p2
-                               WHERE p2.car_id = cm.car_id
-                                 AND p2.sel_option_array IS NOT NULL
-                                 AND TRIM(p2.sel_option_array) <> ''
-                           ))
-                      )
-                    """);
-                if (synced > 0) log.info("[merge] sync car_master option arrays from platform_car: {} rows", synced);
-                return null;
-            }));
-
         log.info("linkToMaster linked rows: {}", total);
         return total;
     }
