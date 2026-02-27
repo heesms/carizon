@@ -1,6 +1,6 @@
 const SITE_NAME = 'Carizon'
 const DEFAULT_KEYWORDS = '중고차, 중고차 검색, 중고차 매물, 차량 추천, Carizon'
-const DEFAULT_OG_IMAGE = '/favicon.png'
+const DEFAULT_OG_IMAGE = '/og-image.png'
 
 const SITE_URL = String(import.meta.env.VITE_SITE_URL || '').replace(/\/$/, '')
 const OG_IMAGE = String(import.meta.env.VITE_SITE_OG_IMAGE || '').trim() || DEFAULT_OG_IMAGE
