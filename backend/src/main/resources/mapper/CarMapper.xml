@@ -77,10 +77,16 @@
            COALESCE(pc.body_type, cm.body_type) AS body_type,
            COALESCE(pc.region, cm.region) AS region,
            COALESCE(pc.seat_count, cm.seat_count) AS seatCount,
-           cm.my_accident_cnt AS myAccidentCnt,
+           EXISTS (
+             SELECT 1
+             FROM platform_car pc_accident
+             WHERE pc_accident.car_id = cm.car_id
+               AND pc_accident.my_accident_cnt IS NOT NULL
+               AND pc_accident.my_accident_cnt > 0
+           ) AS myAccidentCnt,
            pc.platform_car_id AS platformCarId, pc.platform_name, pc.price, pc.status, pc.pc_url, pc.m_url,
            DATE_FORMAT(pc.last_seen_date, '%Y-%m-%d') AS lastSeenDate,
-           pc.option_array AS optionArray,
+           CONCAT_WS(' ', NULLIF(TRIM(pc.option_array), ''), NULLIF(TRIM(pc.sel_option_array), '')) AS optionArray,
            pc.car_image_url AS representativeImageUrl
     FROM car_master cm
     INNER JOIN platform_car pc ON pc.car_id = cm.car_id
