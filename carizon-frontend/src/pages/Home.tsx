@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import AdSlot from '@/components/AdSlot'
 import { getWeeklyBest } from '@/api/likes'
 import { trackSearch, trackQuickSearch, trackAiRecommendation, trackAiPromptClick, trackSelectItem } from '@/lib/analytics'
+import CarImagePlaceholder from '@/components/CarImagePlaceholder'
 
 const AI_QUICK_PROMPTS = [
   '500만원 이하 경제적인 소형차 추천해줘',
@@ -11,7 +12,18 @@ const AI_QUICK_PROMPTS = [
   '20대 첫차로 좋은 중고차',
 ]
 
-const NO_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><text fill="#9ca3af" font-family="sans-serif" font-size="13" x="200" y="158" text-anchor="middle">이미지 없음</text><rect fill="#e5e7eb" x="170" y="110" width="60" height="38" rx="4"/></svg>')}`
+function WeeklyCardImage({ src, alt, className }: { src: string | null; alt: string; className?: string }) {
+  const [failed, setFailed] = useState(false)
+  if (!src || failed) return <CarImagePlaceholder />
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      onError={() => setFailed(true)}
+    />
+  )
+}
 
 type WeeklyItem = {
   carId?: number
@@ -338,7 +350,7 @@ export default function Home() {
             {weekly.map((w, i) => {
               const v = (s?: string | null) => (s && s !== 'null') ? s : ''
               const name = [v(w.makerName) || v(w.maker), v(w.modelName) || v(w.model)].filter(Boolean).join(' ')
-              const imgUrl = w.carImageUrl || w.representativeImageUrl || (w.modelCode ? `/image/car/model/${w.modelCode}.webp` : NO_IMAGE)
+              const imgUrl = w.carImageUrl || w.representativeImageUrl || (w.modelCode ? `/image/car/model/${w.modelCode}.webp` : null)
               const price = w.price ?? w.priceMin ?? w.priceMax
               return (
                 <Link
@@ -354,11 +366,10 @@ export default function Home() {
                 >
                   {/* 이미지 */}
                   <div className="relative aspect-[16/9] bg-gray-100">
-                    <img
+                    <WeeklyCardImage
                       src={imgUrl}
                       alt={name}
                       className="w-full h-full object-cover object-[center_65%] group-hover:scale-105 transition-transform duration-300"
-                      onError={e => { const img = e.target as HTMLImageElement; if (img.src !== NO_IMAGE) img.src = NO_IMAGE }}
                     />
                     <span className="absolute top-2 left-2 w-7 h-7 rounded-full bg-brand-600 text-white text-xs font-black flex items-center justify-center shadow">
                       {i + 1}

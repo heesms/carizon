@@ -4,8 +4,7 @@ import { getRecommendations, type RecommendationResponse, type RecommendedCar } 
 import { toggleLike, getLike } from '@/api/likes'
 import AdSlot from '@/components/AdSlot'
 import { trackAiRecommendation, trackAiPromptClick } from '@/lib/analytics'
-
-const NO_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><text fill="#9ca3af" font-family="sans-serif" font-size="13" x="200" y="158" text-anchor="middle">이미지 없음</text><rect fill="#e5e7eb" x="170" y="110" width="60" height="38" rx="4"/></svg>')}`
+import CarImagePlaceholder from '@/components/CarImagePlaceholder'
 
 type Message =
   | { role: 'user'; text: string }
@@ -261,7 +260,7 @@ function RecommendedCarCard({
   fromLocation: Location
 }) {
   const [liked, setLiked]     = useState(false)
-  const [imgSrc, setImgSrc]   = useState(car.imageUrl || NO_IMAGE)
+  const [imgSrc, setImgSrc]   = useState<string | null>(car.imageUrl || null)
 
   useEffect(() => {
     if (!car.carId) return
@@ -313,9 +312,13 @@ function RecommendedCarCard({
         <div className="p-3 sm:p-4 flex gap-3 relative">
           {/* 이미지 */}
           <div className={`${cfg.imgClass} rounded-xl overflow-hidden bg-gray-50 shrink-0`}>
-            <img src={imgSrc} alt={`${car.maker} ${car.model}`}
-              className="w-full h-full object-cover object-[center_65%]"
-              onError={() => setImgSrc(NO_IMAGE)} />
+            {imgSrc ? (
+              <img src={imgSrc} alt={`${car.maker} ${car.model}`}
+                className="w-full h-full object-cover object-[center_65%]"
+                onError={() => setImgSrc(null)} />
+            ) : (
+              <CarImagePlaceholder />
+            )}
           </div>
 
           {/* 정보 */}
@@ -380,9 +383,13 @@ function RecommendedCarCard({
 
       {/* 이미지 */}
       <div className="w-16 h-12 sm:w-20 sm:h-14 rounded-lg overflow-hidden bg-gray-50 shrink-0">
-        <img src={imgSrc} alt={`${car.maker} ${car.model}`}
-          className="w-full h-full object-cover object-[center_65%]"
-          onError={() => setImgSrc(NO_IMAGE)} />
+        {imgSrc ? (
+          <img src={imgSrc} alt={`${car.maker} ${car.model}`}
+            className="w-full h-full object-cover object-[center_65%]"
+            onError={() => setImgSrc(null)} />
+        ) : (
+          <CarImagePlaceholder />
+        )}
       </div>
 
       {/* 정보 */}

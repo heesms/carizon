@@ -6,8 +6,7 @@ import LikeButton from '@/components/LikeButton'
 import AdSlot from '@/components/AdSlot'
 import { trackViewItem, trackPlatformLinkClick } from '@/lib/analytics'
 import { applyCarDetailSeo, clearCarDetailSeo } from '@/utils/seo'
-
-const NO_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><text fill="#9ca3af" font-family="sans-serif" font-size="13" x="200" y="158" text-anchor="middle">이미지 없음</text><rect fill="#e5e7eb" x="170" y="110" width="60" height="38" rx="4"/></svg>')}`
+import CarImagePlaceholder from '@/components/CarImagePlaceholder'
 
 /** null / "null" / 빈문자열 → undefined 로 정리 */
 const clean = (v: any): string | undefined => {
@@ -48,6 +47,30 @@ const PLATFORM_BAR_COLORS: Record<string, { bg: string; text: string; light: str
 }
 const barColor = (p: string) =>
   PLATFORM_BAR_COLORS[normalizePlatformKey(p)] ?? { bg: 'bg-gray-400', text: 'text-gray-700', light: 'bg-gray-50' }
+
+const buildCarShareText = (car: CarDetailData['car']) => {
+  const lines = ['🚗 Carizon 매물 공유']
+  const title = [clean(car.maker), clean(car.model), clean(car.trim)]
+    .filter(Boolean)
+    .join(' ')
+  if (title) {
+    lines.push(`차량: ${title}`)
+  }
+  if (car.year) {
+    lines.push(`연식: ${car.year}년식`)
+  }
+  if (car.mileage != null) {
+    lines.push(`주행거리: ${car.mileage.toLocaleString()}km`)
+  }
+  const fuel = clean(car.fuel)
+  if (fuel) {
+    lines.push(`연료: ${fuel}`)
+  }
+  if (car.price != null) {
+    lines.push(`가격: ${car.price.toLocaleString()}만원`)
+  }
+  return lines.join('\n')
+}
 
 const normalizeOptionText = (value: string) =>
   value.toLowerCase().replace(/[^0-9a-z가-힣]/g, '')
@@ -92,9 +115,10 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
   const isMobile = useIsMobile()
   const [detail, setDetail]   = useState<CarDetailData | null>(null)
   const [history, setHistory] = useState<PricePoint[]>([])
-  const [imgSrc, setImgSrc]   = useState(NO_IMAGE)
+  const [imgSrc, setImgSrc]   = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
+  const [shareMessage, setShareMessage] = useState<string | null>(null)
   const routeState = (location.state ?? {}) as { from?: string; source?: string }
   const source = routeState.source === 'ai'
     ? 'ai'
@@ -118,6 +142,37 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
     }
     if (from) { navigate(from); return }
     navigate('/search')
+  }
+
+  const handleShareCar = async () => {
+    if (!car) return
+    const shareText = buildCarShareText(car)
+    const shareUrl = window.location.href
+
+    try {
+      if ('share' in navigator) {
+        await navigator.share({
+          title: 'Carizon 매물',
+          text: shareText,
+          url: shareUrl,
+        })
+        return
+      }
+
+      await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`)
+      setShareMessage('링크를 클립보드에 복사했어요.')
+      setTimeout(() => setShareMessage(null), 1800)
+      return
+    } catch {
+      try {
+        await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`)
+        setShareMessage('공유할 수 없어 클립보드에 복사했어요.')
+      } catch {
+        setShareMessage('공유를 지원하지 않는 브라우저입니다.')
+      } finally {
+        setTimeout(() => setShareMessage(null), 1800)
+      }
+    }
   }
 
   const closeButton = (
@@ -145,7 +200,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
     if (!isModal) window.scrollTo(0, 0)
     setDetail(null)
     setHistory([])
-    setImgSrc(NO_IMAGE)
+    setImgSrc(null)
     setLoading(true)
     setError(null)
     getCarDetail(id)
@@ -301,12 +356,16 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
         <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
           <div className="card overflow-hidden">
             <div className="aspect-[4/3] bg-gray-50">
-              <img
-                src={imgSrc}
-                alt={[clean(car.maker), clean(car.model)].filter(Boolean).join(' ') || '차량'}
-                className="w-full h-full object-cover object-[center_65%]"
-                onError={() => setImgSrc(NO_IMAGE)}
-              />
+              {imgSrc ? (
+                <img
+                  src={imgSrc}
+                  alt={[clean(car.maker), clean(car.model)].filter(Boolean).join(' ') || '차량'}
+                  className="w-full h-full object-cover object-[center_65%]"
+                  onError={() => setImgSrc(null)}
+                />
+              ) : (
+                <CarImagePlaceholder />
+              )}
             </div>
             <div className="p-4 sm:p-5">
               <h1 className="text-xl sm:text-2xl font-black text-gray-900 mb-0.5">

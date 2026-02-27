@@ -3,13 +3,12 @@ import { Link, useLocation } from 'react-router-dom'
 import type { CarListItem } from '@/api/cars'
 import { getLike, toggleLike } from '@/api/likes'
 import { trackLike, trackSelectItem } from '@/lib/analytics'
+import CarImagePlaceholder from '@/components/CarImagePlaceholder'
 
-const NO_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#f3f4f6" width="400" height="300"/><text fill="#9ca3af" font-family="sans-serif" font-size="13" x="200" y="158" text-anchor="middle">이미지 없음</text><rect fill="#e5e7eb" x="170" y="110" width="60" height="38" rx="4"/></svg>')}`
-
-function imgSrc(item: CarListItem) {
+function getImgSrc(item: CarListItem): string | null {
   if (item.representativeImageUrl?.trim()) return item.representativeImageUrl
   if (item.modelCode) return `/image/car/model/${item.modelCode}.webp`
-  return NO_IMAGE
+  return null
 }
 
 function formatPrice(min?: number, max?: number) {
@@ -49,7 +48,7 @@ export default function CarCard({
   onLikeChanged,
 }: Props) {
   const location = useLocation()
-  const [src, setSrc] = useState(imgSrc(item))
+  const [src, setSrc] = useState<string | null>(getImgSrc(item))
   const [liked, setLiked] = useState(!!initialLiked)
   const [likeCount, setLikeCount] = useState(Number(likesCount ?? 0))
   const [likeBusy, setLikeBusy] = useState(false)
@@ -149,13 +148,17 @@ export default function CarCard({
     >
       {/* 이미지 */}
       <div className="relative aspect-[4/3] overflow-hidden bg-gray-50">
-        <img
-          src={src}
-          alt={`${item.maker} ${item.model}`}
-          className="w-full h-full object-cover object-center scale-[1.15] group-hover:scale-[1.25] transition-transform duration-300"
-          loading="lazy"
-          onError={() => { if (src !== NO_IMAGE) setSrc(NO_IMAGE) }}
-        />
+        {src ? (
+          <img
+            src={src}
+            alt={`${item.maker} ${item.model}`}
+            className="w-full h-full object-cover object-center scale-[1.15] group-hover:scale-[1.25] transition-transform duration-300"
+            loading="lazy"
+            onError={() => setSrc(null)}
+          />
+        ) : (
+          <CarImagePlaceholder />
+        )}
       </div>
 
       {/* 정보 */}
