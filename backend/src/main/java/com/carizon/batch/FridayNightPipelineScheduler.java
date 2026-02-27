@@ -98,7 +98,14 @@ public class FridayNightPipelineScheduler {
 
             currentStep = "3:/admin/pipeline/code-mapping-only?scope=FULL";
             long mappingStart = System.currentTimeMillis();
-            int mappedCount = runCodeMappingFull();
+            int mappedCount = 0;
+            try {
+                mappedCount = runCodeMappingFull();
+            } catch (Exception e) {
+                // 코드 매핑 실패해도 car_master 재생성은 계속 진행
+                log.warn("[friday-night] code-mapping step failed, continuing to rebuild-car-master: {}", e.getMessage(), e);
+                result.put("codeMappingError", e.getMessage());
+            }
             totalItems += Math.max(mappedCount, 0);
             result.put("codeMapping", Map.of(
                     "path", "/admin/pipeline/code-mapping-only?scope=FULL",
