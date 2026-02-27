@@ -1,18 +1,22 @@
 import 'dart:async';
-
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:package_info_plus/package_info_plus.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-import 'screens/settings_screen.dart';
-
 const String kHomeUrl = 'https://carizon.shop/';
-const String kInternalDomain = 'carizon.shop';
-const String kInquiryUrl = 'https://carizon.shop/';
+const String kHomeDomain = 'carizon.shop';
+const String kCarizonLogoAsset = 'assets/images/app_icon2.png';
+const Set<String> kInternalDomains = {
+  kHomeDomain,
+  'm.kbchachacha.com',
+  'charancha.com',
+  'www.chutcha.net',
+  'fem.encar.com',
+  'mycarsave.lotterentacar.net',
+  'm.kcar.com',
+};
 
 void main() {
   runApp(const CarizonApp());
@@ -43,7 +47,6 @@ class CarizonHomePage extends StatefulWidget {
 
 class _CarizonHomePageState extends State<CarizonHomePage> {
   final Connectivity _connectivity = Connectivity();
-  final WebViewCookieManager _cookieManager = WebViewCookieManager();
 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   late final WebViewController _controller;
@@ -51,15 +54,12 @@ class _CarizonHomePageState extends State<CarizonHomePage> {
   bool _isOffline = false;
   double _progress = 0;
   String _currentUrl = kHomeUrl;
-  String _versionLabel = '로딩 중...';
-  String _packageName = '';
 
   @override
   void initState() {
     super.initState();
     _initWebView();
     _initConnectivity();
-    _loadPackageInfo();
   }
 
   @override
@@ -113,6 +113,10 @@ class _CarizonHomePageState extends State<CarizonHomePage> {
             if (!mounted) {
               return;
             }
+            // 서브리소스 오류(ORB 차단 등)는 무시, 메인 프레임 오류만 표시
+            if (error.isForMainFrame != true) {
+              return;
+            }
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('페이지 로딩 오류: ${error.description}'),
@@ -156,7 +160,9 @@ class _CarizonHomePageState extends State<CarizonHomePage> {
     }
 
     final host = uri.host.toLowerCase();
-    return host == kInternalDomain || host.endsWith('.$kInternalDomain');
+    return kInternalDomains.any(
+      (domain) => host == domain || host.endsWith('.$domain'),
+    );
   }
 
   Future<void> _initConnectivity() async {
@@ -177,59 +183,54 @@ class _CarizonHomePageState extends State<CarizonHomePage> {
     });
   }
 
-  Future<void> _loadPackageInfo() async {
-    final info = await PackageInfo.fromPlatform();
-    if (!mounted) {
+  bool _isPlatformPage() {
+    final uri = Uri.tryParse(_currentUrl);
+    if (uri == null) {
+      return false;
+    }
+
+    if (!_isInternalUri(uri)) {
+      return false;
+    }
+
+    return !_isHomeHost(uri);
+  }
+
+  String _currentPlatformLabel() {
+    final uri = Uri.tryParse(_currentUrl);
+    if (uri == null) {
+      return '';
+    }
+
+    final host = uri.host.toLowerCase();
+    if (host.isEmpty) {
+      return '';
+    }
+
+    if (host.startsWith('www.')) {
+      return host.substring(4);
+    }
+    return host;
+  }
+
+  bool _isHomeHost(Uri uri) {
+    final host = uri.host.toLowerCase();
+    return host == kHomeDomain || host.endsWith('.$kHomeDomain');
+  }
+
+  Future<void> _closePlatformPage() async {
+    if (await _controller.canGoBack()) {
+      await _controller.goBack();
       return;
     }
-    setState(() {
-      _versionLabel = '${info.version}+${info.buildNumber}';
-      _packageName = info.packageName;
-    });
-  }
-
-  Future<void> _shareCurrentPage() async {
-    final currentUri = Uri.tryParse(_currentUrl) ?? Uri.parse(kHomeUrl);
-    await SharePlus.instance.share(
-      ShareParams(text: currentUri.toString(), subject: 'Carizon 페이지 공유'),
-    );
-  }
-
-  Future<void> _openSettings() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) => SettingsScreen(
-          appVersion: _versionLabel,
-          packageName: _packageName,
-          onClearCache: _clearWebCache,
-          onClearCookies: _clearCookies,
-          onOpenInquiry: _openInquiryLink,
-        ),
-      ),
-    );
-  }
-
-  Future<String> _clearWebCache() async {
-    await _controller.clearCache();
-    await _controller.clearLocalStorage();
-    return '웹 캐시를 삭제했습니다.';
-  }
-
-  Future<String> _clearCookies() async {
-    final deleted = await _cookieManager.clearCookies();
-    return deleted ? '쿠키를 삭제했습니다.' : '삭제할 쿠키가 없습니다.';
-  }
-
-  Future<String> _openInquiryLink() async {
-    final opened = await launchUrl(
-      Uri.parse(kInquiryUrl),
-      mode: LaunchMode.externalApplication,
-    );
-    return opened ? '문의 링크를 열었습니다.' : '문의 링크를 열 수 없습니다.';
+    await _controller.loadRequest(Uri.parse(kHomeUrl));
   }
 
   @override
   Widget build(BuildContext context) {
+    final showCloseButton = _isPlatformPage();
+    final showPlatformHeader = showCloseButton;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -243,21 +244,6 @@ class _CarizonHomePageState extends State<CarizonHomePage> {
         await SystemNavigator.pop();
       },
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Carizon'),
-          actions: [
-            IconButton(
-              tooltip: '현재 페이지 공유',
-              onPressed: _shareCurrentPage,
-              icon: const Icon(Icons.share_outlined),
-            ),
-            IconButton(
-              tooltip: '설정',
-              onPressed: _openSettings,
-              icon: const Icon(Icons.settings_outlined),
-            ),
-          ],
-        ),
         body: SafeArea(
           child: Column(
             children: [
@@ -267,12 +253,144 @@ class _CarizonHomePageState extends State<CarizonHomePage> {
                     _controller.reload();
                   },
                 ),
-              if (_progress < 1.0)
+                if (_progress < 1.0)
                 LinearProgressIndicator(
                   value: _progress == 0 ? null : _progress,
                   minHeight: 3,
                 ),
-              Expanded(child: WebViewWidget(controller: _controller)),
+              if (showPlatformHeader)
+                _PlatformBrowserHeader(
+                  onClose: _closePlatformPage,
+                  label: _currentPlatformLabel(),
+                ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    WebViewWidget(controller: _controller),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CarizonLogoBadge extends StatelessWidget {
+  const _CarizonLogoBadge({this.size = 32});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: size,
+      width: size,
+      child: Image.asset(
+        kCarizonLogoAsset,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) {
+          return const Icon(Icons.directions_car_filled, size: 18, color: Color(0xFF1F2937));
+        },
+      ),
+    );
+  }
+}
+
+class _FloatingToolbarButton extends StatelessWidget {
+  const _FloatingToolbarButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.black.withOpacity(0.82),
+        boxShadow: const [
+          BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2)),
+        ],
+      ),
+      child: IconButton(
+        visualDensity: VisualDensity.compact,
+        tooltip: tooltip,
+        color: Colors.white,
+        icon: Icon(icon),
+        onPressed: onPressed,
+      ),
+    );
+  }
+}
+
+class _PlatformBrowserHeader extends StatelessWidget {
+  const _PlatformBrowserHeader({required this.onClose, required this.label});
+
+  final VoidCallback onClose;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      height: 52,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 12,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Row(
+            children: [
+              const _CarizonLogoBadge(size: 28),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '외부 플랫폼',
+                      style: TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+                    ),
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1F2937),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              _FloatingToolbarButton(
+                icon: Icons.close,
+                tooltip: '이전 페이지로',
+                onPressed: onClose,
+              ),
             ],
           ),
         ),

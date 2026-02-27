@@ -195,7 +195,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
         <button
           type="button"
           onClick={() => handleShareCar(car)}
-          className="btn-ghost"
+          className="btn-ghost text-gray-700"
           aria-label="매물 공유"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -340,38 +340,40 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
   const tableSpecs = specs.filter(s => !heroLabels.includes(s.label))
 
   return (
-    <div className={`space-y-4 sm:space-y-6 animate-fade-in ${isModal ? 'px-3 sm:px-6 lg:px-7 pb-8' : ''}`}>
+      <div className={`space-y-4 sm:space-y-6 animate-fade-in ${isModal ? 'px-3 sm:px-6 lg:px-7 pb-8' : ''}`}>
       {modalHeader}
 
       {/* PC 비모달 뒤로가기 breadcrumb */}
       {!isModal && (
-        <div className="hidden lg:flex items-center gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={handleClose}
+              className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors group"
+            >
+              <svg className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              목록으로
+            </button>
+            <span className="text-gray-200 select-none">|</span>
+            <span className="text-sm font-semibold text-gray-700 truncate">
+              {[clean(car.maker), clean(car.model)].filter(Boolean).join(' ')}
+              {clean(car.trim) && <span className="text-gray-400 font-normal ml-1">{car.trim}</span>}
+            </span>
+          </div>
           <button
             type="button"
-            onClick={handleClose}
-            className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors group"
+            onClick={() => handleShareCar(car)}
+            className="btn-ghost text-gray-700"
+            aria-label="매물 공유"
           >
-            <svg className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
             </svg>
-            목록으로
           </button>
-          <span className="text-gray-200 select-none">|</span>
-          <span className="text-sm font-semibold text-gray-700 truncate">
-            {[clean(car.maker), clean(car.model)].filter(Boolean).join(' ')}
-            {clean(car.trim) && <span className="text-gray-400 font-normal ml-1">{car.trim}</span>}
-          </span>
-        <button
-          type="button"
-          onClick={() => handleShareCar(car)}
-          className="btn-ghost"
-          aria-label="매물 공유"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-          </svg>
-        </button>
         </div>
       )}
 
@@ -421,17 +423,6 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                       </div>
                     </div>
                     <div className="shrink-0 pb-0.5 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleShareCar(car)}
-                        className="btn-ghost"
-                        aria-label="매물 공유"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                            d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                        </svg>
-                      </button>
                       <LikeButton carId={Number(id)} />
                     </div>
                   </div>
