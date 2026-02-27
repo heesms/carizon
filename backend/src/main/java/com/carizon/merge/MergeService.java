@@ -1421,32 +1421,6 @@ public class MergeService {
                 return null;
             }));
 
-        // car_id 링크 후: ENCAR 확장 필드(seat/사고) 동기화
-        runWithRetry(3, 200L, () ->
-            requiresNew().execute(status -> {
-                int synced = jdbc.update("""
-                    UPDATE car_master cm
-                    INNER JOIN (
-                        SELECT car_id,
-                               MAX(seat_count) AS seat_count,
-                               MAX(my_accident_cnt) AS my_accident_cnt,
-                               MAX(flood_total_loss_cnt) AS flood_total_loss_cnt
-                        FROM platform_car
-                        WHERE car_id IS NOT NULL
-                        GROUP BY car_id
-                    ) pc ON pc.car_id = cm.car_id
-                    SET cm.seat_count = COALESCE(pc.seat_count, cm.seat_count),
-                        cm.my_accident_cnt = COALESCE(pc.my_accident_cnt, cm.my_accident_cnt),
-                        cm.flood_total_loss_cnt = COALESCE(pc.flood_total_loss_cnt, cm.flood_total_loss_cnt),
-                        cm.updated_at = NOW()
-                    WHERE (pc.seat_count IS NOT NULL AND (cm.seat_count IS NULL OR cm.seat_count <> pc.seat_count))
-                       OR (pc.my_accident_cnt IS NOT NULL AND (cm.my_accident_cnt IS NULL OR cm.my_accident_cnt <> pc.my_accident_cnt))
-                       OR (pc.flood_total_loss_cnt IS NOT NULL AND (cm.flood_total_loss_cnt IS NULL OR cm.flood_total_loss_cnt <> pc.flood_total_loss_cnt))
-                    """);
-                if (synced > 0) log.info("[merge] sync car_master seat/accident fields from platform_car: {} rows", synced);
-                return null;
-            }));
-
         // car_id 링크 후: option_array/sel_option_array 동기화 (최신 ENCAR 계열 우선)
         runWithRetry(3, 200L, () ->
             requiresNew().execute(status -> {
