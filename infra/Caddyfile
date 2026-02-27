@@ -5,6 +5,10 @@
     handle @api {
       reverse_proxy backend:8080
     }
+    @seo path /sitemap.xml /robots.txt /sitemaps/*
+    handle @seo {
+      reverse_proxy backend:8080
+    }
     handle {
       reverse_proxy frontend:80
     }
