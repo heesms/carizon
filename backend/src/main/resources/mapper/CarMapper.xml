@@ -502,7 +502,6 @@
   <select id="selectSitemapCarIds" resultType="map">
     SELECT car_id AS carId, updated_at AS updatedAt
     FROM car_master
-    WHERE status != 'SOLD'
     ORDER BY car_id DESC
     LIMIT 45000
   </select>
