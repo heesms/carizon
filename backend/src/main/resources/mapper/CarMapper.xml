@@ -498,12 +498,5 @@
              m.maker_name, mo.model_name, t.trim_name
   </select>
 
-  <!-- 사이트맵용: car_id + updated_at 경량 조회 (판매 완료 제외, 최신순) -->
-  <select id="selectSitemapCarIds" resultType="map">
-    SELECT car_id AS carId, updated_at AS updatedAt
-    FROM car_master
-    ORDER BY car_id DESC
-    LIMIT 45000
-  </select>
 
 </mapper>
