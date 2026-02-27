@@ -144,9 +144,9 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
     navigate('/search')
   }
 
-  const handleShareCar = async () => {
-    if (!car) return
-    const shareText = buildCarShareText(car)
+  const handleShareCar = async (carData?: CarDetailData['car']) => {
+    if (!carData) return
+    const shareText = buildCarShareText(carData)
     const shareUrl = window.location.href
 
     try {
@@ -191,7 +191,20 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
   const modalHeader = isModal ? (
     <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-4 sm:px-6 py-2.5 flex items-center justify-between">
       <span className="text-sm font-semibold text-gray-700 truncate mr-3">차량 상세</span>
-      {closeButton}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => handleShareCar(car)}
+          className="btn-ghost"
+          aria-label="매물 공유"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+          </svg>
+        </button>
+        {closeButton}
+      </div>
     </div>
   ) : null
 
@@ -348,6 +361,17 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
             {[clean(car.maker), clean(car.model)].filter(Boolean).join(' ')}
             {clean(car.trim) && <span className="text-gray-400 font-normal ml-1">{car.trim}</span>}
           </span>
+        <button
+          type="button"
+          onClick={() => handleShareCar(car)}
+          className="btn-ghost"
+          aria-label="매물 공유"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+          </svg>
+        </button>
         </div>
       )}
 
@@ -383,22 +407,38 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
 
               {/* 가격 + 좋아요 */}
               {minPrice && (
-                <div className="flex items-end justify-between gap-2 mb-1">
-                  <div>
-                    <div className="text-xs text-gray-400 mb-0.5">
-                      {hasUniqueLowestPrice ? '플랫폼 최저가' : '플랫폼 최저가격'}
+                <>
+                  <div className="flex items-end justify-between gap-2 mb-1">
+                    <div>
+                      <div className="text-xs text-gray-400 mb-0.5">
+                        {hasUniqueLowestPrice ? '플랫폼 최저가' : '플랫폼 최저가격'}
+                      </div>
+                      <div className="text-2xl sm:text-3xl font-black text-brand-600">
+                        {minPrice.toLocaleString()}만원
+                        {maxPrice && maxPrice !== minPrice && (
+                          <span className="text-base sm:text-lg text-gray-400 font-medium ml-1">~ {maxPrice.toLocaleString()}만원</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-2xl sm:text-3xl font-black text-brand-600">
-                      {minPrice.toLocaleString()}만원
-                      {maxPrice && maxPrice !== minPrice && (
-                        <span className="text-base sm:text-lg text-gray-400 font-medium ml-1">~ {maxPrice.toLocaleString()}만원</span>
-                      )}
+                    <div className="shrink-0 pb-0.5 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleShareCar(car)}
+                        className="btn-ghost"
+                        aria-label="매물 공유"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                            d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                        </svg>
+                      </button>
+                      <LikeButton carId={Number(id)} />
                     </div>
                   </div>
-                  <div className="shrink-0 pb-0.5">
-                    <LikeButton carId={Number(id)} />
-                  </div>
-                </div>
+                  {shareMessage && (
+                    <p className="text-xs text-gray-500 mt-2 px-1">{shareMessage}</p>
+                  )}
+                </>
               )}
 
               {/* PC 전용 핵심 스펙 블록 */}
