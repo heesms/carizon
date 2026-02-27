@@ -34,4 +34,6 @@ public interface CarMapper {
   List<Map<String,Object>> selectCarsForIndexingUpdated(Map<String,Object> params);
   List<Map<String,Object>> selectCarsForIndexingById(Map<String,Object> params);
   List<Map<String,Object>> selectCarsForIndexingByIds(Map<String,Object> params);
+  /** 사이트맵용: car_id, updated_at 경량 조회 (판매 완료 제외) */
+  List<Map<String,Object>> selectSitemapCarIds();
 }
