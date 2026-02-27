@@ -8,6 +8,8 @@ import 'package:webview_flutter/webview_flutter.dart';
 const String kHomeUrl = 'https://carizon.shop/';
 const String kHomeDomain = 'carizon.shop';
 const String kCarizonLogoAsset = 'assets/images/app_icon2.png';
+const String kLaunchMessage = '중고차, 한 번에 비교하세요';
+const Duration kLaunchDuration = Duration(milliseconds: 1500);
 const Set<String> kInternalDomains = {
   kHomeDomain,
   'm.kbchachacha.com',
@@ -54,12 +56,16 @@ class _CarizonHomePageState extends State<CarizonHomePage> {
   bool _isOffline = false;
   double _progress = 0;
   String _currentUrl = kHomeUrl;
+  bool _isLaunching = true;
+  late final DateTime _launchStartedAt;
 
   @override
   void initState() {
     super.initState();
+    _launchStartedAt = DateTime.now();
     _initWebView();
     _initConnectivity();
+    _hideLaunchScreenAfterDelay();
   }
 
   @override
@@ -91,6 +97,7 @@ class _CarizonHomePageState extends State<CarizonHomePage> {
               _currentUrl = url;
               _progress = 1.0;
             });
+            _dismissLaunchScreen();
           },
           onProgress: (progress) {
             if (!mounted) {
@@ -183,6 +190,27 @@ class _CarizonHomePageState extends State<CarizonHomePage> {
     });
   }
 
+  void _hideLaunchScreenAfterDelay() {
+    Future.delayed(kLaunchDuration, () {
+      _dismissLaunchScreen();
+    });
+  }
+
+  void _dismissLaunchScreen() {
+    if (!_isLaunching) return;
+
+    final elapsed = DateTime.now().difference(_launchStartedAt).inMilliseconds;
+    final remain = kLaunchDuration.inMilliseconds - elapsed;
+    final delay = remain > 0 ? remain : 0;
+
+    Future.delayed(Duration(milliseconds: delay), () {
+      if (!mounted || !_isLaunching) return;
+      setState(() {
+        _isLaunching = false;
+      });
+    });
+  }
+
   bool _isPlatformPage() {
     final uri = Uri.tryParse(_currentUrl);
     if (uri == null) {
@@ -244,34 +272,39 @@ class _CarizonHomePageState extends State<CarizonHomePage> {
         await SystemNavigator.pop();
       },
       child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            children: [
-              if (_isOffline)
-                _OfflineBanner(
-                  onRefresh: () {
-                    _controller.reload();
-                  },
-                ),
-                if (_progress < 1.0)
-                LinearProgressIndicator(
-                  value: _progress == 0 ? null : _progress,
-                  minHeight: 3,
-                ),
-              if (showPlatformHeader)
-                _PlatformBrowserHeader(
-                  onClose: _closePlatformPage,
-                  label: _currentPlatformLabel(),
-                ),
-              Expanded(
-                child: Stack(
-                  children: [
-                    WebViewWidget(controller: _controller),
-                  ],
-                ),
+        body: Stack(
+          children: [
+            SafeArea(
+              child: Column(
+                children: [
+                  if (_isOffline)
+                    _OfflineBanner(
+                      onRefresh: () {
+                        _controller.reload();
+                      },
+                    ),
+                  if (_progress < 1.0)
+                    LinearProgressIndicator(
+                      value: _progress == 0 ? null : _progress,
+                      minHeight: 3,
+                    ),
+                  if (showPlatformHeader)
+                    _PlatformBrowserHeader(
+                      onClose: _closePlatformPage,
+                      label: _currentPlatformLabel(),
+                    ),
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        WebViewWidget(controller: _controller),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            if (_isLaunching) const _LaunchSplashScreen(),
+          ],
         ),
       ),
     );
@@ -416,6 +449,84 @@ class _OfflineBanner extends StatelessWidget {
             const SizedBox(width: 8),
             const Expanded(child: Text('네트워크 연결이 끊겼습니다.')),
             TextButton(onPressed: onRefresh, child: const Text('새로고침')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LaunchSplashScreen extends StatelessWidget {
+  const _LaunchSplashScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFFBFDFF), Color(0xFFEFF5FF)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 108,
+              height: 108,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+                border: Border.all(color: Color(0x224B5AF6)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x22000000),
+                    blurRadius: 18,
+                    spreadRadius: 0,
+                    offset: Offset(0, 10),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Image.asset(
+                kCarizonLogoAsset,
+                fit: BoxFit.contain,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '카리즌',
+              style: TextStyle(
+                fontSize: 30,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.6,
+                height: 1.1,
+                color: Colors.grey.shade900,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              kLaunchMessage,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey.shade600,
+                letterSpacing: 0.08,
+              ),
+            ),
+            const SizedBox(height: 22),
+            const Text(
+              '중고차 검색은 Carizon과 함께',
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.7,
+              ),
+            ),
           ],
         ),
       ),
