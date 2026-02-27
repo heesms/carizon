@@ -77,63 +77,84 @@ public class FridayNightPipelineScheduler {
         try {
             log.info("[friday-night] start: bizDate={}", bizDate);
 
+            // STEP 1: 크롤링
             currentStep = "1:/admin/crawl/runAll";
+            String stepId1 = apiRunRecorder.recordStart("/admin/crawl/runAll", "SCHEDULED", "friday-crawl", runId);
             long crawlStart = System.currentTimeMillis();
-            crawlJobService.runDaily();
-            result.put("crawl", Map.of(
-                    "path", "/admin/crawl/runAll",
-                    "durationMs", System.currentTimeMillis() - crawlStart
-            ));
+            try {
+                crawlJobService.runDaily();
+                long crawlMs = System.currentTimeMillis() - crawlStart;
+                result.put("crawl", Map.of("path", "/admin/crawl/runAll", "durationMs", crawlMs));
+                apiRunRecorder.recordSuccess(stepId1, 0, result.get("crawl"));
+            } catch (Exception e) {
+                apiRunRecorder.recordFail(stepId1, 0, e);
+                throw e;
+            }
 
+            // STEP 2: platform_car 재생성
             currentStep = "2:/admin/pipeline/rebuild-platform-car";
+            String stepId2 = apiRunRecorder.recordStart("/admin/pipeline/rebuild-platform-car", "SCHEDULED", "friday-rebuild-platform-car", runId);
             long rebuildPlatformStart = System.currentTimeMillis();
-            Map<String, Object> platformResult = mergeService.rebuildFromScratch(bizDate);
-            int platformCarCount = toInt(platformResult.get("platformCarCount"));
-            totalItems += Math.max(platformCarCount, 0);
-            result.put("rebuildPlatformCar", Map.of(
-                    "path", "/admin/pipeline/rebuild-platform-car",
-                    "platformCarCount", platformCarCount,
-                    "durationMs", System.currentTimeMillis() - rebuildPlatformStart
-            ));
+            try {
+                Map<String, Object> platformResult = mergeService.rebuildFromScratch(bizDate);
+                int platformCarCount = toInt(platformResult.get("platformCarCount"));
+                totalItems += Math.max(platformCarCount, 0);
+                long rebuildPlatformMs = System.currentTimeMillis() - rebuildPlatformStart;
+                result.put("rebuildPlatformCar", Map.of("path", "/admin/pipeline/rebuild-platform-car", "platformCarCount", platformCarCount, "durationMs", rebuildPlatformMs));
+                apiRunRecorder.recordSuccess(stepId2, platformCarCount, result.get("rebuildPlatformCar"));
+            } catch (Exception e) {
+                apiRunRecorder.recordFail(stepId2, 0, e);
+                throw e;
+            }
 
+            // STEP 3: 코드 매핑 (실패해도 계속)
             currentStep = "3:/admin/pipeline/code-mapping-only?scope=FULL";
+            String stepId3 = apiRunRecorder.recordStart("/admin/pipeline/code-mapping-only", "SCHEDULED", "friday-code-mapping", runId);
             long mappingStart = System.currentTimeMillis();
             int mappedCount = 0;
             try {
                 mappedCount = runCodeMappingFull();
+                totalItems += Math.max(mappedCount, 0);
+                long mappingMs = System.currentTimeMillis() - mappingStart;
+                result.put("codeMapping", Map.of("path", "/admin/pipeline/code-mapping-only?scope=FULL", "mappedCount", mappedCount, "scope", CodeMappingService.Scope.FULL.toString(), "durationMs", mappingMs));
+                apiRunRecorder.recordSuccess(stepId3, mappedCount, result.get("codeMapping"));
             } catch (Exception e) {
-                // 코드 매핑 실패해도 car_master 재생성은 계속 진행
                 log.warn("[friday-night] code-mapping step failed, continuing to rebuild-car-master: {}", e.getMessage(), e);
                 result.put("codeMappingError", e.getMessage());
+                apiRunRecorder.recordFail(stepId3, mappedCount, e);
             }
-            totalItems += Math.max(mappedCount, 0);
-            result.put("codeMapping", Map.of(
-                    "path", "/admin/pipeline/code-mapping-only?scope=FULL",
-                    "mappedCount", mappedCount,
-                    "scope", CodeMappingService.Scope.FULL.toString(),
-                    "durationMs", System.currentTimeMillis() - mappingStart
-            ));
 
+            // STEP 4: car_master 재생성
             currentStep = "4:/admin/pipeline/rebuild-car-master";
+            String stepId4 = apiRunRecorder.recordStart("/admin/pipeline/rebuild-car-master", "SCHEDULED", "friday-rebuild-car-master", runId);
             long rebuildMasterStart = System.currentTimeMillis();
-            int carMasterCount = masterMergeService.rebuildCarMasterFromScratch(bizDate);
-            int masterUpdatedCount = masterMergeService.updateCarMasterFromMapping();
-            int linkedCount = mergeService.linkToMaster();
-            totalItems += Math.max(carMasterCount, 0);
-            totalItems += Math.max(linkedCount, 0);
-            result.put("rebuildCarMaster", Map.of(
-                    "path", "/admin/pipeline/rebuild-car-master",
-                    "carMasterCount", carMasterCount,
-                    "updatedCount", masterUpdatedCount,
-                    "linkedCount", linkedCount,
-                    "durationMs", System.currentTimeMillis() - rebuildMasterStart
-            ));
+            try {
+                int carMasterCount = masterMergeService.rebuildCarMasterFromScratch(bizDate);
+                int masterUpdatedCount = masterMergeService.updateCarMasterFromMapping();
+                int linkedCount = mergeService.linkToMaster();
+                totalItems += Math.max(carMasterCount, 0);
+                totalItems += Math.max(linkedCount, 0);
+                long rebuildMasterMs = System.currentTimeMillis() - rebuildMasterStart;
+                result.put("rebuildCarMaster", Map.of("path", "/admin/pipeline/rebuild-car-master", "carMasterCount", carMasterCount, "updatedCount", masterUpdatedCount, "linkedCount", linkedCount, "durationMs", rebuildMasterMs));
+                apiRunRecorder.recordSuccess(stepId4, carMasterCount, result.get("rebuildCarMaster"));
+            } catch (Exception e) {
+                apiRunRecorder.recordFail(stepId4, 0, e);
+                throw e;
+            }
 
+            // STEP 5: ES 재인덱스 + 임베딩 병렬
             currentStep = "PARALLEL:/admin/search/reindex + /admin/embedding/reset-and-all";
-            Map<String, Object> parallelResult = runReindexAndEmbeddingInParallel();
-            totalItems += toInt(parallelResult.get("indexedCount"));
-            totalItems += toInt(parallelResult.get("embeddedCount"));
-            result.put("parallel", parallelResult);
+            String stepId5 = apiRunRecorder.recordStart("/admin/search/reindex+embedding", "SCHEDULED", "friday-reindex-embedding", runId);
+            try {
+                Map<String, Object> parallelResult = runReindexAndEmbeddingInParallel();
+                totalItems += toInt(parallelResult.get("indexedCount"));
+                totalItems += toInt(parallelResult.get("embeddedCount"));
+                result.put("parallel", parallelResult);
+                apiRunRecorder.recordSuccess(stepId5, toInt(parallelResult.get("indexedCount")) + toInt(parallelResult.get("embeddedCount")), parallelResult);
+            } catch (Exception e) {
+                apiRunRecorder.recordFail(stepId5, 0, e);
+                throw e;
+            }
 
             long totalDurationMs = System.currentTimeMillis() - totalStart;
             result.put("bizDate", bizDate.toString());

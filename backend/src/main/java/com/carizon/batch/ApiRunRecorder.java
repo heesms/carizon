@@ -31,14 +31,21 @@ public class ApiRunRecorder {
      * @return runId 실행 ID
      */
     public String recordStart(String apiPath, String apiMethod, String source) {
+        return recordStart(apiPath, apiMethod, source, null);
+    }
+
+    /**
+     * 스텝 시작 기록 (parent_run_id 포함)
+     */
+    public String recordStart(String apiPath, String apiMethod, String source, String parentRunId) {
         String runId = UUID.randomUUID().toString();
         Instant startedAt = Instant.now();
-        
+
         jdbc.update(
-                "INSERT INTO api_run(run_id, api_path, api_method, source, status, started_at) VALUES (?,?,?,?,?,?)",
-                runId, apiPath, apiMethod, source, "STARTED", Timestamp.from(startedAt)
+                "INSERT INTO api_run(run_id, api_path, api_method, source, status, started_at, parent_run_id) VALUES (?,?,?,?,?,?,?)",
+                runId, apiPath, apiMethod, source, "STARTED", Timestamp.from(startedAt), parentRunId
         );
-        
+
         log.info("[API-RUN] start runId={} source={} apiPath={} started={}", runId, source, apiPath, startedAt);
         return runId;
     }
