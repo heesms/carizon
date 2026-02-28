@@ -54,7 +54,7 @@ const likeHeaders = (): HeadersInit => ({
   'X-Client-Id': getClientId(),
 })
 
-const WEEKLY_BEST_CACHE_TTL_MS = 5 * 60 * 1000
+const WEEKLY_BEST_CACHE_TTL_MS = 60 * 60 * 1000
 let weeklyBestCache: unknown[] | null = null
 let weeklyBestCachedAt = 0
 let weeklyBestPromise: Promise<unknown[]> | null = null
