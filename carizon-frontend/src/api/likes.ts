@@ -54,6 +54,11 @@ const likeHeaders = (): HeadersInit => ({
   'X-Client-Id': getClientId(),
 })
 
+const WEEKLY_BEST_CACHE_TTL_MS = 5 * 60 * 1000
+let weeklyBestCache: unknown[] | null = null
+let weeklyBestCachedAt = 0
+let weeklyBestPromise: Promise<unknown[]> | null = null
+
 export type LikeInfo = { liked: boolean; count: number }
 export type MyLikesInfo = { carIds: number[]; counts: Record<number, number> }
 export type MyLikedCar = CarListItem & { likesCount?: number }
@@ -75,5 +80,22 @@ export const getMyLikes = (limit = 100): Promise<MyLikesInfo> =>
 export const getMyLikedCars = (limit = 100): Promise<MyLikedCar[]> =>
   fetch(`/api/likes/me/cars?limit=${encodeURIComponent(String(limit))}`, { headers: likeHeaders() }).then(j)
 
-export const getWeeklyBest = () =>
-  fetch('/api/recommendation/weekly-best/all').then(j)
+export const getWeeklyBest = () => {
+  const now = Date.now()
+  if (weeklyBestCache && now - weeklyBestCachedAt < WEEKLY_BEST_CACHE_TTL_MS) {
+    return Promise.resolve(weeklyBestCache)
+  }
+  if (weeklyBestPromise) return weeklyBestPromise
+  weeklyBestPromise = fetch('/api/recommendation/weekly-best/all')
+    .then(j)
+    .then((data: unknown) => {
+      const rows = Array.isArray(data) ? data as unknown[] : []
+      weeklyBestCache = rows
+      weeklyBestCachedAt = Date.now()
+      return rows
+    })
+    .finally(() => {
+      weeklyBestPromise = null
+    })
+  return weeklyBestPromise
+}
