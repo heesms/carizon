@@ -48,10 +48,10 @@ public class SlackNotificationService {
                     .build();
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (res.statusCode() != 200) {
-                log.warn("[slack] send failed: status={} body={}", res.statusCode(), res.body());
+                log.warn("[slack-notify] send failed: status={} body={}", res.statusCode(), res.body());
             }
         } catch (Exception e) {
-            log.warn("[slack] send error: {}", e.getMessage());
+            log.warn("[slack-notify] send error: {}", e.getMessage());
         }
     }
 

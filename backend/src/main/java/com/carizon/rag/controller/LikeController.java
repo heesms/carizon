@@ -1,6 +1,7 @@
 package com.carizon.rag.controller;
 
 import com.carizon.common.dto.ApiResponse;
+import com.carizon.notification.VisitorNotificationService;
 import com.carizon.rag.service.LikeService;
 import com.carizon.search.service.ElasticsearchCarSearchService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -30,6 +31,7 @@ public class LikeController {
     
     private final LikeService likeService;
     private final ElasticsearchCarSearchService elasticsearchCarSearchService;
+    private final VisitorNotificationService visitorNotificationService;
     private static final Pattern SAFE_CLIENT_ID = Pattern.compile("^[A-Za-z0-9_-]{8,128}$");
     private static final String CLIENT_ID_COOKIE_NAME = "carizon_client_id";
     
@@ -72,9 +74,15 @@ public class LikeController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> addLike(
             @PathVariable Long carId,
             HttpServletRequest request) {
-        
+
         String userId = getUserId(request);
-        String carNo = resolveCarNo(carId);
+
+        // ES 조회 (carNo 추출 + 알림용 차량 정보)
+        List<Map<String, Object>> carRows = (carId != null && carId > 0)
+                ? elasticsearchCarSearchService.findCarsByIds(List.of(carId))
+                : List.of();
+        String carNo = carRows.isEmpty() ? null : normalizeCarNo(asText(carRows.get(0).get("carNo")));
+
         if (carNo == null) {
             return ResponseEntity.ok(ApiResponse.success(Map.of(
                 "liked", false,
@@ -84,12 +92,33 @@ public class LikeController {
 
         boolean liked = likeService.toggleLike(carNo, userId);
         long count = likeService.getLikeCount(carNo);
-        
+
         Map<String, Object> result = Map.of(
             "liked", liked,
             "count", count
         );
-        
+
+        // Slack 알림
+        try {
+            Map<String, Object> car = carRows.get(0);
+            String maker = asText(car.get("maker"));
+            String model = asText(car.get("model"));
+            Object year = car.get("year");
+            Object priceMin = car.get("priceMin");
+            String carInfo = String.format("carId=%d %s %s %s년식 %s만원",
+                    carId,
+                    maker != null ? maker : "",
+                    model != null ? model : "",
+                    year != null ? year : "",
+                    priceMin != null ? priceMin : "-");
+            String ip = VisitorNotificationService.extractClientIp(request);
+            String ua = request.getHeader("User-Agent");
+            visitorNotificationService.notifyUserAction(ip, ua, "❤️", "찜 토글",
+                    String.format("🚗 %s\n👤 userId: %s\n상태: %s", carInfo, userId, liked ? "추가됨" : "취소됨"));
+        } catch (Exception e) {
+            log.warn("[slack-notify] like notify error: {}", e.getMessage());
+        }
+
         return ResponseEntity.ok(ApiResponse.success(result));
     }
     

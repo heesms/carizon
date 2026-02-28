@@ -1,5 +1,6 @@
 package com.carizon.batch;
 
+import com.carizon.notification.SlackNotificationService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -10,10 +11,11 @@ import org.springframework.stereotype.Component;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * API 호출 추적 서비스
- * 파이프라인 API 실행 이력을 기록합니다.
+ * API 호출 추적 서비스.
+ * 파이프라인 API 실행 이력을 기록하고 Slack으로 시작/완료/실패 알림을 발송합니다.
  */
 @Slf4j
 @Component
@@ -21,7 +23,11 @@ import java.util.UUID;
 public class ApiRunRecorder {
 
     private final JdbcTemplate jdbc;
+    private final SlackNotificationService slack;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    // runId → source 캐시 (success/fail 시 Slack 메시지에 source 표시)
+    private final ConcurrentHashMap<String, String> runSourceCache = new ConcurrentHashMap<>();
 
     /**
      * API 호출 시작 기록
@@ -47,6 +53,8 @@ public class ApiRunRecorder {
         );
 
         log.info("[API-RUN] start runId={} source={} apiPath={} started={}", runId, source, apiPath, startedAt);
+        runSourceCache.put(runId, source);
+        slackAsync(String.format("⏳ *[배치 시작]* `%s`\n🔗 %s", source, apiPath));
         return runId;
     }
 
@@ -59,7 +67,7 @@ public class ApiRunRecorder {
     public void recordSuccess(String runId, int totalItems, Object result) {
         Instant endedAt = Instant.now();
         String resultJson = null;
-        
+
         if (result != null) {
             try {
                 resultJson = objectMapper.writeValueAsString(result);
@@ -67,20 +75,25 @@ public class ApiRunRecorder {
                 log.warn("[API-RUN] Failed to serialize result: {}", e.getMessage());
             }
         }
-        
+
         // started_at으로부터 duration 계산
         Long durationMs = jdbc.queryForObject(
                 "SELECT TIMESTAMPDIFF(MICROSECOND, started_at, ?) / 1000 FROM api_run WHERE run_id = ?",
                 Long.class, Timestamp.from(endedAt), runId
         );
-        
+
         jdbc.update(
                 "UPDATE api_run SET ended_at=?, duration_ms=?, total_items=?, status='SUCCESS', result_json=? WHERE run_id=?",
                 Timestamp.from(endedAt), durationMs, totalItems, resultJson, runId
         );
-        
-        log.info("[API-RUN] success runId={} totalItems={} duration={}ms ended={}", 
+
+        log.info("[API-RUN] success runId={} totalItems={} duration={}ms ended={}",
                 runId, totalItems, durationMs, endedAt);
+
+        String source = runSourceCache.remove(runId);
+        String dur = formatDuration(durationMs != null ? durationMs : 0);
+        slackAsync(String.format("✅ *[배치 완료]* `%s`\n📦 %,d건 · ⏱️ %s",
+                source != null ? source : runId, totalItems, dur));
     }
 
     /**
@@ -95,20 +108,25 @@ public class ApiRunRecorder {
         if (safe != null && safe.length() > 2000) {
             safe = safe.substring(0, 2000) + "... (truncated)";
         }
-        
+
         // started_at으로부터 duration 계산
         Long durationMs = jdbc.queryForObject(
                 "SELECT TIMESTAMPDIFF(MICROSECOND, started_at, ?) / 1000 FROM api_run WHERE run_id = ?",
                 Long.class, Timestamp.from(endedAt), runId
         );
-        
+
         jdbc.update(
                 "UPDATE api_run SET ended_at=?, duration_ms=?, total_items=?, status='FAIL', message=? WHERE run_id=?",
                 Timestamp.from(endedAt), durationMs, totalItems, safe, runId
         );
-        
-        log.warn("[API-RUN] fail runId={} totalItems={} duration={}ms msg={}", 
+
+        log.warn("[API-RUN] fail runId={} totalItems={} duration={}ms msg={}",
                 runId, totalItems, durationMs, safe);
+
+        String source = runSourceCache.remove(runId);
+        String errShort = safe != null && safe.length() > 200 ? safe.substring(0, 200) + "…" : safe;
+        slackAsync(String.format("❌ *[배치 실패]* `%s`\n📦 %,d건\n🔴 %s",
+                source != null ? source : runId, totalItems, errShort));
     }
 
     /**
@@ -123,5 +141,21 @@ public class ApiRunRecorder {
             errorMessage += " (caused by: " + exception.getCause().getMessage() + ")";
         }
         recordFail(runId, totalItems, errorMessage);
+    }
+
+    private void slackAsync(String msg) {
+        if (!slack.isEnabled()) return;
+        Thread.ofVirtual().start(() -> {
+            try { slack.send(msg); } catch (Exception e) {
+                log.warn("[slack-notify] batch notify error: {}", e.getMessage());
+            }
+        });
+    }
+
+    private String formatDuration(long ms) {
+        if (ms < 1000) return ms + "ms";
+        long s = ms / 1000;
+        if (s < 60) return s + "초";
+        return String.format("%d분 %d초", s / 60, s % 60);
     }
 }

@@ -3,13 +3,11 @@ package com.carizon.batch;
 import com.carizon.mapping.CodeMappingService;
 import com.carizon.mapping.MasterMergeService;
 import com.carizon.merge.MergeService;
-import com.carizon.notification.SlackNotificationService;
 import com.carizon.rag.service.CarEmbeddingBatchService;
 import com.carizon.rag.service.ChromaVectorStoreService;
 import com.carizon.search.service.CarIndexingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -55,10 +53,6 @@ public class FridayNightPipelineScheduler {
     private final ChromaVectorStoreService vectorStoreService;
     private final CarEmbeddingBatchService embeddingBatchService;
     private final ApiRunRecorder apiRunRecorder;
-    private final SlackNotificationService slack;
-
-    @Value("${app.notification.slack.pipeline:true}")
-    private boolean slackPipelineEnabled;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
 
@@ -82,7 +76,6 @@ public class FridayNightPipelineScheduler {
 
         try {
             log.info("[friday-night] start: bizDate={}", bizDate);
-            slackNotify("🚀 *주간 파이프라인 시작*\n📅 bizDate: " + bizDate);
 
             // STEP 1: 크롤링
             currentStep = "1:/admin/crawl/runAll";
@@ -169,16 +162,12 @@ public class FridayNightPipelineScheduler {
             apiRunRecorder.recordSuccess(runId, Math.max(totalItems, 0), result);
 
             log.info("[friday-night] done: totalItems={}, totalDurationMs={}", totalItems, totalDurationMs);
-            slackNotify(String.format("✅ *주간 파이프라인 완료*\n📅 bizDate: %s\n⏱️ 소요: %d분 %d초\n📦 처리: %,d건",
-                    bizDate, totalDurationMs / 60000, (totalDurationMs % 60000) / 1000, totalItems));
         } catch (Exception e) {
             result.put("bizDate", bizDate.toString());
             result.put("failedStep", currentStep);
             result.put("elapsedMs", System.currentTimeMillis() - totalStart);
             apiRunRecorder.recordFail(runId, Math.max(totalItems, 0), e);
             log.error("[friday-night] failed at {}", currentStep, e);
-            slackNotify(String.format("❌ *주간 파이프라인 실패*\n📅 bizDate: %s\n💥 실패 단계: %s\n🔴 오류: %s",
-                    bizDate, currentStep, e.getMessage()));
         } finally {
             running.set(false);
         }
@@ -233,10 +222,6 @@ public class FridayNightPipelineScheduler {
         } finally {
             executor.shutdown();
         }
-    }
-
-    private void slackNotify(String msg) {
-        if (slackPipelineEnabled) slack.send(msg);
     }
 
     private int toInt(Object value) {
