@@ -163,6 +163,8 @@ services:
       RAG_LLM_OLLAMA_BASE_URL: ${RAG_LLM_OLLAMA_BASE_URL:-http://ollama:11434}
       RAG_EMBEDDING_OLLAMA_BASE_URL: ${RAG_EMBEDDING_OLLAMA_BASE_URL:-http://ollama:11434}
       TZ: Asia/Seoul
+      # Slack 알림
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
     depends_on:
       mysql:
         condition: service_healthy
