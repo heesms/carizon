@@ -527,6 +527,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
   const [trimPickerOpen, setTrimPickerOpen] = useState(false)
   const [trimSearch, setTrimSearch] = useState('')
+  const [trimDraftCodes, setTrimDraftCodes] = useState<string[]>(() => parseCsvTokens(value.trimCode))
 
   const [bodyTypePickerOpen, setBodyTypePickerOpen] = useState(false)
   const [bodyTypeDraftCodes, setBodyTypeDraftCodes] = useState<string[]>([])
@@ -560,6 +561,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     ? (selectedModelGroupByCode[singleModelCode] || modelGroupCode)
     : ''
   const trimCode = String(value.trimCode ?? '')
+  const selectedTrimCodes = parseCsvTokens(trimCode)
   const bodyType = String(value.bodyType ?? '')
   const selectedBodyTypes = bodyType
     .split(',')
@@ -949,8 +951,23 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     onChange({ ...value, bodyType: nextBodyTypes.length ? nextBodyTypes.join(',') : undefined })
   }
 
-  const setTrim = (nextTrimCode: string | undefined) => {
-    onChange({ ...value, trimCode: nextTrimCode || undefined })
+  const setTrimCodes = (nextTrimCodes: string[]) => {
+    const next = Array.from(new Set(
+      nextTrimCodes.map(code => code.trim()).filter(Boolean)
+    ))
+    onChange({ ...value, trimCode: next.length ? next.join(',') : undefined })
+  }
+
+  const openTrimPicker = () => {
+    setTrimDraftCodes(selectedTrimCodes)
+    setTrimPickerOpen(true)
+  }
+
+  const toggleTrimDraft = (nextTrimCode: string) => {
+    setTrimDraftCodes(prev => {
+      if (prev.includes(nextTrimCode)) return prev.filter(code => code !== nextTrimCode)
+      return [...prev, nextTrimCode]
+    })
   }
 
   const openBodyTypePicker = () => {
@@ -1250,7 +1267,12 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
   const selectedMaker = makers.find(m => m.code === makerCode)
   const selectedModel = models.find(m => m.code === singleModelCode)
-  const selectedTrim = trims.find(t => t.code === trimCode)
+  const trimNameByCode = useMemo(() => {
+    const map: Record<string, string> = {}
+    trims.forEach(trim => { map[trim.code] = trim.name })
+    return map
+  }, [trims])
+  const selectedTrimNames = selectedTrimCodes.map(code => trimNameByCode[code] || code)
   const selectedFuels = parseCsvTokens(value.fuel)
   const selectedModelCodeSet = useMemo(() => new Set(selectedModelCodes), [selectedModelCodes])
 
@@ -1272,7 +1294,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     if (String(value.q ?? '').trim()) chips.push(`텍스트 "${String(value.q).trim()}"`)
     if (makerCode) chips.push(selectedMaker ? `제조사 ${selectedMaker.name}` : `제조사 ${makerCode}`)
     if (selectedModelCodes.length > 0) chips.push(`모델 ${selectedModelCodes.length}개`)
-    if (trimCode) chips.push('트림 선택')
+    if (selectedTrimCodes.length > 0) chips.push(`트림 ${selectedTrimCodes.length}개`)
     if (hasPriceRange) chips.push(`가격 ${priceStartLabel}~${priceEndLabel}`)
     if (hasYearRange) chips.push(`연식 ${yearStartLabel}~${yearEndLabel}`)
     if (hasKmRange) chips.push(`주행거리 ${kmStartLabel}~${kmEndLabel}`)
@@ -1285,7 +1307,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     makerCode,
     selectedMaker,
     selectedModelCodes.length,
-    trimCode,
+    selectedTrimCodes.length,
     hasPriceRange,
     priceStartLabel,
     priceEndLabel,
@@ -1408,6 +1430,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     .filter(t => !trimSearch.trim() || t.name.toLowerCase().includes(trimSearch.trim().toLowerCase()))
     .slice()
     .sort(sortByCountThenName)
+  const trimDraftSet = useMemo(() => new Set(trimDraftCodes), [trimDraftCodes])
 
   const bodyTypeDraftSet = useMemo(() => new Set(bodyTypeDraftCodes), [bodyTypeDraftCodes])
   const colorDraftSet = useMemo(() => new Set(colorDraftCodes), [colorDraftCodes])
@@ -1585,21 +1608,32 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
                   <button
                     disabled={selectedModelCodes.length !== 1 || !singleModelGroupCode}
                     className={`flex-1 min-w-0 text-left px-3.5 py-2.5 rounded-xl border text-sm flex items-center justify-between transition ${selectedModelCodes.length === 1 && !!singleModelGroupCode ? 'border-gray-200 bg-white hover:border-gray-300' : 'border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed'}`}
-                    onClick={() => setTrimPickerOpen(true)}
+                    onClick={openTrimPicker}
                   >
-                    <span className="truncate">{selectedTrim?.name ?? (selectedModelCodes.length === 1 && !!singleModelGroupCode ? '선택' : '모델 1개 선택 후 가능')}</span>
+                    <span className="truncate">
+                      {selectedTrimCodes.length === 1
+                        ? (selectedTrimNames[0] || '선택')
+                        : selectedTrimCodes.length > 1
+                          ? `${selectedTrimCodes.length}개 선택`
+                          : (selectedModelCodes.length === 1 && !!singleModelGroupCode ? '선택' : '모델 1개 선택 후 가능')}
+                    </span>
                     <span className="text-xs text-gray-400">▼</span>
                   </button>
-                  {trimCode && (
+                  {selectedTrimCodes.length > 0 && (
                     <ClearIconButton
                       onClick={e => {
                         e.stopPropagation()
-                        setTrim(undefined)
+                        setTrimCodes([])
                       }}
                       label="트림 조건 해제"
                     />
                   )}
                 </div>
+                {selectedTrimCodes.length > 1 && (
+                  <p className="mt-1 text-[11px] text-gray-400 leading-tight break-words">
+                    {selectedTrimNames.join(' · ')}
+                  </p>
+                )}
               </div>}
             </div>
           ) : (
@@ -2204,34 +2238,46 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
 
               <div className="flex-1 overflow-y-auto bg-gray-50">
                 {visibleTrims.map(t => {
-                  const selected = trimCode === t.code
+                  const selected = trimDraftSet.has(t.code)
+                  const trimDisabled = hasCount(t) && countOf(t) <= 0
                   return (
                     <button
                       key={t.code}
-                      className={`w-full px-4 py-3 border-b border-gray-100 text-left ${selected ? 'bg-brand-50 text-brand-700' : 'bg-white text-gray-800 hover:bg-gray-50'}`}
-                      onClick={() => {
-                        setTrim(t.code)
-                        setTrimPickerOpen(false)
-                      }}
+                      disabled={trimDisabled}
+                      className={`w-full px-4 py-3 border-b border-gray-100 text-left flex items-center gap-3 ${selected ? 'bg-brand-50 text-brand-700' : 'bg-white text-gray-800'} ${trimDisabled ? 'opacity-35 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                      onClick={() => trimDisabled ? undefined : toggleTrimDraft(t.code)}
                     >
-                      <span className="font-medium text-sm flex-1">{t.name}</span>
-                      {hasCount(t) && <span className="text-xs text-gray-400 ml-2">{countOf(t).toLocaleString()}</span>}
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center text-[11px] font-bold ${selected ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}>✓</span>
+                      <span className="font-medium text-sm flex-1 truncate">{t.name}</span>
+                      {hasCount(t) && <span className="text-xs text-gray-400 shrink-0">{countOf(t).toLocaleString()}</span>}
                     </button>
                   )
                 })}
                 {visibleTrims.length === 0 && <div className="px-4 py-10 text-center text-sm text-gray-500">검색 결과가 없습니다.</div>}
               </div>
 
-              <div className="px-4 sm:px-5 py-3 border-t border-gray-100 bg-white flex justify-end">
-                <button
-                  className="btn-ghost text-xs text-red-500 hover:text-red-600 hover:bg-red-50"
-                  onClick={() => {
-                    setTrim(undefined)
-                    setTrimPickerOpen(false)
-                  }}
-                >
-                  트림 해제
-                </button>
+              <div className="px-4 sm:px-5 py-3 border-t border-gray-100 bg-white flex items-center justify-between">
+                <p className="text-xs text-gray-500">선택 {trimDraftCodes.length}개</p>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="btn-primary h-[36px] px-4 text-sm"
+                    onClick={() => {
+                      setTrimCodes(trimDraftCodes)
+                      setTrimPickerOpen(false)
+                    }}
+                  >
+                    선택완료
+                  </button>
+                  <button
+                    className="btn-ghost text-xs text-red-500 hover:text-red-600 hover:bg-red-50"
+                    onClick={() => {
+                      setTrimCodes([])
+                      setTrimPickerOpen(false)
+                    }}
+                  >
+                    선택 해제
+                  </button>
+                </div>
               </div>
             </div>
           </div>

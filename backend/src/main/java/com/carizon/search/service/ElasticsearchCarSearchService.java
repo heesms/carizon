@@ -472,8 +472,21 @@ public class ElasticsearchCarSearchService {
                 }));
             }
         }
-        if (params.get("trimCode") != null) {
-            filter.add(QueryBuilders.term(t -> t.field("trimCode").value(String.valueOf(params.get("trimCode")))));
+        List<String> trimCodes = parseCsvValues(params.get("trimCode"));
+        if (!trimCodes.isEmpty()) {
+            if (trimCodes.size() == 1) {
+                filter.add(QueryBuilders.term(t -> t.field("trimCode").value(trimCodes.get(0))));
+            } else {
+                filter.add(QueryBuilders.bool(b -> {
+                    List<Query> should = new ArrayList<>();
+                    for (String trimCode : trimCodes) {
+                        should.add(QueryBuilders.term(t -> t.field("trimCode").value(trimCode)));
+                    }
+                    b.should(should);
+                    b.minimumShouldMatch("1");
+                    return b;
+                }));
+            }
         }
         if (params.get("gradeCode") != null) {
             filter.add(QueryBuilders.term(t -> t.field("gradeCode").value(String.valueOf(params.get("gradeCode")))));
@@ -653,7 +666,11 @@ public class ElasticsearchCarSearchService {
                 filter.add(Map.of("terms", Map.of("modelCode", modelCodes)));
             }
         }
-        if (params.get("trimCode") != null) filter.add(Map.of("term", Map.of("trimCode", params.get("trimCode"))));
+        List<String> trimCodes = parseCsvValues(params.get("trimCode"));
+        if (!trimCodes.isEmpty()) {
+            if (trimCodes.size() == 1) filter.add(Map.of("term", Map.of("trimCode", trimCodes.get(0))));
+            else filter.add(Map.of("terms", Map.of("trimCode", trimCodes)));
+        }
         if (params.get("gradeCode") != null) filter.add(Map.of("term", Map.of("gradeCode", params.get("gradeCode"))));
         if (params.get("yearMin") != null) filter.add(Map.of("range", Map.of("year", Map.of("gte", parseInt(params.get("yearMin"), 0)))));
         if (params.get("yearMax") != null) filter.add(Map.of("range", Map.of("year", Map.of("lte", parseInt(params.get("yearMax"), Integer.MAX_VALUE)))));
