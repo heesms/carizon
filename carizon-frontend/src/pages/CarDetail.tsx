@@ -147,16 +147,14 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
     const shareUrl = window.location.href
 
     try {
-      const shareApi = (navigator as unknown as { share?: (d: ShareData) => Promise<void> }).share
-      if (shareApi) {
-        await shareApi({ title: 'Carizon 매물', text: shareText, url: shareUrl })
+      if (typeof (navigator as any).share === 'function') {
+        await (navigator as any).share({ title: 'Carizon 매물', text: shareText, url: shareUrl })
         return
       }
 
       await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`)
       setShareMessage('링크를 클립보드에 복사했어요.')
       setTimeout(() => setShareMessage(null), 1800)
-      return
     } catch {
       try {
         await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`)
