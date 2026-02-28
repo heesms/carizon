@@ -47,26 +47,32 @@ public class VisitorNotificationService {
     };
 
     public void notifyVisit(String ip, String page, String query, String userAgent, String referer) {
-        if (!slack.isEnabled() || !visitorEnabled) return;
-        if (isPrivateIp(ip)) return;
+        log.info("[visitor-notify] visit ip={} page={} query={}", ip, page, query);
+        if (!slack.isEnabled()) { log.warn("[visitor-notify] slack disabled (webhook-url empty)"); return; }
+        if (!visitorEnabled)    { log.warn("[visitor-notify] visitor notification disabled"); return; }
+        if (isPrivateIp(ip))    { log.info("[visitor-notify] skip private ip={}", ip); return; }
 
         // 중복 억제
         synchronized (recentIps) {
             Instant last = recentIps.get(ip);
             if (last != null && Instant.now().isBefore(last.plusSeconds(dedupMinutes * 60L))) {
+                log.info("[visitor-notify] dedup skip ip={} (last={})", ip, last);
                 return;
             }
             recentIps.put(ip, Instant.now());
         }
 
+        log.info("[visitor-notify] sending slack for ip={}", ip);
         // 비동기로 처리 (응답 지연 방지)
         Thread.ofVirtual().start(() -> {
             try {
                 String location = resolveLocation(ip);
+                log.info("[visitor-notify] location={} for ip={}", location, ip);
                 String msg = buildMessage(ip, location, page, query, userAgent, referer);
                 slack.send(msg);
+                log.info("[visitor-notify] slack sent ok");
             } catch (Exception e) {
-                log.debug("[visitor-notify] error: {}", e.getMessage());
+                log.warn("[visitor-notify] error: {}", e.getMessage(), e);
             }
         });
     }
