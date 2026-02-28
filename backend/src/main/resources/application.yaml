@@ -34,7 +34,13 @@ spring:
 # 앱 설정
 app:
   kafka:
-    enabled: ${KAFKA_ENABLED:false}  # true로 켜야 Consumer/Producer 동작, 단건·배치 sync API 사용 시에만 필요
+    enabled: ${KAFKA_ENABLED:false}
+  notification:
+    slack:
+      webhook-url: ${SLACK_WEBHOOK_URL:}   # 미설정 시 알림 비활성화
+      pipeline: ${SLACK_NOTIFY_PIPELINE:true}
+      visitor: ${SLACK_NOTIFY_VISITOR:true}
+      visitor-dedup-minutes: ${SLACK_VISITOR_DEDUP_MIN:30}  # 같은 IP 재알림 억제 시간(분)  # true로 켜야 Consumer/Producer 동작, 단건·배치 sync API 사용 시에만 필요
     car-sync-topic: ${KAFKA_CAR_SYNC_TOPIC:car-index-sync}
 
 seo:
