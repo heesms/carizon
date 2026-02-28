@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS system_config (
 -- 초기 데이터 삽입
 INSERT INTO system_config (config_key, config_value, description) VALUES
 ('search.use_meilisearch', 'true', 'Meilisearch 사용 여부'),
-('search.fallback_to_db', 'true', 'Meilisearch 실패 시 DB 폴백 여부')
+('search.fallback_to_db', 'true', 'Meilisearch 실패 시 DB 폴백 여부'),
+('notification.slack.webhook_url', '', 'Slack Incoming Webhook URL')
 ON DUPLICATE KEY UPDATE 
   config_value = VALUES(config_value),
   description = VALUES(description);
