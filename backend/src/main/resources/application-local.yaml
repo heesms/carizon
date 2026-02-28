@@ -12,6 +12,11 @@ logging:
     com.carizon.search.service.ElasticsearchCarSearchService: DEBUG
     org.springframework.web.servlet.DispatcherServlet: DEBUG
 
+app:
+  notification:
+    slack:
+      webhook-url: "https://hooks.slack.com/services/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"
+
 server:
   tomcat:
     accesslog:
