@@ -13,8 +13,9 @@ function getImgSrc(item: CarListItem): string | null {
 
 function formatPrice(min?: number, max?: number) {
   if (min == null && max == null) return null
+  // 범위가 있으면 최저가만 표시 (단일 숫자가 더 깔끔)
   if (min != null && max != null && min !== max)
-    return `${min.toLocaleString()} ~ ${max.toLocaleString()}만원`
+    return `최저 ${min.toLocaleString()}만원`
   return `${(min ?? max)!.toLocaleString()}만원`
 }
 
@@ -145,7 +146,7 @@ export default function CarCard({
     <Link
       to={`/cars/${item.carId}`}
       state={state}
-      className="card-hover flex flex-col group overflow-hidden h-full"
+      className="card-hover flex flex-row sm:flex-col group overflow-hidden h-full"
       onClick={() => {
         if (source === 'search') {
           sessionStorage.setItem('search_scroll_y', JSON.stringify({
@@ -156,13 +157,13 @@ export default function CarCard({
         trackSelectItem(item.carId, maker, model, source)
       }}
     >
-      {/* 이미지 */}
-      <div className="relative aspect-[4/3] overflow-hidden bg-gray-50">
+      {/* 이미지 - 모바일: 정사각형 고정, sm+: 4:3 비율 */}
+      <div className="relative w-28 h-28 shrink-0 sm:w-full sm:h-auto sm:aspect-[4/3] overflow-hidden bg-gray-50">
         {src ? (
           <img
             src={src}
             alt={`${maker} ${model}`.trim()}
-            className="w-full h-full object-cover object-center scale-[1.15] group-hover:scale-[1.25] transition-transform duration-300"
+            className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
             onError={() => setSrc(null)}
           />
@@ -172,9 +173,9 @@ export default function CarCard({
       </div>
 
       {/* 정보 */}
-      <div className="p-3 flex flex-col gap-1.5">
+      <div className="p-3 flex flex-col gap-1.5 flex-1 min-w-0">
         {/* 차명 */}
-        <h3 className="font-bold text-sm leading-snug text-gray-900 group-hover:text-brand-600 transition-colors line-clamp-1">
+        <h3 className="font-bold text-sm leading-snug text-gray-900 group-hover:text-brand-600 transition-colors line-clamp-1 truncate">
           {maker} {model}
           {trim ? <span className="font-normal text-gray-500 ml-1 text-xs">{trim}</span> : null}
         </h3>
