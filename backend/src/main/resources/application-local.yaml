@@ -15,7 +15,6 @@ logging:
 app:
   notification:
     slack:
-      webhook-url: "https://hooks.slack.com/services/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"
       local-test-enabled: true  # 로컬 private IP도 [local-test] 태그로 Slack 알림 발송
 
 server:

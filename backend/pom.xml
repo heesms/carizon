@@ -29,6 +29,13 @@
     </dependencies>
   </dependencyManagement>
   <dependencies>
+    <!-- .env 파일 로드 (로컬 개발용) -->
+    <dependency>
+      <groupId>me.paulschwarz</groupId>
+      <artifactId>spring-dotenv</artifactId>
+      <version>4.0.0</version>
+    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>

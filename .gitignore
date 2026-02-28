@@ -7,3 +7,4 @@ carizon-frontend/dist/
 carizon-frontend/.vite/
 *.log
 *.tmp
+.env
