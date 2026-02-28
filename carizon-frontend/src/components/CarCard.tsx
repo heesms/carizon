@@ -18,6 +18,13 @@ function formatPrice(min?: number, max?: number) {
   return `${(min ?? max)!.toLocaleString()}만원`
 }
 
+const cleanText = (v?: string | null) => {
+  if (typeof v !== 'string') return ''
+  const t = v.trim()
+  if (!t || t.toLowerCase() === 'null') return ''
+  return t
+}
+
 // 연료별 배지 색
 function fuelBadge(fuel?: string) {
   if (!fuel) return 'badge-gray'
@@ -126,6 +133,9 @@ export default function CarCard({
     : location.pathname.startsWith('/search')
       ? 'search'
       : 'other'
+  const maker = cleanText(item.maker)
+  const model = cleanText(item.model)
+  const trim = cleanText(item.trim)
   // 검색 결과에서는 페이지 전환, AI 추천에서는 모달
   const state = source === 'search'
     ? { from, source }
@@ -143,7 +153,7 @@ export default function CarCard({
             y: window.scrollY,
           }))
         }
-        trackSelectItem(item.carId, item.maker, item.model, source)
+        trackSelectItem(item.carId, maker, model, source)
       }}
     >
       {/* 이미지 */}
@@ -151,7 +161,7 @@ export default function CarCard({
         {src ? (
           <img
             src={src}
-            alt={`${item.maker} ${item.model}`}
+            alt={`${maker} ${model}`.trim()}
             className="w-full h-full object-cover object-center scale-[1.15] group-hover:scale-[1.25] transition-transform duration-300"
             loading="lazy"
             onError={() => setSrc(null)}
@@ -162,15 +172,15 @@ export default function CarCard({
       </div>
 
       {/* 정보 */}
-      <div className="p-3.5 flex flex-col gap-2 min-h-[132px]">
+      <div className="p-3 flex flex-col gap-1.5">
         {/* 차명 */}
         <h3 className="font-bold text-sm leading-snug text-gray-900 group-hover:text-brand-600 transition-colors line-clamp-1">
-          {item.maker} {item.model}
-          {item.trim ? <span className="font-normal text-gray-500 ml-1 text-xs">{item.trim}</span> : null}
+          {maker} {model}
+          {trim ? <span className="font-normal text-gray-500 ml-1 text-xs">{trim}</span> : null}
         </h3>
 
         {/* 스펙 태그 */}
-        <div className="flex flex-wrap gap-1 min-h-[40px] content-start">
+        <div className="flex flex-wrap gap-1 content-start">
           {item.year    && <span className="badge badge-gray text-[11px]">{item.year}년식</span>}
           {item.km != null && item.km > 0 && <span className="badge badge-gray text-[11px]">{item.km.toLocaleString()}km</span>}
           {item.fuel    && <span className={`badge ${fuelBadge(item.fuel)} text-[11px]`}>{item.fuel}</span>}
@@ -178,7 +188,7 @@ export default function CarCard({
         </div>
 
         {/* 가격 + 좋아요 */}
-        <div className="flex items-end justify-between mt-auto pt-1">
+        <div className="flex items-center justify-between">
           <span className="text-lg font-black text-brand-600">{price}</span>
           <button
             type="button"

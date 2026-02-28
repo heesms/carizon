@@ -372,8 +372,9 @@ public class MergeService {
                       (platform_name, platform_car_key, car_no, car_id,
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
-                       price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
+                      price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url,
+                       option_array)
                     SELECT
                        'CHACHACHA', r.car_seq, r.car_no, NULL,
                        r.MAKER_CODE, r.CLASS_CODE, r.CAR_CODE, r.MODEL_CODE, r.GRADE_CODE,
@@ -381,7 +382,8 @@ public class MergeService {
                        r.SELL_AMT, r.KM, r.displacement, r.YYMM, 'ONSALE', COLOR_EXPR, FUEL_EXPR, r.auto_gbn_name, r.use_code_name, r.REGION,
                        CONCAT('https://m.kbchachacha.com/public/web/car/detail.kbc?carSeq=', r.CAR_SEQ),
                        CONCAT('https://www.kbchachacha.com/public/car/detail.kbc?carSeq=', r.car_seq),
-                       r.FIRST_AD_DAY, AD_DATE_EXPR_CHACHACHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
+                       r.FIRST_AD_DAY, AD_DATE_EXPR_CHACHACHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url,
+                       r.option_array
                     FROM raw_chachacha r
                     WHERE r.id > ? AND r.id <= ?
                     ON DUPLICATE KEY UPDATE
@@ -392,6 +394,7 @@ public class MergeService {
                        car_image_url  = VALUES(car_image_url),
                        color          = VALUES(color),
                        fuel           = VALUES(fuel),
+                       option_array   = COALESCE(NULLIF(VALUES(option_array), ''), platform_car.option_array),
                        last_seen_date = VALUES(last_seen_date),
                        updated_at     = NOW(),
                        car_no = COALESCE(platform_car.car_no, VALUES(car_no)),
@@ -535,8 +538,9 @@ public class MergeService {
                       (platform_name, platform_car_key, car_no, car_id,
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
-                       price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
+                      price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url,
+                       option_array)
                     SELECT
                       'KCAR', r.car_cd, r.cno, NULL,
                       r.maker_code, r.model_group_code, r.model_code, r.grade_code, r.grade_detail_code,
@@ -554,7 +558,8 @@ public class MergeService {
                       r.region,
                       CONCAT('https://m.kcar.com/bc/detail/carInfoDtl?i_sCarCd=', r.car_cd),
                       CONCAT('https://www.kcar.com/bc/detail/carInfoDtl?i_sCarCd=', r.car_cd),
-                      NULL, AD_DATE_EXPR_KCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.main_img
+                      NULL, AD_DATE_EXPR_KCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.main_img,
+                      r.option_array
                     FROM raw_kcar r
                     WHERE r.id > ? AND r.id <= ?
                     ON DUPLICATE KEY UPDATE
@@ -565,6 +570,7 @@ public class MergeService {
                       car_image_url  = VALUES(car_image_url),
                       color          = VALUES(color),
                       fuel           = VALUES(fuel),
+                      option_array   = COALESCE(NULLIF(VALUES(option_array), ''), platform_car.option_array),
                       last_seen_date = VALUES(last_seen_date),
                       updated_at     = NOW(),
                       car_no = COALESCE(platform_car.car_no, VALUES(car_no)),
@@ -961,7 +967,8 @@ public class MergeService {
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
                        price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url,
+                       option_array)
                     SELECT
                        'CHACHACHA', r.car_seq, r.car_no, NULL,
                        r.MAKER_CODE, r.CLASS_CODE, r.CAR_CODE, r.MODEL_CODE, r.GRADE_CODE,
@@ -969,7 +976,8 @@ public class MergeService {
                        r.SELL_AMT, r.KM, r.displacement, r.YYMM, 'ONSALE', COLOR_EXPR, FUEL_EXPR, r.auto_gbn_name, r.use_code_name, r.REGION,
                        CONCAT('https://m.kbchachacha.com/public/web/car/detail.kbc?carSeq=', r.CAR_SEQ),
                        CONCAT('https://www.kbchachacha.com/public/car/detail.kbc?carSeq=', r.car_seq),
-                       r.FIRST_AD_DAY, AD_DATE_EXPR_CHACHACHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
+                       r.FIRST_AD_DAY, AD_DATE_EXPR_CHACHACHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url,
+                       r.option_array
                     FROM raw_chachacha r
                     WHERE r.id > ? AND r.id <= ?
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
@@ -1101,7 +1109,8 @@ public class MergeService {
                       r.region,
                       CONCAT('https://m.kcar.com/bc/detail/carInfoDtl?i_sCarCd=', r.car_cd),
                       CONCAT('https://www.kcar.com/bc/detail/carInfoDtl?i_sCarCd=', r.car_cd),
-                      NULL, AD_DATE_EXPR_KCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.main_img
+                      NULL, AD_DATE_EXPR_KCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.main_img,
+                      r.option_array
                     FROM raw_kcar r
                     WHERE r.id > ? AND r.id <= ?
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
