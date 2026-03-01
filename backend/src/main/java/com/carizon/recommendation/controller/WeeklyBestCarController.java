@@ -53,17 +53,11 @@ public class WeeklyBestCarController {
     @Operation(summary = "전체 주간 Best 매물 조회",
                description = "전체 모델을 대상으로 주간 Best 매물 순위를 조회합니다.")
     public ApiResponse<List<WeeklyBestCarDto>> getWeeklyBestAll(
-            @RequestParam(defaultValue = "20") int limit,
-            HttpServletRequest request) {
+            @RequestParam(defaultValue = "20") int limit) {
 
         log.info("[weekly Best] all: limit={}", limit);
 
         List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(null, null, limit);
-
-        String ip = VisitorNotificationService.extractClientIp(request);
-        String ua = request.getHeader("User-Agent");
-        visitorNotificationService.notifyUserAction(ip, ua, "📊", "AI 랭킹 전체 조회",
-                String.format("📦 결과: %d대", bestCars.size()));
 
         return ApiResponse.success(bestCars);
     }

@@ -1,9 +1,11 @@
 package com.carizon.controller;
 
 import com.carizon.common.dto.ApiResponse;
+import com.carizon.notification.VisitorNotificationService;
 import com.carizon.service.CarQueryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +20,7 @@ import java.util.Map;
 public class CarController {
     
   private final CarQueryService service;
+  private final VisitorNotificationService visitorNotificationService;
   
   @GetMapping("/cars")
     @Operation(summary = "차량 목록 조회", description = "검색 조건에 맞는 차량 목록을 페이징하여 조회")
@@ -39,13 +42,33 @@ public class CarController {
     
   @GetMapping("/cars/{carId}")
     @Operation(summary = "차량 상세 조회", description = "차량 ID로 상세 정보 조회")
-    public ApiResponse<Map<String, Object>> detail(@PathVariable long carId) {
+    public ApiResponse<Map<String, Object>> detail(@PathVariable long carId, HttpServletRequest request) {
         long apiStart = System.currentTimeMillis();
         log.info("[car detail] request start: carId={}", carId);
         try {
             Map<String, Object> result = service.detail(carId);
             long apiMs = System.currentTimeMillis() - apiStart;
             log.info("[car detail] request done: carId={}, total={}ms", carId, apiMs);
+
+            // Slack 알림
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> car = (Map<String, Object>) result.get("car");
+                String maker  = car != null ? String.valueOf(car.getOrDefault("maker",  "")) : "";
+                String model  = car != null ? String.valueOf(car.getOrDefault("model",  "")) : "";
+                Object year   = car != null ? car.get("year")   : null;
+                Object price  = car != null ? car.getOrDefault("priceMin", car.get("price")) : null;
+                String ip = VisitorNotificationService.extractClientIp(request);
+                String ua = request.getHeader("User-Agent");
+                visitorNotificationService.notifyUserAction(ip, ua, "🔎", "매물 상세 조회",
+                        String.format("🚗 carId=%d %s %s %s년식 %s만원",
+                                carId, maker, model,
+                                year != null ? year : "-",
+                                price != null ? price : "-"));
+            } catch (Exception ex) {
+                log.warn("[slack-notify] car detail notify error: {}", ex.getMessage());
+            }
+
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.error("[car detail] error: carId={}, after {}ms", carId, System.currentTimeMillis() - apiStart, e);
