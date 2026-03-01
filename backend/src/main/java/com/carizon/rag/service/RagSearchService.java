@@ -30,7 +30,7 @@ public class RagSearchService {
     private final LlmConfigService llmConfigService;
 
     // 모델 컬렉션 fallback은 "충분히 유사"할 때만 사용 (낮은 점수 전부 매칭되는 오탐 방지)
-    private static final double MODEL_COLLECTION_MIN_SCORE = 0.01;
+    private static final double MODEL_COLLECTION_MIN_SCORE = 0.35;
     private static final int MODEL_COLLECTION_MAX_CODES = 12;
     private static final Set<String> GENERIC_MODEL_FILTERS = Set.of(
             "소형", "중형", "대형", "경차", "준중형", "기타", "suv", "스포츠카", "상용", "rv", "트럭", "승합", "화물",
@@ -186,6 +186,7 @@ public class RagSearchService {
                 .fuel(result.getFuel())
                 .transmission(result.getTransmission())
                 .color(result.getColor())
+                .bodyType(result.getBodyType())
                 .region(result.getRegion())
                 .url(url)
                 .pcUrl(pcUrl)
@@ -230,6 +231,7 @@ public class RagSearchService {
                             .fuel(getString(row, "fuel"))
                             .transmission(getString(row, "transmission"))
                             .color(getString(row, "color"))
+                            .bodyType(getString(row, "bodyType"))
                             .region(getString(row, "region"))
                             .url(url)
                             .pcUrl(pcUrl)

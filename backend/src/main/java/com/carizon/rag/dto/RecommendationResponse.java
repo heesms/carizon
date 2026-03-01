@@ -33,6 +33,7 @@ public class RecommendationResponse {
         private String fuel;
         private String transmission;
         private String color;
+        private String bodyType; // 차종
         private String region; // 지역
         private String url;    // 기본 링크 (하위 호환)
         private String pcUrl;  // PC용 링크

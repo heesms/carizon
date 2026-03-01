@@ -9,8 +9,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -24,6 +26,12 @@ public class CarTextConverterService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final Map<String, Map<String, Object>> modelBasicInfoCache = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Object>> modelStyleInfoCache = new ConcurrentHashMap<>();
+
+    // embed_text_2에서 추출할 스타일 관련 키 목록
+    private static final Set<String> STYLE_KEYS = Set.of(
+            "스타일", "타겟", "별명", "장점", "단점", "추천", "차급", "좌석", "3열", "연비등급", "유지비"
+    );
     
     /**
      * 차종을 카테고리로 매핑 (세단, SUV, 미니밴, 해치백, 왜건 등)
@@ -319,7 +327,7 @@ public class CarTextConverterService {
         // 10. 모델 기본 정보 (매물이 아닌 모델 자체의 정보)
         if (!modelBasicInfo.isEmpty()) {
             text.append("\n[모델 기본 정보]\n");
-            
+
             if (modelBasicInfo.get("typical_fuel") != null) {
                 text.append("모델기본연료: ").append(modelBasicInfo.get("typical_fuel")).append("\n");
             }
@@ -339,7 +347,25 @@ public class CarTextConverterService {
                 text.append("모델연식범위: ").append(minYear.intValue()).append("년~").append(maxYear.intValue()).append("년\n");
             }
         }
-        
+
+        // 11. 모델 감성/스타일 정보 (cz_model_embedding_source.embed_text_2)
+        // "간지나는 차", "20대 여성", "패밀리카" 등 의미 기반 쿼리에 대응
+        boolean hasStyleInfo = STYLE_KEYS.stream().anyMatch(k -> modelBasicInfo.get("model_" + k) != null);
+        if (hasStyleInfo) {
+            text.append("\n[모델 특성]\n");
+            appendIfPresent(text, modelBasicInfo, "model_스타일",   "스타일: ");
+            appendIfPresent(text, modelBasicInfo, "model_타겟",     "추천대상: ");
+            appendIfPresent(text, modelBasicInfo, "model_별명",     "별명: ");
+            appendIfPresent(text, modelBasicInfo, "model_장점",     "장점: ");
+            appendIfPresent(text, modelBasicInfo, "model_단점",     "단점: ");
+            appendIfPresent(text, modelBasicInfo, "model_추천",     "추천용도: ");
+            appendIfPresent(text, modelBasicInfo, "model_차급",     "차급: ");
+            appendIfPresent(text, modelBasicInfo, "model_좌석",     "좌석: ");
+            appendIfPresent(text, modelBasicInfo, "model_3열",      "3열여부: ");
+            appendIfPresent(text, modelBasicInfo, "model_연비등급", "연비등급: ");
+            appendIfPresent(text, modelBasicInfo, "model_유지비",   "유지비: ");
+        }
+
         return text.toString();
     }
     
@@ -420,6 +446,75 @@ public class CarTextConverterService {
 
     public void clearModelBasicInfoCache() {
         modelBasicInfoCache.clear();
+        modelStyleInfoCache.clear();
+    }
+
+    /**
+     * cz_model_embedding_source.embed_text_2 에서 스타일/감성/타겟 정보를 추출.
+     * 반환 맵 키는 "model_스타일", "model_타겟" 등으로 prefix 붙여서 modelBasicInfo에 합산.
+     */
+    private Map<String, Object> getModelStyleInfo(String modelCode) {
+        if (modelCode == null || modelCode.isBlank()) return Map.of();
+        Map<String, Object> cached = modelStyleInfoCache.get(modelCode);
+        if (cached != null) return cached;
+
+        try {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    "SELECT embed_text_2 FROM cz_model_embedding_source WHERE model_code = ? LIMIT 1",
+                    modelCode);
+            if (rows.isEmpty()) {
+                modelStyleInfoCache.put(modelCode, Map.of());
+                return Map.of();
+            }
+            Object raw = rows.get(0).get("embed_text_2");
+            if (raw == null) {
+                modelStyleInfoCache.put(modelCode, Map.of());
+                return Map.of();
+            }
+            String embedText = raw.toString().trim();
+            if (embedText.isBlank() || embedText.contains("#정보확인필요")) {
+                modelStyleInfoCache.put(modelCode, Map.of());
+                return Map.of();
+            }
+            Map<String, String> parsed = parseEmbedText(embedText);
+            Map<String, Object> result = new LinkedHashMap<>();
+            for (String key : STYLE_KEYS) {
+                String val = parsed.get(key);
+                if (val != null && !val.isBlank()) {
+                    result.put("model_" + key, val);
+                }
+            }
+            modelStyleInfoCache.put(modelCode, result);
+            return result;
+        } catch (Exception e) {
+            log.warn("Failed to get model style info for model_code={}", modelCode, e);
+            modelStyleInfoCache.put(modelCode, Map.of());
+            return Map.of();
+        }
+    }
+
+    /** "키=값 | 키=값" 형식의 embed_text를 Map으로 파싱 */
+    private static Map<String, String> parseEmbedText(String embedText) {
+        Map<String, String> result = new LinkedHashMap<>();
+        if (embedText == null || embedText.isBlank()) return result;
+        for (String part : embedText.split("\\s*\\|\\s*")) {
+            int eq = part.indexOf('=');
+            if (eq > 0) {
+                String key = part.substring(0, eq).trim();
+                String val = part.substring(eq + 1).trim();
+                if (!key.isBlank() && !val.isBlank()) {
+                    result.put(key, val);
+                }
+            }
+        }
+        return result;
+    }
+
+    private static void appendIfPresent(StringBuilder sb, Map<String, Object> map, String key, String label) {
+        Object val = map.get(key);
+        if (val != null) {
+            sb.append(label).append(val).append("\n");
+        }
     }
     
     /**
@@ -472,6 +567,8 @@ public class CarTextConverterService {
         if (carMap.get("country_name") != null && !String.valueOf(carMap.get("country_name")).isEmpty()) {
             modelBasicInfo.put("maker_country", carMap.get("country_name"));
         }
+        // 모델 스타일/감성/타겟 정보 (cz_model_embedding_source) — "간지나는", "20대 여성" 쿼리 대응
+        modelBasicInfo.putAll(getModelStyleInfo(modelCode));
         
         CarDetailRow car = new CarDetailRow(
             ((Number) carMap.get("carId")).longValue(),

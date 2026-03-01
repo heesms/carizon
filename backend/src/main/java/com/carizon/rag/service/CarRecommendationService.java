@@ -506,6 +506,7 @@ public class CarRecommendationService {
                 .fuel(c.getFuel())
                 .transmission(c.getTransmission())
                 .color(c.getColor())
+                .bodyType(c.getBodyType())
                 .region(c.getRegion())
                 .url(c.getUrl())
                 .pcUrl(c.getPcUrl())

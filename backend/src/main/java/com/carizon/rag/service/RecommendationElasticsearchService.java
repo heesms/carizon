@@ -575,6 +575,12 @@ public class RecommendationElasticsearchService {
                         boost += 0.04 * weight;
                     }
                 }
+                case "bodyType" -> {
+                    String bodyType = trimOrNull(car.getBodyType());
+                    if (bodyType != null && containsToken(pref.getValues(), bodyType)) {
+                        boost += 0.06 * weight;
+                    }
+                }
                 case "mode" -> {
                     if (containsToken(pref.getValues(), "VALUE") && car.getPrice() != null) {
                         boost += 0.03 * weight;
