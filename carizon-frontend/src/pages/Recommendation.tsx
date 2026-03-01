@@ -27,13 +27,6 @@ const QUICK_PROMPTS = [
   '전기차 or 하이브리드 추천',
 ]
 
-const FOLLOW_UP_PROMPTS = [
-  '더 저렴한 옵션으로',
-  '연식 더 최근으로',
-  '전기차/하이브리드로',
-  '무사고 차량만',
-  '주행거리 5만km 이하로',
-]
 
 const INITIAL_TEXT = '안녕하세요! 🚗 원하시는 차량 조건을 자유롭게 말씀해주세요.\n\n예산, 용도, 연료 종류, 차체 타입 등을 알려주시면 딱 맞는 중고차를 추천해드릴게요!'
 const INITIAL_MESSAGE: Message = { role: 'assistant', text: INITIAL_TEXT }
@@ -98,12 +91,6 @@ export default function Recommendation() {
     }
   }
 
-  const handleClear = () => {
-    setMessages([INITIAL_MESSAGE])
-    setInput('')
-    if (inputRef.current) inputRef.current.style.height = 'auto'
-  }
-
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
@@ -124,8 +111,6 @@ export default function Recommendation() {
     handleSend(queryParam)
   }, [queryParam, loading])
 
-  const hasResults = messages.some(m => m.role === 'assistant' && (m as { role: 'assistant'; cars?: RecommendedCar[] }).cars?.length)
-
   return (
     <div className="max-w-3xl mx-auto animate-fade-in pb-44">
       {/* 헤더 */}
@@ -139,17 +124,6 @@ export default function Recommendation() {
             <p className="text-[11px] sm:text-xs text-gray-400">Powered by Carizon</p>
           </div>
         </div>
-        {messages.length > 1 && (
-          <button
-            onClick={handleClear}
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 px-2.5 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            새 대화
-          </button>
-        )}
       </div>
 
       {/* 메시지 영역 */}
@@ -218,37 +192,17 @@ export default function Recommendation() {
                   </div>
                 )}
 
-                {/* 결과 하단: 검색에서 더 보기 + follow-up 칩 */}
+                {/* 결과 하단: 검색에서 더 보기 */}
                 {hasCars && isLast && !loading && (
-                  <div className="space-y-2 pt-1">
-                    {/* 검색 이동 링크 */}
-                    <Link
-                      to={`/search?q=${encodeURIComponent((msg as { query?: string }).query ?? '')}`}
-                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-brand-600 transition-colors group w-fit"
-                    >
-                      <svg className="w-3.5 h-3.5 group-hover:text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                      검색에서 더 찾아보기 →
-                    </Link>
-
-                    {/* follow-up 칩 */}
-                    <div className="space-y-1">
-                      <p className="text-[10px] text-gray-400 font-medium">조건을 바꿔볼까요?</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {FOLLOW_UP_PROMPTS.map(p => (
-                          <button
-                            key={p}
-                            onClick={() => handleSend(p)}
-                            disabled={loading}
-                            className="text-xs px-2.5 py-1 rounded-full bg-white border border-gray-200 text-gray-600 hover:border-brand-300 hover:text-brand-600 hover:bg-brand-50 transition-colors disabled:opacity-40 shadow-xs"
-                          >
-                            {p}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                  <Link
+                    to={`/search?q=${encodeURIComponent((msg as { query?: string }).query ?? '')}`}
+                    className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-brand-600 transition-colors group w-fit pt-1"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    검색에서 더 찾아보기 →
+                  </Link>
                 )}
               </div>
             </div>
