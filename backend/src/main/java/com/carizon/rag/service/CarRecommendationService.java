@@ -283,13 +283,13 @@ public class CarRecommendationService {
     /**
      * 결과 요약 안내 문구.
      * - 기본: 고정 템플릿
-     * - useLlm=true && explainer enabled: 이미 선택된 TOP N을 설명만 수행
+     * - useLlm=true && explainer enabled: LLM이 추천 이유를 자연스럽게 설명
      */
     private String generateOverallRecommendation(RecommendationRequest request,
                                                  List<RecommendationResponse.RecommendedCar> cars,
                                                  boolean useLlm) throws IOException {
         int count = cars != null ? cars.size() : 0;
-        String fallback = "Carizon AI 매물 추천 결과입니다. 총 " + count + "건을 확인해 보세요.";
+        String fallback = "요청하신 조건에 맞는 차량 " + count + "대를 찾았습니다. 아래에서 확인해 보세요.";
         boolean enabled = ragProperties.getRecommendation().getExplainer().isEnabled();
         if (!useLlm || !enabled || cars == null || cars.isEmpty()) {
             return fallback;
@@ -301,10 +301,10 @@ public class CarRecommendationService {
             String raw = llmService.generateResponse(
                     prompt,
                     new LlmService.GenerationOptions(
-                            260,
-                            0.2,
+                            400,
+                            0.4,
                             timeoutMs,
-                            "You are a factual explainer. Use only the provided candidates. Answer in Korean."
+                            "당신은 친근하고 전문적인 중고차 컨설턴트입니다. 고객의 요청을 이해하고, 왜 이 차량들을 골랐는지 자연스럽고 따뜻하게 설명해주세요. 목록에 없는 차량이나 사양은 절대 언급하지 마세요."
                     )
             );
             String text = raw != null ? raw.trim() : "";
@@ -321,30 +321,38 @@ public class CarRecommendationService {
             RecommendationRequest request,
             List<RecommendationResponse.RecommendedCar> cars
     ) {
+        String query = request != null ? firstNonBlank(request.getQuery(), request.getSearchQuery()) : null;
         StringBuilder sb = new StringBuilder();
-        sb.append("아래는 이미 선택된 추천 결과입니다. 주어진 정보만 사용해 설명하세요.\\n");
-        sb.append("출력 형식:\\n");
-        sb.append("1) 추천 요약 1~2문장\\n");
-        sb.append("2) 상위 차량 공통 강점 2~3개\\n");
-        sb.append("3) 탈락 기준(일반) 1문장: 조건 미일치/점수 낮음 관점\\n");
-        sb.append("주의: 목록에 없는 차량/사양/수치는 절대 언급 금지.\\n\\n");
-        sb.append("사용자 요청:\\n");
-        sb.append(request != null ? firstNonBlank(request.getQuery(), request.getSearchQuery()) : "").append("\\n\\n");
-        sb.append("선정 차량 목록:\\n");
+
+        sb.append("고객 요청: ");
+        sb.append(query != null ? query : "(조건 미입력)");
+        sb.append("\n\n");
+
+        sb.append("추천 차량 목록:\n");
         int idx = 1;
         for (RecommendationResponse.RecommendedCar car : cars) {
             if (car == null) continue;
-            sb.append(idx++).append(") ")
-                    .append(firstNonBlank(car.getMaker(), "-")).append(" ")
-                    .append(firstNonBlank(car.getModel(), "-")).append(" ")
-                    .append(firstNonBlank(car.getTrim(), "")).append(" / ")
-                    .append(car.getYear() != null ? car.getYear() + "년식" : "연식미상").append(" / ")
-                    .append(car.getMileage() != null ? car.getMileage() + "km" : "주행거리미상").append(" / ")
-                    .append(car.getPrice() != null ? car.getPrice() + "만원" : "가격미상").append(" / ")
-                    .append("연료=").append(firstNonBlank(car.getFuel(), "-")).append(" / ")
-                    .append("지역=").append(firstNonBlank(car.getRegion(), "-"))
-                    .append("\\n");
+            sb.append(idx++).append(". ");
+            sb.append(firstNonBlank(car.getMaker(), "")).append(" ");
+            sb.append(firstNonBlank(car.getModel(), "")).append(" ");
+            String trim = firstNonBlank(car.getTrim(), "");
+            if (!trim.isBlank()) sb.append(trim).append(" ");
+            sb.append("| ");
+            sb.append(car.getYear() != null ? car.getYear() + "년식" : "연식미상").append(" | ");
+            sb.append(car.getMileage() != null ? String.format("%,d", car.getMileage()) + "km" : "주행거리미상").append(" | ");
+            sb.append(car.getPrice() != null ? String.format("%,d", car.getPrice()) + "만원" : "가격미상");
+            if (firstNonBlank(car.getFuel(), null) != null) sb.append(" | ").append(car.getFuel());
+            if (firstNonBlank(car.getRegion(), null) != null) sb.append(" | ").append(car.getRegion());
+            sb.append("\n");
         }
+
+        sb.append("\n");
+        sb.append("위 차량들을 왜 추천했는지 고객에게 3~4문장으로 자연스럽게 설명해주세요.\n");
+        sb.append("- 고객이 원하는 조건(예산, 차종, 용도, 취향 등)을 어떻게 이해했는지\n");
+        sb.append("- 왜 이 차량들이 조건에 잘 맞는지 (공통 포인트 위주)\n");
+        sb.append("- 번호나 불릿 없이 자연스러운 문단으로 작성하세요\n");
+        sb.append("- 목록에 없는 차량이나 사양은 절대 언급하지 마세요\n");
+
         return sb.toString();
     }
     
