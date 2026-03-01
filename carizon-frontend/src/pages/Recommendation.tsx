@@ -8,7 +8,7 @@ import CarImagePlaceholder from '@/components/CarImagePlaceholder'
 
 type Message =
   | { role: 'user'; text: string }
-  | { role: 'assistant'; text: string; cars?: RecommendedCar[] }
+  | { role: 'assistant'; text: string; cars?: RecommendedCar[]; query?: string }
   | { role: 'loading' }
 
 const LOADING_MESSAGES = [
@@ -27,6 +27,17 @@ const QUICK_PROMPTS = [
   '전기차 or 하이브리드 추천',
 ]
 
+const FOLLOW_UP_PROMPTS = [
+  '더 저렴한 옵션으로',
+  '연식 더 최근으로',
+  '전기차/하이브리드로',
+  '무사고 차량만',
+  '주행거리 5만km 이하로',
+]
+
+const INITIAL_TEXT = '안녕하세요! 🚗 원하시는 차량 조건을 자유롭게 말씀해주세요.\n\n예산, 용도, 연료 종류, 차체 타입 등을 알려주시면 딱 맞는 중고차를 추천해드릴게요!'
+const INITIAL_MESSAGE: Message = { role: 'assistant', text: INITIAL_TEXT }
+
 function useIsMobile() {
   const [m, setM] = useState(false)
   useEffect(() => {
@@ -43,16 +54,11 @@ export default function Recommendation() {
   const fromLocation = useLocation()
   const queryParam = (sp.get('query') ?? '').trim()
   const isMobile = useIsMobile()
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      text: '안녕하세요! 🚗 원하시는 차량 조건을 자유롭게 말씀해주세요.\n\n예산, 용도, 연료 종류, 차체 타입 등을 알려주시면 딱 맞는 중고차를 추천해드릴게요!',
-    },
-  ])
+  const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const inputRef  = useRef<HTMLTextAreaElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const autoSentQueryRef = useRef('')
 
   useEffect(() => {
@@ -63,6 +69,8 @@ export default function Recommendation() {
     const query = (text ?? input).trim()
     if (!query || loading) return
     setInput('')
+    // textarea 높이 초기화
+    if (inputRef.current) inputRef.current.style.height = 'auto'
     trackAiRecommendation(query, text === queryParam ? 'url' : text ? 'quick_prompt' : 'input')
 
     setMessages(prev => [...prev, { role: 'user', text: query }, { role: 'loading' }])
@@ -72,7 +80,12 @@ export default function Recommendation() {
       const res: RecommendationResponse = await getRecommendations({ query, maxResults: 5 })
       setMessages(prev => [
         ...prev.filter(m => m.role !== 'loading'),
-        { role: 'assistant', text: res.recommendation ?? '추천 결과를 확인해보세요.', cars: res.cars ?? [] },
+        {
+          role: 'assistant',
+          text: res.recommendation ?? '추천 결과를 확인해보세요.',
+          cars: res.cars ?? [],
+          query,
+        },
       ])
     } catch {
       setMessages(prev => [
@@ -85,39 +98,64 @@ export default function Recommendation() {
     }
   }
 
+  const handleClear = () => {
+    setMessages([INITIAL_MESSAGE])
+    setInput('')
+    if (inputRef.current) inputRef.current.style.height = 'auto'
+  }
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
 
-  // URL query 자동 전송은 동일 문구 1회만 처리 (dev strict mode 중복 실행 방지)
+  const onInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value)
+    // auto-resize
+    e.target.style.height = 'auto'
+    e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
+  }
+
+  // URL query 자동 전송은 동일 문구 1회만 처리
   useEffect(() => {
-    if (!queryParam) {
-      autoSentQueryRef.current = ''
-      return
-    }
+    if (!queryParam) { autoSentQueryRef.current = ''; return }
     if (loading) return
     if (autoSentQueryRef.current === queryParam) return
     autoSentQueryRef.current = queryParam
     handleSend(queryParam)
   }, [queryParam, loading])
 
+  const hasResults = messages.some(m => m.role === 'assistant' && (m as { role: 'assistant'; cars?: RecommendedCar[] }).cars?.length)
+
   return (
-    <div className="max-w-3xl mx-auto animate-fade-in pb-40">
+    <div className="max-w-3xl mx-auto animate-fade-in pb-44">
       {/* 헤더 */}
-      <div className="mb-4 sm:mb-5">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-brand-600 rounded-xl flex items-center justify-center text-lg sm:text-xl">🤖</div>
+      <div className="mb-4 sm:mb-5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-brand-500 to-brand-700 rounded-xl flex items-center justify-center text-lg sm:text-xl shadow-sm">
+            🤖
+          </div>
           <div>
             <h1 className="text-lg sm:text-xl font-black text-gray-900">AI 차량 추천</h1>
             <p className="text-[11px] sm:text-xs text-gray-400">Powered by Carizon</p>
           </div>
         </div>
+        {messages.length > 1 && (
+          <button
+            onClick={handleClear}
+            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 px-2.5 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            새 대화
+          </button>
+        )}
       </div>
 
-      {/* 메시지 영역 - 페이지 스크롤 사용 */}
+      {/* 메시지 영역 */}
       <div className="space-y-4 sm:space-y-5">
-        {/* 빠른 프롬프트 (초기 상태) */}
-        {messages.length === 1 && (
+        {/* 빠른 프롬프트 (초기 + 대화 적을 때) */}
+        {messages.length <= 1 && (
           <div className="space-y-2">
             <p className="text-xs text-gray-400 font-medium">빠른 질문</p>
             <div className="flex flex-wrap gap-1.5 sm:gap-2">
@@ -139,24 +177,35 @@ export default function Recommendation() {
 
           if (msg.role === 'user') return (
             <div key={i} className="flex justify-end gap-2 sm:gap-3">
-              <div className="max-w-[85%] sm:max-w-[80%] bg-brand-600 text-white rounded-2xl rounded-tr-sm px-3 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed">
+              <div className="max-w-[85%] sm:max-w-[78%] bg-brand-600 text-white rounded-2xl rounded-tr-sm px-3 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed shadow-sm">
                 {msg.text}
               </div>
-              <div className="w-7 h-7 sm:w-8 sm:h-8 bg-gray-200 rounded-full flex items-center justify-center text-sm shrink-0">👤</div>
+              <div className="w-7 h-7 sm:w-8 sm:h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm shrink-0 border border-gray-200">
+                👤
+              </div>
             </div>
           )
 
+          // assistant 메시지
+          const hasCars = msg.cars && msg.cars.length > 0
+          const isLast = i === messages.length - 1
+
           return (
             <div key={i} className="flex gap-2 sm:gap-3">
-              <div className="w-7 h-7 sm:w-8 sm:h-8 bg-brand-100 rounded-full flex items-center justify-center text-sm shrink-0">🤖</div>
-              <div className="flex-1 space-y-2 sm:space-y-3 max-w-[90%] sm:max-w-[85%]">
-                <div className="bg-gray-50 border border-gray-100 rounded-2xl rounded-tl-sm px-3 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed whitespace-pre-wrap text-gray-700">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 bg-gradient-to-br from-brand-400 to-brand-600 rounded-full flex items-center justify-center text-sm shrink-0 shadow-sm">
+                🤖
+              </div>
+              <div className="flex-1 space-y-2 sm:space-y-3 min-w-0">
+                {/* AI 텍스트 버블 */}
+                <div className="bg-white border border-gray-100 border-l-[3px] border-l-brand-400 rounded-2xl rounded-tl-sm px-3 sm:px-4 py-2.5 sm:py-3 text-sm leading-relaxed whitespace-pre-wrap text-gray-700 shadow-sm">
                   {msg.text}
                 </div>
-                {msg.cars && msg.cars.length > 0 && (
+
+                {/* 차량 카드 목록 */}
+                {hasCars && (
                   <div className="space-y-2 sm:space-y-3">
-                    {msg.cars
-                      .filter((car, i, arr) => arr.findIndex(c => c.carId === car.carId) === i)
+                    {msg.cars!
+                      .filter((car, ci, arr) => arr.findIndex(c => c.carId === car.carId) === ci)
                       .map((car, ci) => (
                         <RecommendedCarCard
                           key={car.carId ?? ci}
@@ -168,41 +217,91 @@ export default function Recommendation() {
                       ))}
                   </div>
                 )}
+
+                {/* 결과 하단: 검색에서 더 보기 + follow-up 칩 */}
+                {hasCars && isLast && !loading && (
+                  <div className="space-y-2 pt-1">
+                    {/* 검색 이동 링크 */}
+                    <Link
+                      to={`/search?q=${encodeURIComponent((msg as { query?: string }).query ?? '')}`}
+                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-brand-600 transition-colors group w-fit"
+                    >
+                      <svg className="w-3.5 h-3.5 group-hover:text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      검색에서 더 찾아보기 →
+                    </Link>
+
+                    {/* follow-up 칩 */}
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-gray-400 font-medium">조건을 바꿔볼까요?</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {FOLLOW_UP_PROMPTS.map(p => (
+                          <button
+                            key={p}
+                            onClick={() => handleSend(p)}
+                            disabled={loading}
+                            className="text-xs px-2.5 py-1 rounded-full bg-white border border-gray-200 text-gray-600 hover:border-brand-300 hover:text-brand-600 hover:bg-brand-50 transition-colors disabled:opacity-40 shadow-xs"
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )
         })}
+
         <div ref={bottomRef} />
       </div>
 
       {/* 하단 고정: 광고 + 입력창 */}
-      <div className="fixed bottom-14 sm:bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.07)]">
+      <div className="fixed bottom-14 sm:bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-sm border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.07)]">
         <div className="max-w-3xl mx-auto px-4 pt-2">
           <AdSlot id="recommendation-banner" variant="leaderboard" />
           <div className="flex gap-2 items-end py-2">
             <textarea
               ref={inputRef}
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={onInputChange}
               onKeyDown={onKeyDown}
-              placeholder={isMobile ? "원하는 차량 조건을 입력하세요..." : "원하는 차량 조건을 입력하세요... (Enter로 전송, Shift+Enter 줄바꿈)"}
-              rows={isMobile ? 1 : 2}
-              className="input resize-none flex-1 text-sm leading-relaxed"
+              placeholder="원하는 차량 조건을 입력하세요..."
+              rows={1}
+              style={{ minHeight: '40px', maxHeight: '120px' }}
+              className="input resize-none flex-1 text-sm leading-relaxed overflow-hidden"
               disabled={loading}
             />
             <button
               onClick={() => handleSend()}
               disabled={loading || !input.trim()}
-              className="btn-primary px-3 sm:px-4 py-2.5 sm:py-3 self-end disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+              className="btn-primary px-3 sm:px-4 py-2.5 self-end disabled:opacity-40 disabled:cursor-not-allowed shrink-0 transition-all"
+              aria-label="전송"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
+              {loading ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              )}
             </button>
           </div>
-          <p className="text-[10px] text-gray-300 pb-2 text-center">
-            AI 추천은 참고용이며, 실제 거래 전 반드시 직접 확인하세요
-          </p>
+          {!isMobile && (
+            <p className="text-[10px] text-gray-300 pb-2 text-center">
+              Enter로 전송 · Shift+Enter 줄바꿈 · AI 추천은 참고용이에요
+            </p>
+          )}
+          {isMobile && (
+            <p className="text-[10px] text-gray-300 pb-2 text-center">
+              AI 추천은 참고용이며, 거래 전 반드시 직접 확인하세요
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -218,7 +317,7 @@ type RankStyle = {
 const RANK_STYLES: Record<number, RankStyle> = {
   1: {
     headerBg:   'bg-gradient-to-r from-amber-400 to-yellow-500',
-    cardBg:     'bg-gradient-to-b from-amber-50 to-white',
+    cardBg:     'bg-gradient-to-b from-amber-50/60 to-white',
     border:     'border-2 border-amber-300',
     priceClass: 'text-sm sm:text-base font-black text-amber-700',
     nameClass:  'text-sm sm:text-[15px] font-black text-gray-900',
@@ -228,7 +327,7 @@ const RANK_STYLES: Record<number, RankStyle> = {
   },
   2: {
     headerBg:   'bg-gradient-to-r from-slate-400 to-gray-500',
-    cardBg:     'bg-gradient-to-b from-slate-50 to-white',
+    cardBg:     'bg-gradient-to-b from-slate-50/60 to-white',
     border:     'border-2 border-slate-300',
     priceClass: 'text-sm font-black text-slate-600',
     nameClass:  'text-sm font-black text-gray-900',
@@ -238,7 +337,7 @@ const RANK_STYLES: Record<number, RankStyle> = {
   },
   3: {
     headerBg:   'bg-gradient-to-r from-orange-400 to-amber-500',
-    cardBg:     'bg-gradient-to-b from-orange-50 to-white',
+    cardBg:     'bg-gradient-to-b from-orange-50/60 to-white',
     border:     'border border-orange-300',
     priceClass: 'text-xs sm:text-sm font-bold text-orange-700',
     nameClass:  'text-xs sm:text-sm font-bold text-gray-900',
@@ -259,12 +358,12 @@ function RecommendedCarCard({
   rank: number
   fromLocation: Location
 }) {
-  const [liked, setLiked]     = useState(false)
-  const [imgSrc, setImgSrc]   = useState<string | null>(car.imageUrl || null)
+  const [liked, setLiked]   = useState(false)
+  const [imgSrc, setImgSrc] = useState<string | null>(car.imageUrl || null)
 
   useEffect(() => {
     if (!car.carId) return
-    getLike(car.carId).then(r => { setLiked(r.liked) }).catch(() => {})
+    getLike(car.carId).then(r => setLiked(r.liked)).catch(() => {})
   }, [car.carId])
 
   const handleLike = async (e: React.MouseEvent) => {
@@ -272,7 +371,7 @@ function RecommendedCarCard({
     e.stopPropagation()
     if (!car.carId) return
     const res = await toggleLike(car.carId).catch(() => null)
-    if (res) { setLiked(res.liked) }
+    if (res) setLiked(res.liked)
   }
 
   const carState = {
@@ -281,13 +380,15 @@ function RecommendedCarCard({
     backgroundLocation: fromLocation,
   }
 
+  // 지역 짧은 표현 (앞 1~2 토큰만)
+  const shortRegion = car.region ? car.region.split(' ').slice(0, 1).join(' ') : null
+
   const cfg = RANK_STYLES[rank]
 
   // ── 1~3위: 메달 헤더 강조 카드 ──────────────────────────────────────────────
   if (cfg) {
     return (
-      <div className={`relative rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer ${cfg.border} ${cfg.cardBg}`}>
-        {/* 전체 카드 클릭 커버 링크 */}
+      <div className={`relative rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer ${cfg.border} ${cfg.cardBg}`}>
         {car.carId && (
           <Link
             to={`/cars/${car.carId}`}
@@ -298,20 +399,20 @@ function RecommendedCarCard({
         )}
 
         {/* 순위 헤더 배너 */}
-        <div className={`${cfg.headerBg} px-3 py-1.5 flex items-center gap-2 relative`}>
+        <div className={`${cfg.headerBg} px-3 py-1.5 flex items-center gap-2`}>
           <span className="text-base leading-none">{cfg.medal}</span>
           <span className="text-white text-xs font-black tracking-wide">{cfg.label}</span>
           {cfg.badge && (
-            <span className="ml-auto text-[10px] font-bold bg-white/20 text-white px-2 py-0.5 rounded-full">
+            <span className="ml-auto text-[10px] font-bold bg-white/25 text-white px-2 py-0.5 rounded-full">
               {cfg.badge}
             </span>
           )}
         </div>
 
         {/* 카드 바디 */}
-        <div className="p-3 sm:p-4 flex gap-3 relative">
+        <div className="p-3 sm:p-4 flex gap-3">
           {/* 이미지 */}
-          <div className={`${cfg.imgClass} rounded-xl overflow-hidden bg-gray-50 shrink-0`}>
+          <div className={`${cfg.imgClass} rounded-xl overflow-hidden bg-gray-100 shrink-0`}>
             {imgSrc ? (
               <img src={imgSrc} alt={`${car.maker} ${car.model}`}
                 className="w-full h-full object-cover object-[center_65%]"
@@ -331,22 +432,26 @@ function RecommendedCarCard({
               {car.year    && <span className="badge badge-gray text-[10px]">{car.year}년</span>}
               {car.mileage && <span className="badge badge-gray text-[10px]">{car.mileage.toLocaleString()}km</span>}
               {car.fuel    && <span className="badge badge-blue text-[10px]">{car.fuel}</span>}
+              {shortRegion && <span className="badge badge-gray text-[10px]">📍{shortRegion}</span>}
             </div>
             {car.reason && (
-              <p className="text-[10px] sm:text-xs text-gray-500 mt-1 line-clamp-2">{car.reason}</p>
+              <p className="text-[10px] sm:text-xs text-gray-500 mt-1.5 line-clamp-2 flex gap-1">
+                <span className="text-brand-400 shrink-0">💡</span>
+                <span>{car.reason}</span>
+              </p>
             )}
             {car.price && (
-              <div className={`${cfg.priceClass} mt-1`}>{car.price.toLocaleString()}만원</div>
+              <div className={`${cfg.priceClass} mt-1.5`}>{car.price.toLocaleString()}만원</div>
             )}
           </div>
 
-          {/* 좋아요 버튼 (커버 링크 위에 z-20으로 배치) */}
-          <div className="flex flex-col items-end gap-1.5 shrink-0 relative z-20">
+          {/* 좋아요 (커버 링크 위 z-20) */}
+          <div className="shrink-0 relative z-20">
             {car.carId && (
               <button onClick={handleLike}
                 className={`flex items-center justify-center w-7 h-7 rounded-lg transition-colors
-                  ${liked ? 'text-red-500 bg-red-50' : 'text-gray-400 hover:text-red-400 hover:bg-red-50'}`}>
-                <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5" fill={liked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                  ${liked ? 'text-red-500 bg-red-50' : 'text-gray-300 hover:text-red-400 hover:bg-red-50'}`}>
+                <svg className="w-3.5 h-3.5" fill={liked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
                 </svg>
@@ -354,19 +459,13 @@ function RecommendedCarCard({
             )}
           </div>
         </div>
-
-        {/* 상세보기 안내 */}
-        <div className="px-3 pb-2.5 flex justify-end relative">
-          <span className="text-[10px] text-gray-400">상세보기 →</span>
-        </div>
       </div>
     )
   }
 
   // ── 4위 이하: 컴팩트 카드 ──────────────────────────────────────────────────
   return (
-    <div className="relative card p-2.5 sm:p-3 flex gap-2 sm:gap-3 hover:shadow-sm transition-shadow cursor-pointer">
-      {/* 전체 카드 클릭 커버 링크 */}
+    <div className="relative bg-white border border-gray-100 rounded-2xl p-2.5 sm:p-3 flex gap-2 sm:gap-3 hover:shadow-sm hover:border-gray-200 transition-all duration-150 cursor-pointer">
       {car.carId && (
         <Link
           to={`/cars/${car.carId}`}
@@ -377,12 +476,12 @@ function RecommendedCarCard({
       )}
 
       {/* 순위 뱃지 */}
-      <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-500 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+      <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-400 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
         {rank}
       </div>
 
       {/* 이미지 */}
-      <div className="w-16 h-12 sm:w-20 sm:h-14 rounded-lg overflow-hidden bg-gray-50 shrink-0">
+      <div className="w-16 h-12 sm:w-20 sm:h-14 rounded-lg overflow-hidden bg-gray-100 shrink-0">
         {imgSrc ? (
           <img src={imgSrc} alt={`${car.maker} ${car.model}`}
             className="w-full h-full object-cover object-[center_65%]"
@@ -402,28 +501,31 @@ function RecommendedCarCard({
           {car.year    && <span className="badge badge-gray text-[10px]">{car.year}년</span>}
           {car.mileage && <span className="badge badge-gray text-[10px]">{car.mileage.toLocaleString()}km</span>}
           {car.fuel    && <span className="badge badge-blue text-[10px]">{car.fuel}</span>}
+          {shortRegion && <span className="badge badge-gray text-[10px]">📍{shortRegion}</span>}
         </div>
         {car.reason && (
-          <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1">{car.reason}</p>
+          <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 flex gap-1">
+            <span className="text-brand-400 shrink-0">💡</span>
+            <span>{car.reason}</span>
+          </p>
         )}
         {car.price && (
           <div className="text-xs font-bold text-brand-600 mt-0.5">{car.price.toLocaleString()}만원</div>
         )}
       </div>
 
-      {/* 좋아요 버튼 */}
-      <div className="flex flex-col items-end gap-1 shrink-0 relative z-20">
+      {/* 좋아요 */}
+      <div className="shrink-0 relative z-20 flex flex-col items-end">
         {car.carId && (
           <button onClick={handleLike}
             className={`flex items-center justify-center w-6 h-6 rounded-lg transition-colors
-              ${liked ? 'text-red-500 bg-red-50' : 'text-gray-400 hover:text-red-400 hover:bg-red-50'}`}>
+              ${liked ? 'text-red-500 bg-red-50' : 'text-gray-300 hover:text-red-400 hover:bg-red-50'}`}>
             <svg className="w-3 h-3" fill={liked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
             </svg>
           </button>
         )}
-        <span className="text-[9px] text-gray-400 mt-0.5">→ 상세보기</span>
       </div>
     </div>
   )
@@ -443,18 +545,18 @@ function LoadingBubble() {
 
   return (
     <div className="flex gap-2 sm:gap-3">
-      <div className="w-7 h-7 sm:w-8 sm:h-8 bg-brand-100 rounded-full flex items-center justify-center text-sm shrink-0">🤖</div>
-      <div className="bg-gray-50 border border-gray-100 rounded-2xl rounded-tl-sm px-3 sm:px-4 py-2.5 sm:py-3 space-y-1.5">
+      <div className="w-7 h-7 sm:w-8 sm:h-8 bg-gradient-to-br from-brand-400 to-brand-600 rounded-full flex items-center justify-center text-sm shrink-0 shadow-sm">🤖</div>
+      <div className="bg-white border border-gray-100 border-l-[3px] border-l-brand-400 rounded-2xl rounded-tl-sm px-3 sm:px-4 py-2.5 sm:py-3 space-y-2 shadow-sm">
         <div className="flex gap-1.5 items-center">
           {[0, 1, 2].map(d => (
             <div key={d} className="w-2 h-2 bg-brand-400 rounded-full animate-bounce"
               style={{ animationDelay: `${d * 0.15}s` }} />
           ))}
         </div>
-        <p className="text-xs text-gray-500 animate-pulse transition-all">{LOADING_MESSAGES[msgIdx]}</p>
+        <p className="text-xs text-gray-500 animate-pulse">{LOADING_MESSAGES[msgIdx]}</p>
         {elapsed >= 2 && (
-          <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
-            <div className="bg-brand-400 h-1 rounded-full transition-all duration-1000"
+          <div className="w-40 sm:w-56 bg-gray-100 rounded-full h-1">
+            <div className="bg-gradient-to-r from-brand-400 to-brand-600 h-1 rounded-full transition-all duration-1000"
               style={{ width: `${Math.min(95, elapsed * 12)}%` }} />
           </div>
         )}
