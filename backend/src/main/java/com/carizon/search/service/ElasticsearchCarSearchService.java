@@ -542,8 +542,9 @@ public class ElasticsearchCarSearchService {
                 return b;
             }));
         }
-        if (params.get("transmission") != null && !String.valueOf(params.get("transmission")).isEmpty()) {
-            filter.add(QueryBuilders.term(t -> t.field("transmission.keyword").value(String.valueOf(params.get("transmission")))));
+        List<String> transmissions = parseTransmissionTokens(params.get("transmission"));
+        if (!transmissions.isEmpty()) {
+            filter.add(buildTermsOrMissingQuery("transmission.keyword", "transmission", transmissions));
         }
         List<String> bodyTypes = parseBodyTypeTokens(params.get("bodyType"));
         if (!bodyTypes.isEmpty()) {
@@ -559,11 +560,11 @@ public class ElasticsearchCarSearchService {
         }
         List<String> regions = parseCsvValues(params.get("region"));
         if (!regions.isEmpty()) {
-            filter.add(buildKeywordTermsQuery("region.keyword", regions));
+            filter.add(buildRegionPrefixQuery(regions));
         }
         List<String> excludeRegions = parseCsvValues(params.get("excludeRegion"));
         if (!excludeRegions.isEmpty()) {
-            Query excluded = buildKeywordTermsQuery("region.keyword", excludeRegions);
+            Query excluded = buildRegionPrefixQuery(excludeRegions);
             filter.add(QueryBuilders.bool(b -> {
                 b.mustNot(excluded);
                 return b;
@@ -705,7 +706,8 @@ public class ElasticsearchCarSearchService {
                 "must_not", List.of(buildTermsOrMissingMap("color.keyword", "color", excludeColors))
             )));
         }
-        if (params.get("transmission") != null && !String.valueOf(params.get("transmission")).isEmpty()) filter.add(Map.of("term", Map.of("transmission.keyword", params.get("transmission"))));
+        List<String> transmissionsLog = parseTransmissionTokens(params.get("transmission"));
+        if (!transmissionsLog.isEmpty()) filter.add(buildTermsOrMissingMap("transmission.keyword", "transmission", transmissionsLog));
         List<String> bodyTypes = parseBodyTypeTokens(params.get("bodyType"));
         if (!bodyTypes.isEmpty()) {
             filter.add(buildTermsOrMissingMap("bodyType.keyword", "bodyType", bodyTypes));
@@ -716,16 +718,19 @@ public class ElasticsearchCarSearchService {
                 "must_not", List.of(buildTermsOrMissingMap("bodyType.keyword", "bodyType", excludeBodyTypes))
             )));
         }
-        List<String> regions = parseCsvValues(params.get("region"));
-        if (!regions.isEmpty()) {
-            if (regions.size() == 1) filter.add(Map.of("term", Map.of("region.keyword", regions.get(0))));
-            else filter.add(Map.of("terms", Map.of("region.keyword", regions)));
+        List<String> regionsLog = parseCsvValues(params.get("region"));
+        if (!regionsLog.isEmpty()) {
+            List<Map<String, Object>> should = new ArrayList<>();
+            for (String region : regionsLog) {
+                should.add(Map.of("prefix", Map.of("region.keyword", region)));
+            }
+            filter.add(should.size() == 1 ? should.get(0) : Map.of("bool", Map.of("should", should, "minimum_should_match", "1")));
         }
-        List<String> excludeRegions = parseCsvValues(params.get("excludeRegion"));
-        if (!excludeRegions.isEmpty()) {
+        List<String> excludeRegionsLog = parseCsvValues(params.get("excludeRegion"));
+        if (!excludeRegionsLog.isEmpty()) {
             List<Map<String, Object>> mustNot = new ArrayList<>();
-            for (String region : excludeRegions) {
-                mustNot.add(Map.of("term", Map.of("region.keyword", region)));
+            for (String region : excludeRegionsLog) {
+                mustNot.add(Map.of("prefix", Map.of("region.keyword", region)));
             }
             filter.add(Map.of("bool", Map.of("must_not", mustNot)));
         }
@@ -909,6 +914,27 @@ public class ElasticsearchCarSearchService {
         });
     }
 
+    /**
+     * 지역 prefix 쿼리 빌더.
+     * DB에는 "경기 수원시 권선구" 형태로 저장되므로 "경기" 등 광역 단위 값도 매칭되도록 prefix 쿼리 사용.
+     */
+    private static Query buildRegionPrefixQuery(List<String> regions) {
+        if (regions == null || regions.isEmpty()) return QueryBuilders.matchAll(m -> m);
+        if (regions.size() == 1) {
+            final String region = regions.get(0);
+            return QueryBuilders.prefix(p -> p.field("region.keyword").value(region));
+        }
+        return QueryBuilders.bool(b -> {
+            List<Query> should = new ArrayList<>();
+            for (String region : regions) {
+                should.add(QueryBuilders.prefix(p -> p.field("region.keyword").value(region)));
+            }
+            b.should(should);
+            b.minimumShouldMatch("1");
+            return b;
+        });
+    }
+
     private static Map<String, Object> buildTermsOrMissingMap(String keywordField, String existsField, List<String> values) {
         List<Map<String, Object>> should = new ArrayList<>();
         for (String value : values) {
@@ -965,6 +991,37 @@ public class ElasticsearchCarSearchService {
         }
     }
 
+    private static List<String> parseTransmissionTokens(Object value) {
+        List<String> values = parseCsvValues(value);
+        if (values.isEmpty()) return List.of();
+        LinkedHashSet<String> tokens = new LinkedHashSet<>();
+        for (String item : values) {
+            String normalized = normalizeTransmissionType(item);
+            if (normalized == null || normalized.isBlank()) continue;
+            // "오토"와 "자동" 둘 다 자동변속기를 의미하므로 둘 다 포함
+            if ("오토".equals(normalized) || "자동".equals(normalized)) {
+                tokens.add("오토");
+                tokens.add("자동");
+            } else {
+                tokens.add(normalized);
+            }
+        }
+        return new ArrayList<>(tokens);
+    }
+
+    private static String normalizeTransmissionType(String raw) {
+        if (raw == null) return null;
+        String v = raw.trim();
+        if (v.isBlank() || "null".equalsIgnoreCase(v)) return null;
+        String lower = v.toLowerCase(Locale.ROOT);
+        if (lower.equals("오토") || lower.equals("자동") || lower.equals("at")
+                || lower.contains("automatic") || lower.equals("자동변속기")) return "오토";
+        if (lower.equals("수동") || lower.equals("mt") || lower.contains("manual") || lower.equals("수동변속기")) return "수동";
+        if (lower.equals("cvt")) return "CVT";
+        if (lower.equals("세미오토") || lower.contains("semi") || lower.equals("dct") || lower.equals("dsg")) return "세미오토";
+        return v;
+    }
+
     private static List<String> parseFuelTokens(Object value) {
         List<String> values = parseCsvValues(value);
         if (values.isEmpty()) return List.of();
@@ -982,7 +1039,7 @@ public class ElasticsearchCarSearchService {
         out.add(normalized);
         switch (normalized) {
             case "LPG" -> Collections.addAll(out, "LPG(일반인)", "LPG(일반인 구입)");
-            case "하이브리드" -> Collections.addAll(out, "하이브리드(가솔린)");
+            case "하이브리드" -> Collections.addAll(out, "하이브리드(가솔린)", "하이브리드(디젤)", "하이브리드(LPG)");
             case "기타" -> Collections.addAll(out, "null");
             default -> {
             }
@@ -1033,25 +1090,25 @@ public class ElasticsearchCarSearchService {
         if ("null".equalsIgnoreCase(v)) return "기타";
         return switch (v) {
             case "흰색투톤" -> "흰색투톤";
-            case "흰색" -> "흰색";
-            case "회색", "쥐색" -> "회색";
+            case "흰색", "흰", "화이트", "WHITE", "White", "white" -> "흰색";
+            case "회색", "쥐색", "그레이", "그레이색", "GREY", "GRAY", "Grey", "Gray", "grey", "gray" -> "회색";
             case "하늘색", "하늘" -> "하늘색";
-            case "파랑색", "파랑", "파란색", "청색", "남색" -> "파랑색";
-            case "초록색", "청옥색", "연두색", "담녹색", "녹색" -> "초록색";
+            case "파랑색", "파랑", "파란색", "청색", "남색", "블루", "블루색", "BLUE", "Blue", "blue" -> "파랑색";
+            case "초록색", "청옥색", "연두색", "담녹색", "녹색", "그린", "그린색", "GREEN", "Green", "green" -> "초록색";
             case "진주색투톤", "진주투톤" -> "진주색투톤";
             case "진주색", "진주" -> "진주색";
-            case "주황색", "주황" -> "주황색";
-            case "보라색", "보라", "자주색" -> "보라색";
-            case "은색", "은회색", "은하색", "명은색" -> "은색";
+            case "주황색", "주황", "오렌지", "오렌지색", "ORANGE", "Orange", "orange" -> "주황색";
+            case "보라색", "보라", "자주색", "퍼플", "PURPLE", "Purple", "purple", "바이올렛" -> "보라색";
+            case "은색", "은회색", "은하색", "명은색", "실버", "SILVER", "Silver", "silver" -> "은색";
             case "은색투톤" -> "은색투톤";
             case "금색", "연금색" -> "금색";
             case "금색투톤" -> "금색투톤";
-            case "빨강색", "빨강", "빨간색" -> "빨강색";
-            case "분홍색", "분홍" -> "분홍색";
-            case "미색", "갈대색" -> "미색";
-            case "노랑색", "노랑", "노란색" -> "노랑색";
+            case "빨강색", "빨강", "빨간색", "레드", "RED", "Red", "red" -> "빨강색";
+            case "분홍색", "분홍", "핑크", "핑크색", "PINK", "Pink", "pink" -> "분홍색";
+            case "미색", "갈대색", "베이지", "아이보리", "크림", "BEIGE", "Beige", "beige" -> "미색";
+            case "노랑색", "노랑", "노란색", "옐로우", "YELLOW", "Yellow", "yellow" -> "노랑색";
             case "검정투톤" -> "검정투톤";
-            case "검정색", "검정" -> "검정색";
+            case "검정색", "검정", "블랙", "BLACK", "Black", "black" -> "검정색";
             case "갈색투톤" -> "갈색투톤";
             case "갈색" -> "갈색";
             case "기타", "인기색상" -> "기타";

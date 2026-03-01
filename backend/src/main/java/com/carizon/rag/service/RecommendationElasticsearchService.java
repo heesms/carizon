@@ -565,8 +565,15 @@ public class RecommendationElasticsearchService {
                 }
                 case "color" -> {
                     String color = trimOrNull(car.getColor());
-                    if (color != null && containsToken(pref.getValues(), color)) {
-                        boost += 0.05 * weight;
+                    if (color != null) {
+                        // LLM이 외래어 색상명("화이트", "블랙" 등)을 출력할 경우 정규화 후 비교
+                        List<String> normalizedColorValues = pref.getValues().stream()
+                                .map(v -> normalizeColorValue(trimOrNull(v)))
+                                .filter(Objects::nonNull)
+                                .toList();
+                        if (containsToken(normalizedColorValues, color)) {
+                            boost += 0.05 * weight;
+                        }
                     }
                 }
                 case "region" -> {
@@ -669,6 +676,31 @@ public class RecommendationElasticsearchService {
     private static double rankScore(int index, int size) {
         if (size <= 1) return 1.0;
         return Math.max(0.05, 1.0 - ((double) index / (double) size));
+    }
+
+    /**
+     * LLM이 출력하는 색상 표현을 DB 실제 값에 포함된 키워드로 정규화.
+     * containsToken은 target.contains(value)로 판단하므로, 매핑값은 DB 색상명의 앞부분 키워드로 설정.
+     */
+    private static String normalizeColorValue(String raw) {
+        if (raw == null) return null;
+        String v = raw.trim();
+        String lower = v.toLowerCase(Locale.ROOT);
+        return switch (lower) {
+            case "화이트", "흰", "white" -> "흰색";
+            case "블랙", "검정", "black" -> "검정색";
+            case "실버", "silver" -> "은색";
+            case "그레이", "그레이색", "grey", "gray" -> "회색";
+            case "블루", "blue" -> "파랑색";
+            case "레드", "red" -> "빨강색";
+            case "그린", "green" -> "초록색";
+            case "옐로우", "yellow" -> "노랑색";
+            case "핑크", "pink" -> "분홍색";
+            case "퍼플", "purple" -> "보라색";
+            case "오렌지", "orange" -> "주황색";
+            case "베이지", "아이보리", "크림", "beige" -> "미색";
+            default -> v;
+        };
     }
 
     private static String normalizeFuel(String raw) {
