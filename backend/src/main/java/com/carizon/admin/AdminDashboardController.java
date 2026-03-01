@@ -1,7 +1,6 @@
 package com.carizon.admin;
 
 import com.carizon.common.dto.ApiResponse;
-import com.carizon.rag.service.CarEmbeddingBatchService;
 import com.carizon.rag.service.ChromaVectorStoreService;
 import com.carizon.search.service.ElasticsearchCarSearchService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -30,7 +29,7 @@ public class AdminDashboardController {
     private final JdbcTemplate jdbc;
     private final ChromaVectorStoreService vectorStoreService;
     private final ElasticsearchCarSearchService elasticsearchCarSearchService;
-    private final CarEmbeddingBatchService embeddingBatchService;
+    private final com.carizon.rag.service.CarEmbeddingBatchService embeddingBatchService;
 
     @GetMapping("/stats")
     @Operation(summary = "시스템 통계", description = "전체 시스템 현황 통계 조회")

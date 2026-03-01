@@ -3,7 +3,6 @@ package com.carizon.admin;
 import com.carizon.batch.ApiRunRecorder;
 import com.carizon.common.dto.ApiResponse;
 import com.carizon.rag.config.RagProperties;
-import com.carizon.rag.service.CarEmbeddingBatchService;
 import com.carizon.rag.service.ChromaVectorStoreService;
 import com.carizon.rag.service.ModelEmbeddingService;
 import com.carizon.rag.service.ModelTextGeneratorService;
@@ -30,7 +29,7 @@ import java.util.Map;
 @Tag(name = "임베딩 관리", description = "차량 데이터 임베딩 배치 작업 관리")
 public class EmbeddingAdminController {
     
-    private final CarEmbeddingBatchService embeddingBatchService;
+    private final com.carizon.rag.service.CarEmbeddingBatchService embeddingBatchService;
     private final ChromaVectorStoreService vectorStoreService;
     private final RagProperties ragProperties;
     private final ModelEmbeddingService modelEmbeddingService;

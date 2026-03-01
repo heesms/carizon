@@ -138,6 +138,9 @@ public class CarRecommendationService {
         // 표시용 이름 보정: RAG/ES 일부 경로에서 maker/model/trim 누락된 경우 DB 메타데이터로 채움
         backfillDisplayNames(cars);
 
+        // 0원/미정가 매물은 추천에서 제외
+        cars = removeZeroPriceCars(cars);
+
         // 제조사가 "기타"인 매물은 AI 추천 결과에서 제외
         cars = excludeEtcMakers(cars);
 
@@ -267,6 +270,27 @@ public class CarRecommendationService {
                 || "etc".equals(normalized)
                 || "other".equals(normalized)
                 || "unknown".equals(normalized);
+    }
+
+    private static List<RecommendationResponse.RecommendedCar> removeZeroPriceCars(
+            List<RecommendationResponse.RecommendedCar> cars
+    ) {
+        if (cars == null || cars.isEmpty()) return List.of();
+        List<RecommendationResponse.RecommendedCar> filtered = new ArrayList<>(cars.size());
+        int removed = 0;
+        for (RecommendationResponse.RecommendedCar car : cars) {
+            if (car == null) continue;
+            Integer price = car.getPrice();
+            if (price == null || price <= 0) {
+                removed++;
+                continue;
+            }
+            filtered.add(car);
+        }
+        if (removed > 0) {
+            log.info("[recommendation] excluded zero or null price cars: removed={}", removed);
+        }
+        return filtered;
     }
     
     /**

@@ -20,6 +20,7 @@ public interface CarMapper {
   List<Map<String, Object>> selectCarsByModelCodes(@Param("modelCodes") List<String> modelCodes, @Param("limit") int limit);
   String selectCarRepresentativeImageUrl(@Param("carId") long carId);
   Long selectAnyPlatformCarId(@Param("carId") long carId);
+  String selectCarNoByCarId(@Param("carId") long carId);
   List<PricePoint> selectPriceHistory(@Param("platformCarId") long platformCarId);
   List<ModelImageDto> selectModelImages(@Param("modelCode") String modelCode);
   List<Map<String,Object>> selectMakers();

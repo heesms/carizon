@@ -95,6 +95,7 @@ public class SearchFallbackRecommendationService {
         }
 
         List<RecommendationResponse.RecommendedCar> cars = new ArrayList<>(merged.values());
+        cars = filterPositivePrice(cars);
         if (cars.size() > maxResults) {
             cars = new ArrayList<>(cars.subList(0, maxResults));
         }
@@ -305,6 +306,18 @@ public class SearchFallbackRecommendationService {
     private static boolean sameInitial(String a, String b) {
         if (a == null || b == null || a.isEmpty() || b.isEmpty()) return false;
         return a.charAt(0) == b.charAt(0);
+    }
+
+    private static List<RecommendationResponse.RecommendedCar> filterPositivePrice(List<RecommendationResponse.RecommendedCar> cars) {
+        if (cars == null || cars.isEmpty()) return List.of();
+        List<RecommendationResponse.RecommendedCar> filtered = new ArrayList<>(cars.size());
+        for (RecommendationResponse.RecommendedCar car : cars) {
+            if (car == null) continue;
+            Integer price = car.getPrice();
+            if (price == null || price <= 0) continue;
+            filtered.add(car);
+        }
+        return filtered;
     }
 
     private static int commonPrefix(String a, String b) {

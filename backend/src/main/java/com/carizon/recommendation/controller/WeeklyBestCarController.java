@@ -4,6 +4,7 @@ import com.carizon.common.dto.ApiResponse;
 import com.carizon.notification.VisitorNotificationService;
 import com.carizon.recommendation.dto.WeeklyBestCarDto;
 import com.carizon.recommendation.service.BlogPostService;
+import com.carizon.recommendation.service.WeeklyBestHomeSnapshotService;
 import com.carizon.recommendation.service.WeeklyBestCarRankingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -26,6 +27,7 @@ import java.util.Map;
 public class WeeklyBestCarController {
 
     private final WeeklyBestCarRankingService rankingService;
+    private final WeeklyBestHomeSnapshotService homeSnapshotService;
     private final BlogPostService blogPostService;
     private final VisitorNotificationService visitorNotificationService;
 
@@ -53,12 +55,42 @@ public class WeeklyBestCarController {
     @Operation(summary = "전체 주간 Best 매물 조회",
                description = "전체 모델을 대상으로 주간 Best 매물 순위를 조회합니다.")
     public ApiResponse<List<WeeklyBestCarDto>> getWeeklyBestAll(
+            @RequestParam(defaultValue = "20") int limit,
+            HttpServletRequest request) {
+
+        String ip = VisitorNotificationService.extractClientIp(request);
+        String ua = request.getHeader("User-Agent");
+        String referer = request.getHeader("Referer");
+        log.warn("[weekly Best] deprecated /all called. ip={}, referer={}, userAgent={}, limit={}", ip, referer, ua, limit);
+        log.warn("[weekly Best] /all is deprecated and now returns snapshot data for backward compatibility");
+
+        List<WeeklyBestCarDto> bestCars = homeSnapshotService.getHomeSnapshot(Math.max(1, Math.min(limit, 100)));
+
+        return ApiResponse.success(bestCars);
+    }
+
+    @GetMapping("/all/trace")
+    @Operation(summary = "전체 주간 Best 매물 조회(추적)",
+               description = "full all 조회 사용 추적용 엔드포인트. 호출 주체 로그를 남김.")
+    public ApiResponse<List<WeeklyBestCarDto>> getWeeklyBestAllTrace(
+            @RequestParam(defaultValue = "20") int limit,
+            jakarta.servlet.http.HttpServletRequest request) {
+        String ip = com.carizon.notification.VisitorNotificationService.extractClientIp(request);
+        String ua = request.getHeader("User-Agent");
+        log.warn("[weekly-best-trace] /all was called by ip={}, ua={}, limit={}", ip, ua, limit);
+        List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(null, null, limit);
+        return ApiResponse.success(bestCars);
+    }
+
+    @GetMapping("/home")
+    @Operation(summary = "메인 페이지용 주간 Best 매물 조회",
+               description = "ES 스냅샷(6시간 주기 갱신) 기반으로 메인 노출 목록을 제공합니다.")
+    public ApiResponse<List<WeeklyBestCarDto>> getHomeWeeklyBest(
             @RequestParam(defaultValue = "20") int limit) {
 
-        log.info("[weekly Best] all: limit={}", limit);
+        log.info("[weekly Best] home snapshot all: limit={}", limit);
 
-        List<WeeklyBestCarDto> bestCars = rankingService.getWeeklyBestCars(null, null, limit);
-
+        List<WeeklyBestCarDto> bestCars = homeSnapshotService.getHomeSnapshot(limit);
         return ApiResponse.success(bestCars);
     }
 

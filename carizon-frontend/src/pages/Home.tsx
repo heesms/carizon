@@ -44,6 +44,7 @@ type WeeklyItem = {
   priceMin?: number
   priceMax?: number
   representativeImageUrl?: string
+  _resolvedImageUrl?: string | null
 }
 
 const QUICK_SEARCHES = [
@@ -71,6 +72,37 @@ function removeSearchHistory(q: string) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(getSearchHistory().filter(h => h !== q)))
 }
 
+function resolveWeeklyImage(item: WeeklyItem) {
+    const img = item._resolvedImageUrl || item.carImageUrl || item.representativeImageUrl || (item.modelCode ? `/image/car/model/${item.modelCode}.webp` : null)
+    return img && img !== 'null' ? img : null
+  }
+
+  function hasWeeklyImage(item: WeeklyItem) {
+    return !!resolveWeeklyImage(item)
+  }
+
+  function checkImageUrl(url: string) {
+    return new Promise<boolean>(resolve => {
+      const img = new Image()
+      let done = false
+      const doneWith = (ok: boolean) => {
+        if (done) return
+        done = true
+        resolve(ok)
+      }
+      const timer = window.setTimeout(() => doneWith(false), 3500)
+      img.onload = () => {
+        clearTimeout(timer)
+        doneWith(true)
+      }
+      img.onerror = () => {
+        clearTimeout(timer)
+        doneWith(false)
+      }
+      img.src = url
+    })
+  }
+
 export default function Home() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
@@ -83,10 +115,36 @@ export default function Home() {
   const location = useLocation()
 
   useEffect(() => {
+    let active = true
     getWeeklyBest()
-      .then((d: any) => setWeekly(Array.isArray(d) ? d.slice(0, 6) : []))
+      .then(async (d: any) => {
+        const source = Array.isArray(d) ? d : []
+        const items: Array<{ item: WeeklyItem; imageUrl: string }> = source
+          .map((item: any) => {
+            const normalized = item as WeeklyItem
+            const imageUrl = resolveWeeklyImage(normalized)
+            return imageUrl ? { item: normalized, imageUrl } : null
+          })
+          .filter((x): x is { item: WeeklyItem; imageUrl: string } => !!x)
+
+        const weeklyItems: WeeklyItem[] = []
+
+        for (let i = 0; i < items.length && weeklyItems.length < 12; i += 1) {
+          const { item, imageUrl } = items[i]
+          const ok = await checkImageUrl(imageUrl)
+          if (!active) return
+          if (!ok) continue
+          weeklyItems.push({ ...item, _resolvedImageUrl: imageUrl })
+        }
+
+        if (active) setWeekly(weeklyItems)
+      })
       .catch(() => {})
+      .finally(() => {})
     setHistory(getSearchHistory())
+    return () => {
+      active = false
+    }
     // 방문자 알림 (fire-and-forget)
     fetch('/api/analytics/visit', {
       method: 'POST',
@@ -197,6 +255,74 @@ export default function Home() {
 
       {/* ── 광고 배너 (상단) ── */}
       <AdSlot id="home-top-banner" variant="banner" />
+
+      {/* ── 위클리베스트 (중고차 한번에 비교하세요 바로 아래) ── */}
+      {weekly.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <div>
+              <h2 className="section-title">실시간 인기 차량</h2>
+              <p className="section-sub">실시간 주목받는 인기 매물</p>
+            </div>
+            <Link to="/search" className="btn-ghost text-brand-600 text-sm">전체보기 →</Link>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+            {weekly.map((w, i) => {
+              const v = (s?: string | null) => (s && s !== 'null') ? s : ''
+              const name = [v(w.makerName) || v(w.maker), v(w.modelName) || v(w.model)].filter(Boolean).join(' ')
+              const imgUrl = resolveWeeklyImage(w)
+              const price = w.price ?? w.priceMin ?? w.priceMax
+              return (
+                <Link
+                  key={w.carId ?? i}
+                  to={w.carId ? `/cars/${w.carId}` : '/search'}
+                  state={w.carId ? {
+                    from: `${location.pathname}${location.search}${location.hash}`,
+                    source: 'other',
+                    backgroundLocation: location,
+                  } : undefined}
+                  className="card-hover overflow-hidden group"
+                  onClick={() => w.carId && trackSelectItem(w.carId, v(w.makerName) || v(w.maker), v(w.modelName) || v(w.model), 'weekly_best')}
+                >
+                  {/* 이미지 */}
+                  <div className="relative aspect-[16/9] bg-gray-100">
+                    <WeeklyCardImage
+                      src={imgUrl}
+                      alt={name}
+                      className="w-full h-full object-cover object-[center_65%] group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <span className="absolute top-2 left-2 w-7 h-7 rounded-full bg-brand-600 text-white text-xs font-black flex items-center justify-center shadow">
+                      {i + 1}
+                    </span>
+                    {!!w.carizonScore && (
+                      <span className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm text-brand-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
+                        {Math.round(Number(w.carizonScore))}점
+                      </span>
+                    )}
+                  </div>
+                  {/* 정보 */}
+                  <div className="p-3 sm:p-4">
+                    <div className="font-bold text-sm text-gray-900 truncate group-hover:text-brand-600 transition-colors mb-1">
+                      {name.trim()}
+                    </div>
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {!!w.year && <span className="badge badge-gray text-[10px]">{w.year}년</span>}
+                      {!!w.mileage && <span className="badge badge-gray text-[10px]">{w.mileage.toLocaleString()}km</span>}
+                      {!!v(w.fuel) && <span className="badge badge-blue text-[10px]">{w.fuel}</span>}
+                      {!!v(w.region) && <span className="badge badge-gray text-[10px]">{w.region}</span>}
+                    </div>
+                    {!!price && (
+                      <div className="text-base font-black text-brand-600">
+                        {price.toLocaleString()}만원
+                      </div>
+                    )}
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       {/* ── AI 자연어 추천 ── */}
       <section className="card overflow-hidden">
@@ -341,74 +467,6 @@ export default function Home() {
 
         </div>
       </section>
-
-      {/* ── 위클리베스트 ── */}
-      {weekly.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-3 sm:mb-4">
-            <div>
-              <h2 className="section-title">이번 주 인기 차량</h2>
-              <p className="section-sub">이번 주 주목받는 인기 매물</p>
-            </div>
-            <Link to="/search" className="btn-ghost text-brand-600 text-sm">전체보기 →</Link>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-            {weekly.map((w, i) => {
-              const v = (s?: string | null) => (s && s !== 'null') ? s : ''
-              const name = [v(w.makerName) || v(w.maker), v(w.modelName) || v(w.model)].filter(Boolean).join(' ')
-              const imgUrl = w.carImageUrl || w.representativeImageUrl || (w.modelCode ? `/image/car/model/${w.modelCode}.webp` : null)
-              const price = w.price ?? w.priceMin ?? w.priceMax
-              return (
-                <Link
-                  key={w.carId ?? i}
-                  to={w.carId ? `/cars/${w.carId}` : '/search'}
-                  state={w.carId ? {
-                    from: `${location.pathname}${location.search}${location.hash}`,
-                    source: 'other',
-                    backgroundLocation: location,
-                  } : undefined}
-                  className="card-hover overflow-hidden group"
-                  onClick={() => w.carId && trackSelectItem(w.carId, v(w.makerName) || v(w.maker), v(w.modelName) || v(w.model), 'weekly_best')}
-                >
-                  {/* 이미지 */}
-                  <div className="relative aspect-[16/9] bg-gray-100">
-                    <WeeklyCardImage
-                      src={imgUrl}
-                      alt={name}
-                      className="w-full h-full object-cover object-[center_65%] group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <span className="absolute top-2 left-2 w-7 h-7 rounded-full bg-brand-600 text-white text-xs font-black flex items-center justify-center shadow">
-                      {i + 1}
-                    </span>
-                    {!!w.carizonScore && (
-                      <span className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm text-brand-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
-                        {Math.round(Number(w.carizonScore))}점
-                      </span>
-                    )}
-                  </div>
-                  {/* 정보 */}
-                  <div className="p-3 sm:p-4">
-                    <div className="font-bold text-sm text-gray-900 truncate group-hover:text-brand-600 transition-colors mb-1">
-                      {name.trim()}
-                    </div>
-                    <div className="flex flex-wrap gap-1 mb-2">
-                      {!!w.year && <span className="badge badge-gray text-[10px]">{w.year}년</span>}
-                      {!!w.mileage && <span className="badge badge-gray text-[10px]">{w.mileage.toLocaleString()}km</span>}
-                      {!!v(w.fuel) && <span className="badge badge-blue text-[10px]">{w.fuel}</span>}
-                      {!!v(w.region) && <span className="badge badge-gray text-[10px]">{w.region}</span>}
-                    </div>
-                    {!!price && (
-                      <div className="text-base font-black text-brand-600">
-                        {price.toLocaleString()}만원
-                      </div>
-                    )}
-                  </div>
-                </Link>
-              )
-            })}
-          </div>
-        </section>
-      )}
 
       {/* ── 광고 배너 (하단) ── */}
       <AdSlot id="home-bottom-banner" variant="rectangle" className="max-w-sm" />

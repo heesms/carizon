@@ -86,7 +86,7 @@ export const getWeeklyBest = () => {
     return Promise.resolve(weeklyBestCache)
   }
   if (weeklyBestPromise) return weeklyBestPromise
-  weeklyBestPromise = fetch('/api/recommendation/weekly-best/all')
+  weeklyBestPromise = fetch('/api/recommendation/weekly-best/home?limit=20')
     .then(j)
     .then((data: unknown) => {
       const rows = Array.isArray(data) ? data as unknown[] : []

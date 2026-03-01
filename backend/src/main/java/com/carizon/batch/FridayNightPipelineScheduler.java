@@ -3,9 +3,9 @@ package com.carizon.batch;
 import com.carizon.mapping.CodeMappingService;
 import com.carizon.mapping.MasterMergeService;
 import com.carizon.merge.MergeService;
-import com.carizon.rag.service.CarEmbeddingBatchService;
 import com.carizon.rag.service.ChromaVectorStoreService;
 import com.carizon.search.service.CarIndexingService;
+import com.carizon.recommendation.service.WeeklyBestHomeSnapshotService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -29,11 +29,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 1) /admin/crawl/runAll
  * 2) /admin/pipeline/rebuild-platform-car
  * 3) /admin/pipeline/code-mapping-only?scope=FULL
- * 4) /admin/pipeline/rebuild-car-master
+ * 4) /admin/pipeline/rebuild-car-master-preserve-car-id
  *
  * 순차 종료 후 병렬:
  * - /admin/search/reindex
  * - /admin/embedding/reset-and-all
+ * - /admin/recommendation/weekly-best/home/refresh
  */
 @Slf4j
 @Service
@@ -51,13 +52,23 @@ public class FridayNightPipelineScheduler {
     private final MasterMergeService masterMergeService;
     private final CarIndexingService indexingService;
     private final ChromaVectorStoreService vectorStoreService;
-    private final CarEmbeddingBatchService embeddingBatchService;
+    private final com.carizon.rag.service.CarEmbeddingBatchService embeddingBatchService;
+    private final WeeklyBestHomeSnapshotService weeklyBestHomeSnapshotService;
     private final ApiRunRecorder apiRunRecorder;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     @Scheduled(cron = "0 0 22 * * FRI", zone = "Asia/Seoul")
     public void runFridayNightPipeline() {
+        runFridayNightPipelineInternal();
+    }
+
+    @Scheduled(cron = "0 0 22 * * MON", zone = "Asia/Seoul")
+    public void runMondayEveningPipeline() {
+        runFridayNightPipelineInternal();
+    }
+
+    private void runFridayNightPipelineInternal() {
         if (!running.compareAndSet(false, true)) {
             log.warn("[friday-night] already running, skip this trigger");
             return;
@@ -124,18 +135,18 @@ public class FridayNightPipelineScheduler {
                 apiRunRecorder.recordFail(stepId3, mappedCount, e);
             }
 
-            // STEP 4: car_master 재생성
-            currentStep = "4:/admin/pipeline/rebuild-car-master";
-            String stepId4 = apiRunRecorder.recordStart("/admin/pipeline/rebuild-car-master", "SCHEDULED", "friday-rebuild-car-master", runId);
+            // STEP 4: car_master 재생성 (기존 car_no는 car_id 유지)
+            currentStep = "4:/admin/pipeline/rebuild-car-master-preserve-car-id";
+            String stepId4 = apiRunRecorder.recordStart("/admin/pipeline/rebuild-car-master-preserve-car-id", "SCHEDULED", "friday-rebuild-car-master-preserve", runId);
             long rebuildMasterStart = System.currentTimeMillis();
             try {
-                int carMasterCount = masterMergeService.rebuildCarMasterFromScratch(bizDate);
+                int carMasterCount = masterMergeService.rebuildCarMasterFromScratchPreserveCarId(bizDate);
                 int masterUpdatedCount = masterMergeService.updateCarMasterFromMapping();
                 int linkedCount = mergeService.linkToMaster();
                 totalItems += Math.max(carMasterCount, 0);
                 totalItems += Math.max(linkedCount, 0);
                 long rebuildMasterMs = System.currentTimeMillis() - rebuildMasterStart;
-                result.put("rebuildCarMaster", Map.of("path", "/admin/pipeline/rebuild-car-master", "carMasterCount", carMasterCount, "updatedCount", masterUpdatedCount, "linkedCount", linkedCount, "durationMs", rebuildMasterMs));
+                result.put("rebuildCarMaster", Map.of("path", "/admin/pipeline/rebuild-car-master-preserve-car-id", "carMasterCount", carMasterCount, "updatedCount", masterUpdatedCount, "linkedCount", linkedCount, "durationMs", rebuildMasterMs));
                 apiRunRecorder.recordSuccess(stepId4, carMasterCount, result.get("rebuildCarMaster"));
             } catch (Exception e) {
                 apiRunRecorder.recordFail(stepId4, 0, e);
@@ -154,6 +165,22 @@ public class FridayNightPipelineScheduler {
             } catch (Exception e) {
                 apiRunRecorder.recordFail(stepId5, 0, e);
                 throw e;
+            }
+
+            // STEP 6: 메인 주간 베스트 스냅샷 즉시 갱신
+            currentStep = "6:/admin/recommendation/weekly-best/home/refresh";
+            String stepId6 = apiRunRecorder.recordStart("/admin/recommendation/weekly-best/home/refresh", "SCHEDULED", "friday-home-weekly-best-refresh", runId);
+            try {
+                int homeWeeklyBestCount = weeklyBestHomeSnapshotService.refreshSnapshot(20);
+                result.put("homeWeeklyBestRefresh", Map.of(
+                        "path", "/admin/recommendation/weekly-best/home/refresh",
+                        "count", homeWeeklyBestCount
+                ));
+                apiRunRecorder.recordSuccess(stepId6, Math.max(homeWeeklyBestCount, 0), result.get("homeWeeklyBestRefresh"));
+            } catch (Exception e) {
+                log.warn("[friday-night] home weekly best snapshot refresh failed: {}", e.getMessage(), e);
+                result.put("homeWeeklyBestRefreshError", e.getMessage());
+                apiRunRecorder.recordFail(stepId6, 0, e);
             }
 
             long totalDurationMs = System.currentTimeMillis() - totalStart;

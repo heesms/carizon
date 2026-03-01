@@ -2,6 +2,7 @@ package com.carizon.rag.controller;
 
 import com.carizon.common.dto.ApiResponse;
 import com.carizon.notification.VisitorNotificationService;
+import com.carizon.domain.mapper.CarMapper;
 import com.carizon.rag.service.LikeService;
 import com.carizon.search.service.ElasticsearchCarSearchService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,6 +32,7 @@ public class LikeController {
     
     private final LikeService likeService;
     private final ElasticsearchCarSearchService elasticsearchCarSearchService;
+    private final CarMapper carMapper;
     private final VisitorNotificationService visitorNotificationService;
     private static final Pattern SAFE_CLIENT_ID = Pattern.compile("^[A-Za-z0-9_-]{8,128}$");
     private static final String CLIENT_ID_COOKIE_NAME = "carizon_client_id";
@@ -82,8 +84,15 @@ public class LikeController {
                 ? elasticsearchCarSearchService.findCarsByIds(List.of(carId))
                 : List.of();
         String carNo = carRows.isEmpty() ? null : normalizeCarNo(asText(carRows.get(0).get("carNo")));
+        if (carNo == null) {
+            carNo = resolveCarNoFromDb(carId);
+            if (carNo != null && (carRows == null || carRows.isEmpty())) {
+                carRows = nullSafeResolveCarRowsFromDb(carId);
+            }
+        }
 
         if (carNo == null) {
+            log.warn("[like] carNo not found for carId={}, like request ignored", carId);
             return ResponseEntity.ok(ApiResponse.success(Map.of(
                 "liked", false,
                 "count", 0L
@@ -131,6 +140,7 @@ public class LikeController {
         String userId = getUserId(request);
         String carNo = resolveCarNo(carId);
         if (carNo == null) {
+            log.warn("[like] carNo not found for carId={}, like status query ignored", carId);
             return ResponseEntity.ok(ApiResponse.success(Map.of(
                 "count", 0L,
                 "liked", false
@@ -285,8 +295,41 @@ public class LikeController {
     private String resolveCarNo(Long carId) {
         if (carId == null || carId <= 0) return null;
         List<Map<String, Object>> rows = elasticsearchCarSearchService.findCarsByIds(List.of(carId));
+        if (!rows.isEmpty()) {
+            return normalizeCarNo(asText(rows.get(0).get("carNo")));
+        }
+
+        String carNo = resolveCarNoFromDb(carId);
+        if (carNo != null) {
+            return carNo;
+        }
+
+        rows = nullSafeResolveCarRowsFromDb(carId);
         if (rows.isEmpty()) return null;
         return normalizeCarNo(asText(rows.get(0).get("carNo")));
+    }
+
+    private List<Map<String, Object>> nullSafeResolveCarRowsFromDb(Long carId) {
+        if (carId == null || carId <= 0) return List.of();
+        try {
+            return carMapper.selectCarsForIndexingById(Map.of("carId", carId));
+        } catch (Exception e) {
+            log.warn("[like] fallback db lookup failed for carId={}", carId, e);
+            return List.of();
+        }
+    }
+
+    private String resolveCarNoFromDb(Long carId) {
+        if (carId == null || carId <= 0) return null;
+        try {
+            String carNo = carMapper.selectCarNoByCarId(carId);
+            if (carNo != null && !carNo.isBlank()) {
+                return normalizeCarNo(carNo);
+            }
+        } catch (Exception e) {
+            log.warn("[like] fallback car_no lookup failed for carId={}", carId, e);
+        }
+        return null;
     }
 
     private static Long toLong(Object value) {

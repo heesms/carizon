@@ -40,6 +40,9 @@ public class VisitorNotificationService {
     @Value("${app.notification.slack.visitor-dedup-minutes:30}")
     private int dedupMinutes;
 
+    @Value("${app.notification.slack.user-action-dedup-minutes:2}")
+    private int userActionDedupMinutes;
+
     @Value("${app.notification.slack.local-test-enabled:false}")
     private boolean localTestEnabled;
 
@@ -48,6 +51,14 @@ public class VisitorNotificationService {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, Instant> eldest) {
             return size() > 500;
+        }
+    };
+
+    // 사용자 액션 단위(제목+상세+IP) 중복 방지 캐시 (최대 1000개)
+    private final Map<String, Instant> recentUserActions = new LinkedHashMap<>() {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Instant> eldest) {
+            return size() > 1000;
         }
     };
 
@@ -128,6 +139,21 @@ public class VisitorNotificationService {
             log.info("[slack-notify] skip private ip for user action ip={}", ip);
             return;
         }
+
+        String normalizedTitle = title == null ? "" : title.trim();
+        String normalizedDetails = details == null ? "" : details.trim();
+        String actionKey = String.format("%s|%s|%s", ip, normalizedTitle, normalizedDetails);
+
+        int ttlMinutes = Math.max(1, userActionDedupMinutes);
+        synchronized (recentUserActions) {
+            Instant last = recentUserActions.get(actionKey);
+            if (last != null && Instant.now().isBefore(last.plusSeconds(ttlMinutes * 60L))) {
+                log.info("[slack-notify] user action dedup skip ip={} title={} key={}", ip, normalizedTitle, toHashKey(actionKey));
+                return;
+            }
+            recentUserActions.put(actionKey, Instant.now());
+        }
+
         final String prefix = isPrivate ? "[local-test] " : "";
         Thread.ofVirtual().start(() -> {
             try {
@@ -148,6 +174,10 @@ public class VisitorNotificationService {
                 log.warn("[slack-notify] user action notify error: {}", e.getMessage());
             }
         });
+    }
+
+    private String toHashKey(String key) {
+        return Integer.toHexString(key.hashCode());
     }
 
     private String resolveLocation(String ip) {

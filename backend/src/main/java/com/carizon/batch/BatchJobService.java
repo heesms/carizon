@@ -4,7 +4,6 @@ import com.carizon.mapping.CodeMappingService;
 import com.carizon.mapping.MasterMergeService;
 import com.carizon.mapping.ModelNewPriceService;
 import com.carizon.merge.MergeService;
-import com.carizon.rag.service.CarEmbeddingBatchService;
 import com.carizon.search.service.CarIndexingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,7 +32,7 @@ public class BatchJobService {
     private final MasterMergeService masterMergeService;
     private final ModelNewPriceService modelNewPriceService;
     private final CarIndexingService indexingService;
-    private final CarEmbeddingBatchService embeddingBatchService;
+    private final com.carizon.rag.service.CarEmbeddingBatchService embeddingBatchService;
     private final ApiRunRecorder apiRunRecorder;
 
     /**

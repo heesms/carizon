@@ -161,6 +161,22 @@
     LIMIT 1
   </select>
 
+  <select id="selectCarNoByCarId" parameterType="long" resultType="string">
+    SELECT resolved.carNo
+    FROM (
+      SELECT NULLIF(TRIM(cm.car_no), '') AS carNo, 1 AS ord
+      FROM car_master cm
+      WHERE cm.car_id = #{carId}
+      UNION ALL
+      SELECT NULLIF(TRIM(pc.car_no), '') AS carNo, 2 AS ord
+      FROM platform_car pc
+      WHERE pc.car_id = #{carId}
+    ) resolved
+    WHERE resolved.carNo IS NOT NULL
+    ORDER BY resolved.ord ASC
+    LIMIT 1
+  </select>
+
   <select id="selectPriceHistory" parameterType="long" resultType="com.carizon.dto.PricePoint">
     SELECT checked_at AS ts, price
     FROM car_price_history

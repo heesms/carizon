@@ -1,6 +1,7 @@
 package com.carizon.controller;
 
 import com.carizon.common.dto.ApiResponse;
+import com.carizon.dto.CarDetailRow;
 import com.carizon.notification.VisitorNotificationService;
 import com.carizon.service.CarQueryService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -52,19 +54,25 @@ public class CarController {
 
             // Slack 알림
             try {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> car = (Map<String, Object>) result.get("car");
-                String maker  = car != null ? String.valueOf(car.getOrDefault("maker",  "")) : "";
-                String model  = car != null ? String.valueOf(car.getOrDefault("model",  "")) : "";
-                Object year   = car != null ? car.get("year")   : null;
-                Object price  = car != null ? car.getOrDefault("priceMin", car.get("price")) : null;
+                String model = "";
+                Object contentObj = result.get("content");
+                if (contentObj instanceof List<?> rows && !rows.isEmpty()) {
+                    Object first = rows.get(0);
+                    if (first instanceof Map<?, ?> firstMap) {
+                        Object modelName = firstMap.get("modelName");
+                        if (modelName == null) {
+                            modelName = firstMap.get("model_group_name");
+                        }
+                        model = modelName != null ? String.valueOf(modelName) : "";
+                    } else if (first instanceof CarDetailRow row) {
+                        model = row.modelName() != null ? row.modelName()
+                                : (row.modelGroupName() != null ? row.modelGroupName() : "");
+                    }
+                }
                 String ip = VisitorNotificationService.extractClientIp(request);
                 String ua = request.getHeader("User-Agent");
                 visitorNotificationService.notifyUserAction(ip, ua, "🔎", "매물 상세 조회",
-                        String.format("🚗 carId=%d %s %s %s년식 %s만원",
-                                carId, maker, model,
-                                year != null ? year : "-",
-                                price != null ? price : "-"));
+                        String.format("🚗 carId=%d %s", carId, model));
             } catch (Exception ex) {
                 log.warn("[slack-notify] car detail notify error: {}", ex.getMessage());
             }

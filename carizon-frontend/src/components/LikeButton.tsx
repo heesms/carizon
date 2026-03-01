@@ -28,14 +28,36 @@ export default function LikeButton({ carId, className = '' }: Props) {
 
   const onToggle = async () => {
     if (busy) return
+    const prevLiked = liked
+    const prevCount = count
+    const optimisticLiked = !prevLiked
+    const optimisticCount = Math.max(0, prevCount + (optimisticLiked ? 1 : -1))
+
+    setLiked(optimisticLiked)
+    setCount(optimisticCount)
     setBusy(true)
+
     try {
       const next = await toggleLike(carId)
-      setLiked(!!next?.liked)
-      setCount(Number(next?.count ?? 0))
-      trackLike(carId, !!next?.liked)
+      if (next) {
+        setLiked(!!next.liked)
+        const nextCount = Number(next.count)
+        setCount(Number.isFinite(nextCount) ? nextCount : optimisticCount)
+        trackLike(carId, !!next.liked)
+      } else {
+        setLiked(optimisticLiked)
+        setCount(optimisticCount)
+      }
     } catch {
-      // no-op
+      try {
+        const refreshed = await getLike(carId)
+        setLiked(!!refreshed?.liked)
+        const refreshedCount = Number(refreshed?.count ?? NaN)
+        setCount(Number.isFinite(refreshedCount) ? refreshedCount : prevCount)
+      } catch {
+        setLiked(prevLiked)
+        setCount(prevCount)
+      }
     } finally {
       setBusy(false)
     }

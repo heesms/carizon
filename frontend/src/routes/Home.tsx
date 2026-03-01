@@ -1,9 +1,55 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import CarCard from '@/components/CarCard'
 import Recommendation from '@/routes/Recommendation'
 import SeoMeta from '@/components/SeoMeta'
+import { getHomeWeeklyBest, type WeeklyBestCar } from '@/api/weeklyBest'
+
+type WeeklyBestHomeItem = {
+  carId: number
+  maker: string
+  model: string
+  trim?: string
+  year?: number
+  km?: number
+  priceMin?: number
+  priceMax?: number
+  fuel?: string
+  region?: string
+  representativeImageUrl?: string
+  modelCode?: string
+}
 
 export default function Home() {
+    const [homeBestCars, setHomeBestCars] = useState<WeeklyBestHomeItem[]>([])
+    const [loadingHomeBest, setLoadingHomeBest] = useState(false)
+    const [homeBestError, setHomeBestError] = useState<string | null>(null)
+
+    useEffect(() => {
+        let cancelled = false
+        const load = async () => {
+            setLoadingHomeBest(true)
+            setHomeBestError(null)
+            try {
+                const data = await getHomeWeeklyBest(6)
+                if (cancelled) return
+                setHomeBestCars((data || []).slice(0, 6).map(toHomeBestListItem))
+            } catch (error) {
+                if (cancelled) return
+                setHomeBestError(error instanceof Error ? error.message : '인기 차량을 불러오지 못했습니다.')
+                setHomeBestCars([])
+            } finally {
+                if (!cancelled) {
+                    setLoadingHomeBest(false)
+                }
+            }
+        }
+        load()
+        return () => {
+            cancelled = true
+        }
+    }, [])
+
     return (
         <>
             <SeoMeta
@@ -18,6 +64,26 @@ export default function Home() {
             {/* 왼쪽 절반 · 세로 3칸: AI 차량 추천 (입력 유지, 추천받기 누르면 AI 추천 페이지로 이동) */}
             <div className="lg:row-span-3 min-h-0 flex flex-col">
                 <Recommendation simplified />
+                <FeatureCard
+                    title="메인 인기 모델"
+                    description="최근 데이터 기반 주간 BEST 차량"
+                    icon={
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4m12 0h1a2 2 0 011 1.85v5.58A2 2 0 0120 19H4a2 2 0 01-2-2V8.85A2 2 0 013 7h1m15 4h-3v6h3m-6 0H9m6-10h4m-3-6h.01M9 10.5a2.5 2.5 0 015 0" />
+                        </svg>
+                    }
+                >
+                    {loadingHomeBest && <p className="mt-4 text-sm text-gray-500">인기 차량을 불러오는 중...</p>}
+                    {homeBestError && <p className="mt-4 text-sm text-red-500">{homeBestError}</p>}
+                    {!loadingHomeBest && !homeBestError && homeBestCars.length === 0 && (
+                        <p className="mt-4 text-sm text-gray-500">표시할 차량이 없습니다.</p>
+                    )}
+                    <div className="mt-4 flex flex-col gap-3">
+                        {homeBestCars.map((item) => (
+                            <CarCard key={item.carId} item={item} compact={true} />
+                        ))}
+                    </div>
+                </FeatureCard>
             </div>
 
             {/* 오른쪽 절반 · 세로 1칸씩: 검색, 광고, 최근가격하락 */}
@@ -98,6 +164,23 @@ export default function Home() {
             </div>
         </>
     )
+}
+
+function toHomeBestListItem(item: WeeklyBestCar): WeeklyBestHomeItem {
+    return {
+        carId: item.carId,
+        maker: item.makerName || '',
+        model: item.modelName || '',
+        trim: item.trimName,
+        year: item.year,
+        km: item.mileage,
+        priceMin: item.price,
+        priceMax: item.price,
+        fuel: item.fuel,
+        region: item.region,
+        representativeImageUrl: item.carImageUrl,
+        modelCode: item.modelCode,
+    }
 }
 
 function FeatureCard({

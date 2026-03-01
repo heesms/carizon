@@ -207,6 +207,11 @@ public class MergeService {
         }
     }
 
+    private void logBatchSql(String stage, String sql, Object... params) {
+        if (!log.isInfoEnabled()) return;
+        log.info("[batch-sql] {}:\n{}\nparams={}", stage, sql == null ? "" : sql.strip(), Arrays.toString(params));
+    }
+
     /** 배치 내부에서 사용할 REQUIRES_NEW 템플릿 (READ_COMMITTED) */
     private TransactionTemplate requiresNew() {
         TransactionTemplate tx = new TransactionTemplate(txManager);
@@ -919,6 +924,17 @@ public class MergeService {
         return Map.of("platformCarCount", platformCarCount);
     }
 
+    /** 플랫폼 차량만 TRUNCATE 후 재생성. car_master는 그대로 유지 */
+    public int rebuildPlatformCarOnly(LocalDate bizDate) {
+        log.warn("[merge] rebuildPlatformCarOnly: TRUNCATE platform_car and rebuild!");
+        jdbc.execute("TRUNCATE TABLE platform_car");
+        log.info("[merge] platform_car TRUNCATE done (car_master/cost_history preserved)");
+
+        int platformCarCount = mergeAllPlatformsInsertOnly(bizDate);
+        log.info("[merge] platform_car rebuild only done: {} rows", platformCarCount);
+        return platformCarCount;
+    }
+
     /** raw_*에서 platform_car로 INSERT만 수행 (ON DUPLICATE KEY UPDATE 없음) */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     private int mergeAllPlatformsInsertOnly(LocalDate bizDate) {
@@ -1325,8 +1341,7 @@ public class MergeService {
 
             ExecResult res = runWithRetry(3, 200L, () ->
                     requiresNew().execute(status -> {
-                        // 1) 작업 대상 청크 잠금
-                        List<PcRow> batch = jdbc.query("""
+                        String selectBatchSql = """
                         SELECT platform_car_id, car_no
                           FROM platform_car
                          WHERE car_id IS NULL
@@ -1334,7 +1349,10 @@ public class MergeService {
                          ORDER BY platform_car_id
                          LIMIT ?
                          FOR UPDATE SKIP LOCKED
-                    """, (rs, i) -> new PcRow(rs.getLong(1), rs.getString(2)), curId, CHUNK);
+                    """;
+                        logBatchSql("linkToMaster.selectBatch", selectBatchSql, curId, CHUNK);
+                        // 1) 작업 대상 청크 잠금
+                        List<PcRow> batch = jdbc.query(selectBatchSql, (rs, i) -> new PcRow(rs.getLong(1), rs.getString(2)), curId, CHUNK);
 
                         if (batch.isEmpty()) return new ExecResult(0, curId);
 
@@ -1346,25 +1364,31 @@ public class MergeService {
 
                         // 2-a) 없는 car_no만 INSERT
                         if (!carNos.isEmpty()) {
+                            String insertCarMasterSql = """
+                            INSERT INTO car_master (car_no, created_at, updated_at)
+                            SELECT :car_no, NOW(), NOW()
+                            WHERE NOT EXISTS (SELECT 1 FROM car_master cm WHERE cm.car_no = :car_no)
+                        """;
                             SqlParameterSource[] params = carNos.stream()
                                     .map(c -> new MapSqlParameterSource().addValue("car_no", c))
                                     .toArray(SqlParameterSource[]::new);
 
-                            npJdbc.batchUpdate("""
-                            INSERT INTO car_master (car_no, created_at, updated_at)
-                            SELECT :car_no, NOW(), NOW()
-                            WHERE NOT EXISTS (SELECT 1 FROM car_master cm WHERE cm.car_no = :car_no)
-                        """, params);
+                            logBatchSql("linkToMaster.insertMissingCarMaster", insertCarMasterSql, "size=" + params.length);
+                            npJdbc.batchUpdate(insertCarMasterSql, params);
                         }
 
                         // 2-b) 매핑 조회
-                        Map<String, Long> cmByCarNo = carNos.isEmpty() ? Map.of() :
-                                npJdbc.query("""
+                        String selectCarIdSql = """
                                 SELECT car_no, MAX(car_id) AS car_id
                                   FROM car_master
                                  WHERE car_no IN (:nos)
                                  GROUP BY car_no
-                            """, Map.of("nos", carNos), rs -> {
+                            """;
+                        if (!carNos.isEmpty()) {
+                            logBatchSql("linkToMaster.selectCarId", selectCarIdSql, carNos.size());
+                        }
+                        Map<String, Long> cmByCarNo = carNos.isEmpty() ? Map.of() :
+                                npJdbc.query(selectCarIdSql, Map.of("nos", carNos), rs -> {
                                     Map<String, Long> m = new HashMap<>();
                                     while (rs.next()) m.put(rs.getString("car_no"), rs.getLong("car_id"));
                                     return m;
@@ -1378,11 +1402,10 @@ public class MergeService {
                         }
                         if (params.isEmpty()) return new ExecResult(0, next);
 
+                        String updateSql = "UPDATE platform_car SET car_id = ? WHERE platform_car_id = ? AND car_id IS NULL";
+                        logBatchSql("linkToMaster.updateBatch", updateSql, "batchSize=" + params.size());
                         int processed = Arrays.stream(
-                                jdbc.batchUpdate(
-                                        "UPDATE platform_car SET car_id = ? WHERE platform_car_id = ? AND car_id IS NULL",
-                                        params
-                                )
+                                jdbc.batchUpdate(updateSql, params)
                         ).sum();
 
                         return new ExecResult(processed, next);
@@ -1397,7 +1420,7 @@ public class MergeService {
         // car_id 링크 후: car_master.price_new가 비어 있으면 platform_car의 price_new로 채움
         runWithRetry(3, 200L, () ->
             requiresNew().execute(status -> {
-                int filled = jdbc.update("""
+                String updatePriceSql = """
                     UPDATE car_master cm
                     INNER JOIN (
                         SELECT car_id, MAX(price_new) AS price_new
@@ -1407,7 +1430,9 @@ public class MergeService {
                     ) pc ON pc.car_id = cm.car_id
                     SET cm.price_new = pc.price_new, cm.updated_at = NOW()
                     WHERE cm.price_new IS NULL
-                    """);
+                    """;
+                logBatchSql("linkToMaster.backfillPriceNew", updatePriceSql);
+                int filled = jdbc.update(updatePriceSql);
                 if (filled > 0) log.info("[merge] backfill car_master.price_new from platform_car: {} rows", filled);
                 return null;
             }));
@@ -1415,7 +1440,7 @@ public class MergeService {
         // car_id 링크 후: car_master.ad_date를 platform_car.ad_date의 최대값으로 동기화
         runWithRetry(3, 200L, () ->
             requiresNew().execute(status -> {
-                int synced = jdbc.update("""
+                String syncAdDateSql = """
                     UPDATE car_master cm
                     INNER JOIN (
                         SELECT car_id, MAX(ad_date) AS max_ad_date
@@ -1425,7 +1450,9 @@ public class MergeService {
                     ) pc ON pc.car_id = cm.car_id
                     SET cm.ad_date = pc.max_ad_date, cm.updated_at = NOW()
                     WHERE cm.ad_date IS NULL OR cm.ad_date <> pc.max_ad_date
-                    """);
+                    """;
+                logBatchSql("linkToMaster.syncAdDate", syncAdDateSql);
+                int synced = jdbc.update(syncAdDateSql);
                 if (synced > 0) log.info("[merge] sync car_master.ad_date from platform_car max: {} rows", synced);
                 return null;
             }));
@@ -1433,7 +1460,7 @@ public class MergeService {
         // car_id 링크 후: ENCAR 확장 필드(seat/사고) 동기화
         runWithRetry(3, 200L, () ->
             requiresNew().execute(status -> {
-                int synced = jdbc.update("""
+                String syncAccidentSql = """
                     UPDATE car_master cm
                     INNER JOIN (
                         SELECT car_id,
@@ -1449,9 +1476,11 @@ public class MergeService {
                         cm.flood_total_loss_cnt = COALESCE(pc.flood_total_loss_cnt, cm.flood_total_loss_cnt),
                         cm.updated_at = NOW()
                     WHERE (pc.seat_count IS NOT NULL AND (cm.seat_count IS NULL OR cm.seat_count <> pc.seat_count))
-                       OR (pc.my_accident_cnt IS NOT NULL AND (cm.my_accident_cnt IS NULL OR cm.my_accident_cnt <> pc.my_accident_cnt))
+                        OR (pc.my_accident_cnt IS NOT NULL AND (cm.my_accident_cnt IS NULL OR cm.my_accident_cnt <> pc.my_accident_cnt))
                        OR (pc.flood_total_loss_cnt IS NOT NULL AND (cm.flood_total_loss_cnt IS NULL OR cm.flood_total_loss_cnt <> pc.flood_total_loss_cnt))
-                    """);
+                    """;
+                logBatchSql("linkToMaster.syncSeatAccident", syncAccidentSql);
+                int synced = jdbc.update(syncAccidentSql);
                 if (synced > 0) log.info("[merge] sync car_master seat/accident fields from platform_car: {} rows", synced);
                 return null;
             }));
@@ -1459,7 +1488,7 @@ public class MergeService {
         // car_id 링크 후: option_array/sel_option_array 동기화 (최신 ENCAR 계열 우선)
         runWithRetry(3, 200L, () ->
             requiresNew().execute(status -> {
-                int synced = jdbc.update("""
+                String syncOptionSql = """
                     UPDATE car_master cm
                     SET cm.option_array = COALESCE((
                             SELECT pc.option_array
@@ -1496,20 +1525,42 @@ public class MergeService {
                                  AND TRIM(p1.option_array) <> ''
                            ))
                         OR (cm.sel_option_array IS NULL AND EXISTS (
-                               SELECT 1
-                               FROM platform_car p2
+                              SELECT 1
+                              FROM platform_car p2
                                WHERE p2.car_id = cm.car_id
                                  AND p2.sel_option_array IS NOT NULL
                                  AND TRIM(p2.sel_option_array) <> ''
                            ))
                       )
-                    """);
+                    """;
+                logBatchSql("linkToMaster.syncOptionArrays", syncOptionSql);
+                int synced = jdbc.update(syncOptionSql);
                 if (synced > 0) log.info("[merge] sync car_master option arrays from platform_car: {} rows", synced);
                 return null;
             }));
 
         log.info("linkToMaster linked rows: {}", total);
         return total;
+    }
+
+    /** platform_car.car_id가 car_master를 참조하지 않으면 NULL로 정리 */
+    public int normalizePlatformCarCarIdRefs() {
+        return runWithRetry(3, 200L, () ->
+                requiresNew().execute(status -> {
+                    String sql = """
+                        UPDATE platform_car p
+                        LEFT JOIN car_master cm
+                               ON cm.CAR_ID = p.CAR_ID
+                        SET p.CAR_ID = NULL
+                        WHERE p.CAR_ID IS NOT NULL
+                          AND cm.CAR_ID IS NULL
+                    """;
+                    logBatchSql("normalizePlatformCarCarIdRefs", sql);
+                    int updated = jdbc.update(sql);
+                    log.info("[merge] normalizePlatformCarCarIdRefs done: {}", updated);
+                    return updated;
+                })
+        );
     }
 
     /* ========== 3) 가격 스냅샷 & 미노출 처리 (각 단계 REQUIRES_NEW 커밋) ========== */

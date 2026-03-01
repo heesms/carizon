@@ -406,6 +406,9 @@ public class RagSearchService {
      */
     private FilterRejectReason evaluateFilterRejection(SearchResult result, RecommendationRequest request) {
         // 가격 필터
+        if (result.getPrice() == null || result.getPrice() <= 0) {
+            return FilterRejectReason.PRICE_INVALID;
+        }
         if (request.getMinPrice() != null && result.getPrice() != null && result.getPrice() < request.getMinPrice()) {
             return FilterRejectReason.PRICE_MIN;
         }
@@ -524,6 +527,7 @@ public class RagSearchService {
     }
 
     private enum FilterRejectReason {
+        PRICE_INVALID,
         PRICE_MIN,
         PRICE_MAX,
         MAKER,
@@ -581,6 +585,7 @@ public class RagSearchService {
     /** Chroma where: 기존 메타데이터 전부 활용 (maker, bodyTypeCategory, year) - 스키마 변경 없음 */
     private Map<String, Object> buildChromaWhere(RecommendationRequest request) {
         List<Map<String, Object>> conditions = new ArrayList<>();
+        conditions.add(Map.of("price", Map.of("$gt", 0)));
         if (request.getMaker() != null && !request.getMaker().isBlank()) {
             String maker = request.getMaker().trim();
             if ("볼보".equalsIgnoreCase(maker) || "VOLVO".equalsIgnoreCase(maker)) {

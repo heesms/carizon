@@ -253,12 +253,11 @@ public class PipelineAdminController {
             LocalDate date = bizDate != null ? bizDate : LocalDate.now();
             long start = System.currentTimeMillis();
             
-            log.warn("[pipeline] rebuildPlatformCar: TRUNCATE platform_car and rebuild!");
+            log.warn("[pipeline] rebuildPlatformCar: TRUNCATE platform_car and rebuild (preserve car_master)!");
             
-            Map<String, Object> result = mergeService.rebuildFromScratch(date);
+            int platformCarCount = mergeService.rebuildPlatformCarOnly(date);
             long duration = System.currentTimeMillis() - start;
-            
-            int platformCarCount = (Integer) result.get("platformCarCount");
+
             Map<String, Object> response = Map.of(
                     "platformCarCount", platformCarCount,
                     "durationMs", duration,
@@ -271,6 +270,108 @@ public class PipelineAdminController {
             log.error("[pipeline] platform_car rebuild failed", e);
             apiRunRecorder.recordFail(runId, 0, e);
             return ApiResponse.error("platform_car 재생성 실패: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/sync-car-master-with-platform-car")
+    @Operation(
+            summary = "platform_car 기준 car_master 증분 동기화",
+            description = "기존 car_master를 유지한 상태에서 platform_car를 기준으로 동기화합니다. " +
+                    "platform_car에 데이터가 있으면 생성/유지, 없으면 삭제하고, 코드매핑 동기화를 수행합니다."
+    )
+    public ApiResponse<Map<String, Object>> syncCarMasterWithPlatformCar(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate bizDate) {
+        String runId = apiRunRecorder.recordStart("/admin/pipeline/sync-car-master-with-platform-car", "POST", "sync-car-master-with-platform-car");
+        try {
+            LocalDate date = bizDate;
+            long start = System.currentTimeMillis();
+
+            log.warn("[pipeline] syncCarMasterWithPlatformCar start: sync car_master from platform_car (preserve car_master)");
+
+            long masterStart = System.currentTimeMillis();
+            Map<String, Integer> syncResult = masterMergeService.syncCarMasterFromPlatformCars(date);
+            int normalizedCount = mergeService.normalizePlatformCarCarIdRefs();
+            int linkedCount = mergeService.linkToMaster();
+            long masterTime = System.currentTimeMillis() - masterStart;
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("syncResult", syncResult);
+            result.put("normalizedCount", normalizedCount);
+            result.put("linkedCount", linkedCount);
+            result.put("masterDurationMs", masterTime);
+            result.put("durationMs", System.currentTimeMillis() - start);
+            result.put("bizDate", date == null ? "ALL" : date.toString());
+
+            apiRunRecorder.recordSuccess(runId, 1, result);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            log.error("[pipeline] sync-car-master-with-platform-car failed", e);
+            apiRunRecorder.recordFail(runId, 0, e);
+            return ApiResponse.error("car_master 동기화 실패: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/rebuild-car-master-incremental")
+    @Operation(
+            summary = "car_master 증분 재생성 (TRUNCATE 없음)",
+            description = "car_master 삭제 없이 platform_car 기준으로 차이분만 동기화합니다. "
+                    + "car_master에 없는 플랫폼 차량은 신규 적재하고, platform_car에 없는 car_no는 삭제합니다."
+    )
+    public ApiResponse<Map<String, Object>> rebuildCarMasterIncremental() {
+        String runId = apiRunRecorder.recordStart("/admin/pipeline/rebuild-car-master-incremental", "POST", "rebuild-car-master-incremental");
+        try {
+            long start = System.currentTimeMillis();
+
+            log.warn("[pipeline] rebuildCarMasterIncremental: remove orphaned car_master and insert missing platform_car cars");
+
+            Map<String, Integer> resultMap = masterMergeService.rebuildCarMasterIncremental();
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("deletedCount", resultMap.getOrDefault("deletedCount", 0));
+            result.put("insertedCount", resultMap.getOrDefault("insertedCount", 0));
+            result.put("durationMs", System.currentTimeMillis() - start);
+
+            apiRunRecorder.recordSuccess(runId, 1, result);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            log.error("[pipeline] rebuild-car-master-incremental failed", e);
+            apiRunRecorder.recordFail(runId, 0, e);
+            return ApiResponse.error("car_master 증분 재생성 실패: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/rebuild-car-master-preserve-car-id")
+    @Operation(
+            summary = "car_master TRUNCATE 후 재생성 (동일 CAR_NO car_id 유지)",
+            description = "car_master를 TRUNCATE하고 platform_car에서 재생성합니다. 기존 데이터의 CAR_NO가 같으면 이전 CAR_ID를 유지해 URL 호환성을 보존합니다."
+    )
+    public ApiResponse<Map<String, Object>> rebuildCarMasterPreserveCarId(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate bizDate) {
+        String runId = apiRunRecorder.recordStart("/admin/pipeline/rebuild-car-master-preserve-car-id", "POST", "rebuild-car-master-preserve-car-id");
+        try {
+            LocalDate date = bizDate != null ? bizDate : LocalDate.now();
+            long start = System.currentTimeMillis();
+
+            log.warn("[pipeline] rebuildCarMasterPreserveCarId: TRUNCATE car_master and rebuild, preserve car_id");
+
+            int carMasterCount = masterMergeService.rebuildCarMasterFromScratchPreserveCarId(date);
+            masterMergeService.updateCarMasterFromMapping();
+            int linkedCount = mergeService.linkToMaster();
+            long duration = System.currentTimeMillis() - start;
+
+            Map<String, Object> result = Map.of(
+                    "carMasterCount", carMasterCount,
+                    "linkedCount", linkedCount,
+                    "durationMs", duration,
+                    "bizDate", date.toString()
+            );
+
+            apiRunRecorder.recordSuccess(runId, carMasterCount, result);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            log.error("[pipeline] car_master rebuild with preserved car_id failed", e);
+            apiRunRecorder.recordFail(runId, 0, e);
+            return ApiResponse.error("car_master 재생성(카-아이디 유지) 실패: " + e.getMessage());
         }
     }
 
