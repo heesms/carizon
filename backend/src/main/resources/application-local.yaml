@@ -12,6 +12,14 @@ logging:
     com.carizon.search.service.ElasticsearchCarSearchService: DEBUG
     org.springframework.web.servlet.DispatcherServlet: DEBUG
 
+rag:
+  llm:
+    # 모델 설명 텍스트 자동생성 전용 Ollama 모델 (로컬에서만 사용).
+    # 서버보다 강력한 로컬 모델로 설정. 비워두면 llm.ollama.model 사용.
+    # 예: gemma3:27b, qwen2.5:32b, llama3.3:70b 등
+    model-text-gen-model: gemma3:27b
+    # model-text-gen-base-url: http://localhost:11434  # 기본값과 같으면 생략 가능
+
 app:
   notification:
     slack:

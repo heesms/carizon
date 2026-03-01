@@ -6,6 +6,7 @@ import com.carizon.rag.config.RagProperties;
 import com.carizon.rag.service.CarEmbeddingBatchService;
 import com.carizon.rag.service.ChromaVectorStoreService;
 import com.carizon.rag.service.ModelEmbeddingService;
+import com.carizon.rag.service.ModelTextGeneratorService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,7 @@ public class EmbeddingAdminController {
     private final ChromaVectorStoreService vectorStoreService;
     private final RagProperties ragProperties;
     private final ModelEmbeddingService modelEmbeddingService;
+    private final ModelTextGeneratorService modelTextGeneratorService;
     private final ApiRunRecorder apiRunRecorder;
     private final JdbcTemplate jdbc;
     
@@ -269,6 +271,48 @@ public class EmbeddingAdminController {
             log.error("[embedding] model all failed", e);
             apiRunRecorder.recordFail(runId, 0, e);
             return ResponseEntity.ok(ApiResponse.error("모델 전체 임베딩 실패: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/models/generate-texts")
+    @Operation(summary = "모델 설명 텍스트 LLM 자동생성",
+            description = "cz_model_embedding_source에서 #정보확인필요 플레이스홀더 행을 로컬 강력 Ollama 모델로 채웁니다. " +
+                    "사용 모델은 application-local.yaml의 rag.llm.model-text-gen-model 로 설정. " +
+                    "dryRun=true면 DB 변경 없이 미리보기만 반환. reembed=true면 생성 후 Chroma 재임베딩도 수행.")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> generateModelTexts(
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(defaultValue = "false") boolean dryRun,
+            @RequestParam(defaultValue = "false") boolean reembed) {
+        String runId = apiRunRecorder.recordStart("/admin/embedding/models/generate-texts", "POST", "embedding-model-text-gen");
+        try {
+            long remaining = modelTextGeneratorService.countPlaceholders();
+            Map<String, Object> result = new LinkedHashMap<>(modelTextGeneratorService.generateAndSave(limit, dryRun, reembed));
+            result.put("remainingPlaceholders", remaining);
+            apiRunRecorder.recordSuccess(runId, ((Number) result.getOrDefault("processed", 0)).intValue(), result);
+            return ResponseEntity.ok(ApiResponse.success(result));
+        } catch (Exception e) {
+            log.error("[embedding] models/generate-texts failed", e);
+            apiRunRecorder.recordFail(runId, 0, e);
+            return ResponseEntity.ok(ApiResponse.error("모델 텍스트 생성 실패: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/models/text-stats")
+    @Operation(summary = "모델 텍스트 현황", description = "cz_model_embedding_source 플레이스홀더/완성 행 수 조회")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getModelTextStats() {
+        try {
+            long total = jdbc.queryForObject("SELECT COUNT(*) FROM cz_model_embedding_source", Long.class);
+            long placeholders = modelTextGeneratorService.countPlaceholders();
+            long completed = total - placeholders;
+            return ResponseEntity.ok(ApiResponse.success(Map.of(
+                    "total", total,
+                    "completed", completed,
+                    "placeholders", placeholders,
+                    "completionRate", total == 0 ? 0 : Math.round(completed * 100.0 / total) + "%"
+            )));
+        } catch (Exception e) {
+            log.error("[embedding] models/text-stats failed", e);
+            return ResponseEntity.ok(ApiResponse.error("현황 조회 실패: " + e.getMessage()));
         }
     }
 

@@ -53,6 +53,10 @@ public class RagProperties {
         private String provider = "ollama"; // ollama 또는 huggingface
         private Ollama ollama = new Ollama();
         private HuggingFace huggingface = new HuggingFace();
+        /** 모델 설명 텍스트 자동생성 전용 Ollama 모델명. 비어있으면 ollama.model 사용. (application-local.yaml에서 로컬 강력 모델로 오버라이드) */
+        private String modelTextGenModel = "";
+        /** 모델 설명 텍스트 자동생성 전용 Ollama baseUrl. 비어있으면 ollama.base-url 사용. */
+        private String modelTextGenBaseUrl = "";
         
         @Data
         public static class Ollama {

@@ -58,8 +58,10 @@ public class LlmService {
      */
     private String generateOllamaResponse(String prompt, GenerationOptions options) throws IOException {
         RagProperties.Llm.Ollama config = ragProperties.getLlm().getOllama();
-        String baseUrl = config.getBaseUrl();
-        String model = config.getModel();
+        String baseUrl = (options != null && options.baseUrlOverride() != null && !options.baseUrlOverride().isBlank())
+                ? options.baseUrlOverride() : config.getBaseUrl();
+        String model = (options != null && options.modelOverride() != null && !options.modelOverride().isBlank())
+                ? options.modelOverride() : config.getModel();
         log.debug("[Ollama] model={}, url={}/api/generate", model, baseUrl);
 
         String url = baseUrl + "/api/generate";
@@ -148,9 +150,13 @@ public class LlmService {
         }
     }
 
-    public record GenerationOptions(Integer maxTokens, Double temperature, Integer timeoutMs, String systemPrompt) {
+    public record GenerationOptions(Integer maxTokens, Double temperature, Integer timeoutMs, String systemPrompt,
+                                    String modelOverride, String baseUrlOverride) {
         public GenerationOptions(Integer maxTokens, Double temperature) {
-            this(maxTokens, temperature, null, null);
+            this(maxTokens, temperature, null, null, null, null);
+        }
+        public GenerationOptions(Integer maxTokens, Double temperature, Integer timeoutMs, String systemPrompt) {
+            this(maxTokens, temperature, timeoutMs, systemPrompt, null, null);
         }
     }
 }
