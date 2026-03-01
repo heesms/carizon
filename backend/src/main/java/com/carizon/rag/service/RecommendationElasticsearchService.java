@@ -576,9 +576,16 @@ public class RecommendationElasticsearchService {
                     }
                 }
                 case "bodyType" -> {
-                    String bodyType = trimOrNull(car.getBodyType());
-                    if (bodyType != null && containsToken(pref.getValues(), bodyType)) {
-                        boost += 0.06 * weight;
+                    String carBodyType = trimOrNull(car.getBodyType());
+                    if (carBodyType != null) {
+                        // pref.getValues()의 LLM 출력값을 car_master 실제 값으로 변환 후 비교
+                        boolean matched = pref.getValues().stream()
+                                .map(v -> normalizeBodyType(trimOrNull(v)))
+                                .filter(norm -> norm != null)
+                                .flatMap(norm -> java.util.Arrays.stream(norm.split(",")))
+                                .map(String::trim)
+                                .anyMatch(carBodyType::equalsIgnoreCase);
+                        if (matched) boost += 0.06 * weight;
                     }
                 }
                 case "mode" -> {
@@ -700,13 +707,48 @@ public class RecommendationElasticsearchService {
         return out;
     }
 
+    /**
+     * LLM이 출력하는 바디타입 → car_master.body_type 실제 값으로 정규화.
+     * car_master 실제 값: SUV, 대형, 중형, 준중형, 소형, 경차, RV, 스포츠카, 트럭, 화물, 승합, 상용
+     * 쉼표 구분 시 ElasticsearchCarSearchService에서 OR 조건으로 처리.
+     */
     private static String normalizeBodyType(String raw) {
         String t = trimOrNull(raw);
         if (t == null) return null;
-        if ("suv".equalsIgnoreCase(t)) return "SUV";
-        if ("rv".equalsIgnoreCase(t)) return "RV";
-        if ("스포츠카".equalsIgnoreCase(t) || "sportscar".equalsIgnoreCase(t) || "sports car".equalsIgnoreCase(t)) {
-            return "스포츠카,쿠페,컨버터블";
+        String lower = t.toLowerCase(Locale.ROOT);
+
+        // SUV
+        if (lower.equals("suv") || lower.contains("스포츠유틸리티") || lower.contains("crossover") || lower.contains("크로스오버")) {
+            return "SUV";
+        }
+        // RV / 미니밴 / 승합
+        if (lower.equals("rv") || lower.contains("미니밴") || lower.contains("minivan") || lower.contains("mpv")) {
+            return "RV,승합";
+        }
+        // 세단 / 승용 → car_master에서 세단은 대형/중형/준중형/소형으로 분류됨
+        if (lower.contains("세단") || lower.contains("sedan") || lower.equals("승용")) {
+            return "대형,중형,준중형,소형";
+        }
+        // 쿠페 / 스포츠카 / 컨버터블
+        if (lower.contains("쿠페") || lower.contains("coupe") || lower.contains("컨버터블") || lower.contains("convertible")
+                || lower.contains("로드스터") || lower.contains("스포츠카") || lower.contains("sportscar") || lower.contains("sports car")) {
+            return "스포츠카";
+        }
+        // 해치백 / 왜건 → car_master에서 별도 분류 없이 소형/준중형에 포함
+        if (lower.contains("해치백") || lower.contains("hatchback") || lower.contains("왜건") || lower.contains("wagon")) {
+            return "소형,준중형";
+        }
+        // 경차
+        if (lower.contains("경차") || lower.contains("경형")) {
+            return "경차";
+        }
+        // 트럭 / 화물
+        if (lower.contains("트럭") || lower.contains("truck") || lower.contains("화물") || lower.contains("픽업") || lower.contains("pickup")) {
+            return "트럭,화물";
+        }
+        // 상용 / 버스 / 승합
+        if (lower.contains("상용") || lower.contains("버스") || lower.contains("승합") || lower.contains("van")) {
+            return "상용,승합";
         }
         return t;
     }
