@@ -142,15 +142,15 @@ export default function Home() {
       .catch(() => {})
       .finally(() => {})
     setHistory(getSearchHistory())
-    return () => {
-      active = false
-    }
     // 방문자 알림 (fire-and-forget)
     fetch('/api/analytics/visit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ page: '/', referer: document.referrer }),
     }).catch(() => {})
+    return () => {
+      active = false
+    }
   }, [])
 
   // 히스토리 외부 클릭 닫기
