@@ -392,15 +392,12 @@ public class MasterMergeService {
             log.warn("[master] ensurePrioritySeed failed (lock timeout?), continuing: {}", e.getMessage());
         }
         
-        // 1단계: car_master TRUNCATE + platform_car.car_id 리셋 (linkToMaster 재실행 보장)
+        // 1단계: car_master TRUNCATE (linkToMaster는 기존 car_id가 아닌 재링크로 처리)
         tx.execute(status -> {
             log.info("[master] rebuildCarMasterFromScratch: car_master TRUNCATE start");
             jdbc.execute("TRUNCATE TABLE car_master");
             carMasterIdSequenceService.restoreNextCarId(nextCarId);
-            // car_master가 새로 생성되므로 platform_car의 car_id 참조를 초기화
-            // (linkToMaster의 WHERE car_id IS NULL 조건이 모든 행에 적용되도록)
-            int reset = jdbc.update("UPDATE platform_car SET car_id = NULL WHERE car_id IS NOT NULL");
-            log.info("[master] rebuildCarMasterFromScratch: car_master TRUNCATE done, platform_car.car_id reset={}", reset);
+            log.info("[master] rebuildCarMasterFromScratch: car_master TRUNCATE done");
             return null;
         });
         
@@ -557,15 +554,12 @@ public class MasterMergeService {
                 log.warn("[master] ensurePrioritySeed failed (lock timeout?), continuing: {}", e.getMessage());
             }
 
-            // 1단계: car_master TRUNCATE + platform_car.car_id 리셋 (linkToMaster 재실행 보장)
+            // 1단계: car_master TRUNCATE (car_id 리셋은 linkToMaster 단계에서 처리)
             tx.execute(status -> {
                 log.info("[master] rebuildCarMasterFromScratchPreserveCarId: car_master TRUNCATE start");
                 jdbc.execute("TRUNCATE TABLE car_master");
                 carMasterIdSequenceService.restoreNextCarId(nextCarId);
-                // car_master가 새로 생성되므로 platform_car의 car_id 참조를 초기화
-                // (linkToMaster의 WHERE car_id IS NULL 조건이 모든 행에 적용되도록)
-                int reset = jdbc.update("UPDATE platform_car SET car_id = NULL WHERE car_id IS NOT NULL");
-                log.info("[master] rebuildCarMasterFromScratchPreserveCarId: car_master TRUNCATE done, platform_car.car_id reset={}", reset);
+                log.info("[master] rebuildCarMasterFromScratchPreserveCarId: car_master TRUNCATE done");
                 return null;
             });
 
