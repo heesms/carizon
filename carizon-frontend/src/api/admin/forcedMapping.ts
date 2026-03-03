@@ -18,9 +18,12 @@ export interface ForcedMapping {
 }
 
 export const forcedMappingApi = {
-  getForcedMappings: (platformName?: string) => {
-    const params = platformName ? `?platformName=${platformName}` : ''
-    return apiClient.get<ForcedMapping[]>(`/admin/forced-mapping${params}`)
+  getForcedMappings: (platformName?: string, keyword?: string) => {
+    const q = new URLSearchParams()
+    if (platformName) q.append('platformName', platformName)
+    if (keyword) q.append('keyword', keyword)
+    const qs = q.toString()
+    return apiClient.get<ForcedMapping[]>(`/admin/forced-mapping${qs ? '?' + qs : ''}`)
   },
 
   createForcedMapping: (data: Partial<ForcedMapping>) => {

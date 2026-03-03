@@ -27,10 +27,11 @@ public class ForcedMappingAdminController {
     @GetMapping
     @Operation(summary = "강제 매핑 목록 조회", description = "모든 강제 매핑 목록을 조회합니다.")
     public ApiResponse<List<Map<String, Object>>> getForcedMappings(
-            @RequestParam(required = false) String platformName) {
+            @RequestParam(required = false) String platformName,
+            @RequestParam(required = false) String keyword) {
         try {
             StringBuilder sql = new StringBuilder("""
-                SELECT 
+                SELECT
                     platform_name,
                     depth,
                     p_maker_code, p_model_group_code, p_model_code, p_trim_code, p_grade_code,
@@ -44,6 +45,11 @@ public class ForcedMappingAdminController {
             if (platformName != null && !platformName.isEmpty()) {
                 sql.append(" AND platform_name = ?");
                 params.add(platformName.toUpperCase());
+            }
+            if (keyword != null && !keyword.isEmpty()) {
+                sql.append(" AND (p_maker_code LIKE ? OR p_model_code LIKE ? OR maker_code LIKE ? OR model_code LIKE ?)");
+                String kw = "%" + keyword + "%";
+                params.add(kw); params.add(kw); params.add(kw); params.add(kw);
             }
 
             sql.append(" ORDER BY platform_name, depth, p_maker_code, p_model_code");
