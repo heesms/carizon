@@ -23,6 +23,7 @@ import java.util.*;
 @Component
 public class ChachachaCrawler {
     private static final Set<String> DATE_FIELDS = Set.of("firstAdDay", "adDay", "orderDate", "regiDay");
+    private static final String INSERT_SQL = "INSERT INTO raw_chachacha(payload, car_image_url, option_array) VALUES (CAST(? AS JSON), ?, ?)";
     private static final DateTimeFormatter STRATEGY_DATETIME = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss").withResolverStyle(ResolverStyle.STRICT);
     private static final DateTimeFormatter STRATEGY_DATETIME_NO_SEC = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm").withResolverStyle(ResolverStyle.STRICT);
     private static final DateTimeFormatter STRATEGY_DATETIME_FLEX = DateTimeFormatter.ofPattern("uuuu-M-d H:m:s").withResolverStyle(ResolverStyle.STRICT);
@@ -123,19 +124,18 @@ public class ChachachaCrawler {
                     }
 
                     // 원본 JSON 저장 + car_image_url 생성 + 옵션 문자열 저장
-                    String sql = "INSERT INTO raw_chachacha(payload, car_image_url, option_array) VALUES (CAST(? AS JSON), ?, ?)";
-                    List<Object[]> params = new ArrayList<>(batchCount);
+                    List<RawChachachaInsertRow> rows = new ArrayList<>(batchCount);
                     for (Map<String, Object> item : list) {
                         sanitizeChachachaDates(item);
                         String payloadJson = mapper.writeValueAsString(item);
                         String carImageUrl = buildChachachaImageUrl(item);
                         String optionArray = buildChachachaOptionArray(item);
-                        params.add(new Object[]{ payloadJson, carImageUrl, optionArray });
+                        rows.add(new RawChachachaInsertRow(payloadJson, carImageUrl, optionArray));
                     }
-                    int[] res = jdbc.batchUpdate(sql, params);
-                    log.debug("[CRAWL] page={} dbInserted={}", page, res.length);
+                    int inserted = insertRowsWithSkip(rows, page);
+                    log.debug("[CRAWL] page={} dbInserted={}", page, inserted);
 
-                    fetchedTotal += batchCount;
+                    fetchedTotal += inserted;
 
                     Object nextSa = result.get("searchAfter");
                     if (!(nextSa instanceof List<?> nextList) || nextList.isEmpty()) {
@@ -163,6 +163,44 @@ public class ChachachaCrawler {
         }
 
         log.info("[CRAWL] done totalItems={} elapsed={}s", fetchedTotal, Duration.between(started, Instant.now()).toSeconds());
+    }
+
+    private int insertRowsWithSkip(List<RawChachachaInsertRow> rows, int page) {
+        if (rows == null || rows.isEmpty()) return 0;
+
+        List<Object[]> params = new ArrayList<>(rows.size());
+        for (RawChachachaInsertRow row : rows) {
+            params.add(new Object[]{ row.payloadJson, row.carImageUrl, row.optionArray });
+        }
+
+        try {
+            return jdbc.batchUpdate(INSERT_SQL, params).length;
+        } catch (Exception e) {
+            log.warn("[CRAWL] page={} batch insert failed, fallback row-by-row (skip bad rows): {}", page, e.getMessage());
+            int inserted = 0;
+            for (int i = 0; i < rows.size(); i++) {
+                RawChachachaInsertRow row = rows.get(i);
+                try {
+                    jdbc.update(INSERT_SQL, row.payloadJson, row.carImageUrl, row.optionArray);
+                    inserted++;
+                } catch (Exception rowEx) {
+                    log.warn("[CRAWL] page={} skip row={} insert failed: {}", page, i, rowEx.getMessage());
+                }
+            }
+            return inserted;
+        }
+    }
+
+    private static class RawChachachaInsertRow {
+        final String payloadJson;
+        final String carImageUrl;
+        final String optionArray;
+
+        RawChachachaInsertRow(String payloadJson, String carImageUrl, String optionArray) {
+            this.payloadJson = payloadJson;
+            this.carImageUrl = carImageUrl;
+            this.optionArray = optionArray;
+        }
     }
 
     /**
