@@ -12,11 +12,27 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import java.util.*;
 
 @Slf4j
 @Component
 public class ChachachaCrawler {
+    private static final Set<String> DATE_FIELDS = Set.of("firstAdDay", "adDay", "orderDate", "regiDay");
+    private static final DateTimeFormatter STRATEGY_DATETIME = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss").withResolverStyle(ResolverStyle.STRICT);
+    private static final DateTimeFormatter STRATEGY_DATETIME_NO_SEC = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm").withResolverStyle(ResolverStyle.STRICT);
+    private static final DateTimeFormatter STRATEGY_DATETIME_FLEX = DateTimeFormatter.ofPattern("uuuu-M-d H:m:s").withResolverStyle(ResolverStyle.STRICT);
+    private static final DateTimeFormatter STRATEGY_DATETIME_NO_SEC_FLEX = DateTimeFormatter.ofPattern("uuuu-M-d H:m").withResolverStyle(ResolverStyle.STRICT);
+    private static final DateTimeFormatter STRATEGY_DATE_ONLY = DateTimeFormatter.ofPattern("uuuu-MM-dd").withResolverStyle(ResolverStyle.STRICT);
+    private static final DateTimeFormatter STRATEGY_DATE_ONLY_FLEX = DateTimeFormatter.ofPattern("uuuu-M-d").withResolverStyle(ResolverStyle.STRICT);
+    private static final DateTimeFormatter STRATEGY_DATE_COMPACT = DateTimeFormatter.ofPattern("uuuuMMdd").withResolverStyle(ResolverStyle.STRICT);
+    private static final DateTimeFormatter STRATEGY_DATETIME_COMPACT = DateTimeFormatter.ofPattern("uuuuMMddHHmmss").withResolverStyle(ResolverStyle.STRICT);
+    private static final DateTimeFormatter STRATEGY_DATETIME_OUTPUT = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter STRATEGY_DATE_OUTPUT = DateTimeFormatter.ofPattern("uuuu-MM-dd");
 
     private static final String BASE = "https://m.kbchachacha.com/public/web/search/infinitySearch.json";
     private static final String INCLUDE_FIELDS =
@@ -110,6 +126,7 @@ public class ChachachaCrawler {
                     String sql = "INSERT INTO raw_chachacha(payload, car_image_url, option_array) VALUES (CAST(? AS JSON), ?, ?)";
                     List<Object[]> params = new ArrayList<>(batchCount);
                     for (Map<String, Object> item : list) {
+                        sanitizeChachachaDates(item);
                         String payloadJson = mapper.writeValueAsString(item);
                         String carImageUrl = buildChachachaImageUrl(item);
                         String optionArray = buildChachachaOptionArray(item);
@@ -207,6 +224,89 @@ public class ChachachaCrawler {
             String raw = String.valueOf(optionsObj).trim();
             return raw.isEmpty() ? null : raw;
         }
+        return null;
+    }
+
+    private void sanitizeChachachaDates(Map<String, Object> item) {
+        if (item == null) return;
+
+        for (String field : DATE_FIELDS) {
+            Object raw = item.get(field);
+            String value = Objects.toString(raw, null);
+            if (value == null) {
+                continue;
+            }
+            value = value.trim();
+            if (value.isBlank()) {
+                item.put(field, null);
+                continue;
+            }
+            String normalized = normalizeDate(raw.toString());
+            if (normalized == null) {
+                log.debug("[CHACHACHA] invalid date field {}={} -> null", field, value);
+                item.put(field, null);
+            } else if (!normalized.equals(value)) {
+                item.put(field, normalized);
+            }
+        }
+    }
+
+    private String normalizeDate(String rawValue) {
+        if (rawValue == null) return null;
+
+        String value = rawValue.trim()
+                .replace("T", " ")
+                .replace("/", "-")
+                .replace(".0", "");
+        if (value.isBlank() || "null".equalsIgnoreCase(value)) {
+            return null;
+        }
+
+        try {
+            try {
+                return LocalDateTime.parse(value, STRATEGY_DATETIME).format(STRATEGY_DATETIME_OUTPUT);
+            } catch (DateTimeParseException e) {
+                // no-op
+            }
+            try {
+                return LocalDateTime.parse(value, STRATEGY_DATETIME_NO_SEC).format(STRATEGY_DATETIME_OUTPUT);
+            } catch (DateTimeParseException e) {
+                // no-op
+            }
+            try {
+                return LocalDateTime.parse(value, STRATEGY_DATETIME_FLEX).format(STRATEGY_DATETIME_OUTPUT);
+            } catch (DateTimeParseException e) {
+                // no-op
+            }
+            try {
+                return LocalDateTime.parse(value, STRATEGY_DATETIME_NO_SEC_FLEX).format(STRATEGY_DATETIME_OUTPUT);
+            } catch (DateTimeParseException e) {
+                // no-op
+            }
+            try {
+                return LocalDate.parse(value, STRATEGY_DATE_ONLY).format(STRATEGY_DATE_OUTPUT);
+            } catch (DateTimeParseException e) {
+                // no-op
+            }
+            try {
+                return LocalDate.parse(value, STRATEGY_DATE_ONLY_FLEX).format(STRATEGY_DATE_OUTPUT);
+            } catch (DateTimeParseException e) {
+                // no-op
+            }
+            try {
+                return LocalDate.parse(value, STRATEGY_DATE_COMPACT).format(STRATEGY_DATE_OUTPUT);
+            } catch (DateTimeParseException e) {
+                // no-op
+            }
+            try {
+                return LocalDateTime.parse(value, STRATEGY_DATETIME_COMPACT).format(STRATEGY_DATETIME_OUTPUT);
+            } catch (DateTimeParseException e) {
+                // no-op
+            }
+        } catch (Exception e) {
+            return null;
+        }
+
         return null;
     }
 }
