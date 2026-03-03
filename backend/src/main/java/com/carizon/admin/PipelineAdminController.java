@@ -7,6 +7,9 @@ import com.carizon.common.dto.ApiResponse;
 import com.carizon.mapping.CodeMappingService;
 import com.carizon.mapping.MasterMergeService;
 import com.carizon.merge.MergeService;
+import com.carizon.rag.service.CarEmbeddingBatchService;
+import com.carizon.rag.service.ChromaVectorStoreService;
+import com.carizon.search.service.CarIndexingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -14,9 +17,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 통합 파이프라인 관리 컨트롤러
@@ -35,6 +40,9 @@ public class PipelineAdminController {
     private final BatchWorkflowService workflowService;
     private final ApiRunRecorder apiRunRecorder;
     private final FridayNightPipelineScheduler fridayNightPipelineScheduler;
+    private final CarIndexingService indexingService;
+    private final ChromaVectorStoreService vectorStoreService;
+    private final CarEmbeddingBatchService embeddingBatchService;
 
     @PostMapping("/full")
     @Operation(summary = "전체 파이프라인 실행", 
@@ -123,6 +131,114 @@ public class PipelineAdminController {
             apiRunRecorder.recordFail(runId, 0, e);
             return ApiResponse.error("파이프라인 실행 실패: " + e.getMessage());
         }
+    }
+
+    @PostMapping("/full-no-crawl")
+    @Operation(summary = "크롤링 제외 전체 파이프라인 실행", 
+               description = "크롤링을 제외하고 머지 → 코드 매핑 → car_master 순서로 순차 실행합니다.")
+    public ApiResponse<Map<String, Object>> runFullPipelineWithoutCrawl(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate bizDate) {
+        String runId = apiRunRecorder.recordStart("/admin/pipeline/full-no-crawl", "POST", "pipeline-full-no-crawl");
+        try {
+            LocalDate date = bizDate != null ? bizDate : LocalDate.now();
+            long pipelineStart = System.currentTimeMillis();
+            log.info("[pipeline] full-no-crawl start bizDate={} stages=[merge,code-mapping,car-master] + parallel([search-reindex, embedding])", date);
+
+            Map<String, Object> result = runMergeCodeMappingAndMaster(date, "full-no-crawl");
+            Map<String, Object> parallelResult = runSearchAndEmbeddingInParallel();
+            result.put("parallel", parallelResult);
+
+            long totalTime = System.currentTimeMillis() - pipelineStart;
+            result.put("totalDurationMs", totalTime);
+            result.put("bizDate", date.toString());
+
+            log.info("[pipeline] full-no-crawl done: {}ms", totalTime);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> masterMerge = (Map<String, Object>) result.getOrDefault("masterMerge", Map.of());
+            int totalItems = (Integer) masterMerge.getOrDefault("mergedCount", 0);
+            apiRunRecorder.recordSuccess(runId, totalItems, result);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            log.error("[pipeline] run without crawl failed", e);
+            apiRunRecorder.recordFail(runId, 0, e);
+            return ApiResponse.error("크롤링 제외 파이프라인 실행 실패: " + e.getMessage());
+        }
+    }
+
+    private Map<String, Object> runMergeCodeMappingAndMaster(LocalDate date, String caller) {
+        Map<String, Object> result = new HashMap<>();
+
+        // 1. 머지 (raw_* → platform_car)
+        log.info("[pipeline] {} stage 1/3 merge start (33%)", caller);
+        long mergeStart = System.currentTimeMillis();
+        int merged = mergeService.mergeAllPlatforms(date);
+        long mergeTime = System.currentTimeMillis() - mergeStart;
+        log.info("[pipeline] {} stage 1/3 merge done (33%) mergedCount={} durationMs={}", caller, merged, mergeTime);
+        result.put("merge", Map.of(
+                "mergedCount", merged,
+                "durationMs", mergeTime
+        ));
+
+        // 2. 코드 매핑 (platform_car → cz_code_map)
+        log.info("[pipeline] {} stage 2/3 code mapping start (67%)", caller);
+        long mappingStart = System.currentTimeMillis();
+        int totalMapped = 0;
+        String[] platforms = {"ENCAR", "ENCAR_TRUCK", "KCAR", "CHACHACHA", "CHUTCHA", "CHARANCHA", "TCAR"};
+        for (int i = 0; i < platforms.length; i++) {
+            String platform = platforms[i];
+            try {
+                int mapped = codeMappingService.runAutoMapping(platform, CodeMappingService.Scope.TODAY);
+                totalMapped += mapped;
+                int percent = (int) Math.round((i + 1) * 100.0 / platforms.length);
+                log.info("[pipeline] {} stage 2/3 code mapping progress platform={}/{} ({}) mapped={} accumulated={}",
+                        caller, (i + 1), platforms.length, percent + "%", mapped, totalMapped);
+            } catch (Exception e) {
+                log.error("[pipeline] {} mapping failed", platform, e);
+            }
+        }
+        long mappingTime = System.currentTimeMillis() - mappingStart;
+        log.info("[pipeline] {} stage 2/3 code mapping done (67%) mappedCount={} durationMs={}", caller, totalMapped, mappingTime);
+        result.put("codeMapping", Map.of(
+                "mappedCount", totalMapped,
+                "durationMs", mappingTime
+        ));
+
+        // 3. car_master 머지 (platform_car + cz_code_map → car_master)
+        log.info("[pipeline] {} stage 3/3 car_master merge start (100%)", caller);
+        long masterStart = System.currentTimeMillis();
+        int masterMerged = masterMergeService.upsertAliveToCarMaster(date);
+        masterMergeService.updateCarMasterFromMapping();
+        long masterTime = System.currentTimeMillis() - masterStart;
+        log.info("[pipeline] {} stage 3/3 car_master merge done (100%) mergedCount={} durationMs={}", caller, masterMerged, masterTime);
+        result.put("masterMerge", Map.of(
+                "mergedCount", masterMerged,
+                "durationMs", masterTime
+        ));
+
+        return result;
+    }
+
+    private Map<String, Object> runSearchAndEmbeddingInParallel() {
+        long start = System.currentTimeMillis();
+        CompletableFuture<Integer> reindexFuture = CompletableFuture.supplyAsync(indexingService::reindexAllCars);
+        CompletableFuture<Integer> embeddingFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                vectorStoreService.deleteCollection();
+                return embeddingBatchService.embedAllCars();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        int indexedCount = reindexFuture.join();
+        int embeddedCount = embeddingFuture.join();
+
+        return Map.of(
+                "path", "/admin/search/reindex+embedding",
+                "indexedCount", indexedCount,
+                "embeddedCount", embeddedCount,
+                "durationMs", System.currentTimeMillis() - start
+        );
     }
 
     @PostMapping("/workflow")
