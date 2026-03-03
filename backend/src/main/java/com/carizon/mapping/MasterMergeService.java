@@ -540,9 +540,8 @@ public class MasterMergeService {
 
         String mapTable = "car_master_id_retain_map";
 
-        try {
-            // 기존 car_master의 CAR_NO -> CAR_ID를 임시 보존 맵에 저장 후 재생성 시 재매핑
-            jdbc.execute("TRUNCATE TABLE " + mapTable);
+        // 기존 car_master의 CAR_NO -> CAR_ID를 임시 보존 맵에 저장 후 재생성 시 재매핑
+        jdbc.execute("TRUNCATE TABLE " + mapTable);
             jdbc.update("""
                 INSERT INTO car_master_id_retain_map (run_id, car_no, car_id)
                 SELECT ?, CAR_NO, CAR_ID
@@ -691,7 +690,6 @@ public class MasterMergeService {
 
             log.info("[master] rebuildCarMasterFromScratchPreserveCarId: done - {} rows ({} batches)", totalAffected, batchCount);
             return totalAffected;
-        }
     }
 
     private long snapshotNextCarIdByMax() {
