@@ -32,15 +32,20 @@ public class KcarCrawler {
     private static final int LIMIT = 30; // KCar 기본 페이지 크기
     private static final String URL = "https://mapi.kcar.com/bc/search/list/drct";
 
-    public void runOnceFull() {
+    public int runOnceFull() {
         Instant started = Instant.now();
         String runId = recorder.recordStart("KCAR", started);
         int totalInserted = 0;
 
         try {
             // 스냅샷 전략: 싹 비우고 시작 (원하면 upsert-only로 바꿔도 됨)
-            jdbc.update("TRUNCATE TABLE raw_kcar");
-            log.info("[KCAR] TRUNCATE raw_kcar done");
+            try {
+                jdbc.update("TRUNCATE TABLE raw_kcar");
+                log.info("[KCAR] TRUNCATE raw_kcar done");
+            } catch (Exception e) {
+                log.error("[KCAR] TRUNCATE failed: {}", e.toString(), e);
+                return totalInserted;
+            }
 
             int page = 1;
             int emptyCount = 0;
@@ -134,6 +139,8 @@ public class KcarCrawler {
             recorder.recordFail(runId, totalInserted, Instant.now(), e.toString());
             log.error("[KCAR] runOnceFull failed", e);
         }
+
+        return totalInserted;
     }
 
     private String extractOptionArray(Map<String, Object> row) {

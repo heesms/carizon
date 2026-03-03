@@ -49,7 +49,7 @@ public class ChutchaCrawler {
     private static final int PAGE_DELAY_MS = 200;
 
     // --------------------- ENTRY ---------------------
-    public void runOnceFull() {
+    public int runOnceFull() {
         final Instant started = Instant.now();
         final String runId = recordStart("CHUTCHA", started);
 
@@ -89,6 +89,8 @@ public class ChutchaCrawler {
             recordFail(runId, total, e.toString());
             log.error("[CHUTCHA] runOnceFull failed", e);
         }
+
+        return total;
     }
 
     // --------------------- LIST FETCH ---------------------

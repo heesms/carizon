@@ -40,7 +40,7 @@ public class CharanchaCrawler {
 
     /** 하루 1회 전체 새로 긁기 */
     @SuppressWarnings("unchecked")
-    public void runOnceFull() {
+    public int runOnceFull() {
         Instant started = Instant.now();
         String runId = recorder.recordStart("CHARANCHA", started);
 
@@ -48,16 +48,16 @@ public class CharanchaCrawler {
         int perPage = 100;           // 필요시 15로 낮출 수 있음
         int fetchedTotal = 0;
 
-        try {
-            // 초기화(원하면 주석 처리)
             try {
-                log.warn("[CHARANCHA] TRUNCATE raw_charancha start");
-                jdbc.execute("TRUNCATE TABLE raw_charancha");
-                log.warn("[CHARANCHA] TRUNCATE raw_charancha done");
-            } catch (Exception e) {
-                log.error("[CHARANCHA] TRUNCATE failed: {}", e.toString(), e);
-                return;
-            }
+                // 초기화(원하면 주석 처리)
+                try {
+                    log.warn("[CHARANCHA] TRUNCATE raw_charancha start");
+                    jdbc.execute("TRUNCATE TABLE raw_charancha");
+                    log.warn("[CHARANCHA] TRUNCATE raw_charancha done");
+                } catch (Exception e) {
+                    log.error("[CHARANCHA] TRUNCATE failed: {}", e.toString(), e);
+                    return fetchedTotal;
+                }
 
             while (true) {
                 Map<String, Object> payload = buildPayload(page, perPage);
@@ -124,6 +124,8 @@ public class CharanchaCrawler {
         }
 
         log.info("[CHARANCHA] done totalItems={} elapsed={}s", fetchedTotal, Duration.between(started, Instant.now()).toSeconds());
+
+        return fetchedTotal;
     }
 
     /** 요청에 필요한 payload — 네가 준 캡처 그대로 기본값을 유지하고 페이지/사이즈만 바꿔서 보냄 */

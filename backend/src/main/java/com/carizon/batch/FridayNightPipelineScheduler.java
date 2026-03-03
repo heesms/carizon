@@ -93,10 +93,11 @@ public class FridayNightPipelineScheduler {
             String stepId1 = apiRunRecorder.recordStart("/admin/crawl/runAll", "SCHEDULED", "friday-crawl", runId);
             long crawlStart = System.currentTimeMillis();
             try {
-                crawlJobService.runDaily();
+                Map<String, Integer> crawlCounts = crawlJobService.runDailyWithCounts();
                 long crawlMs = System.currentTimeMillis() - crawlStart;
-                result.put("crawl", Map.of("path", "/admin/crawl/runAll", "durationMs", crawlMs));
-                apiRunRecorder.recordSuccess(stepId1, 0, result.get("crawl"));
+                int crawlTotal = crawlCounts.values().stream().mapToInt(v -> v == null ? 0 : v).sum();
+                result.put("crawl", Map.of("path", "/admin/crawl/runAll", "durationMs", crawlMs, "platformCounts", crawlCounts));
+                apiRunRecorder.recordSuccess(stepId1, crawlTotal, result.get("crawl"), crawlCounts);
             } catch (Exception e) {
                 apiRunRecorder.recordFail(stepId1, 0, e);
                 throw e;

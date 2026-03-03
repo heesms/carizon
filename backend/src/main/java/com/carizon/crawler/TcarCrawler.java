@@ -55,23 +55,23 @@ public class TcarCrawler {
 
     /** 전체 풀 스캔 1회 실행 — carType 9종을 순회 */
     @SuppressWarnings("unchecked")
-    public void runOnceFull() {
+    public int runOnceFull() {
         Instant started = Instant.now();
         String runId = recorder.recordStart("TCAR", started);
 
         int perPage = 100;
         int fetchedTotal = 0;
 
-        try {
-            // ★ 시작 시 한 번만 전체 초기화
             try {
-                log.warn("[TCAR] TRUNCATE raw_tcar start");
-                jdbc.execute("TRUNCATE TABLE raw_tcar");
-                log.warn("[TCAR] TRUNCATE raw_tcar done");
-            } catch (Exception e) {
-                log.error("[TCAR] TRUNCATE failed: {}", e.toString(), e);
-                return;
-            }
+                // ★ 시작 시 한 번만 전체 초기화
+                try {
+                    log.warn("[TCAR] TRUNCATE raw_tcar start");
+                    jdbc.execute("TRUNCATE TABLE raw_tcar");
+                    log.warn("[TCAR] TRUNCATE raw_tcar done");
+                } catch (Exception e) {
+                    log.error("[TCAR] TRUNCATE failed: {}", e.toString(), e);
+                    return totalInserted;
+                }
 
             log.info("[TCAR] start: perPage={}, carTypes={}", perPage, CAR_TYPE_MAP.size());
 
@@ -156,6 +156,8 @@ public class TcarCrawler {
 
         log.info("[TCAR] done totalItems={} elapsed={}s",
                 fetchedTotal, Duration.between(started, Instant.now()).toSeconds());
+
+        return fetchedTotal;
     }
 
     /** carType 파라미터를 포함한 URL 빌드 */

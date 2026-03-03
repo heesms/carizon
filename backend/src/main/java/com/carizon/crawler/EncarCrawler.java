@@ -163,7 +163,7 @@ public class EncarCrawler {
         return b.build();
     }
 
-    public void runOnce() {
+    public int runOnce() {
         Instant started = Instant.now();
         String runId = recorder.recordStart("ENCAR", started);
 
@@ -269,6 +269,8 @@ public class EncarCrawler {
             recorder.recordFail(runId, totalFetched, Instant.now(), e.toString());
             log.error("[ENCAR] runOnce failed", e);
         }
+
+        return totalFetched;
     }
 
     /**
