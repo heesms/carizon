@@ -681,28 +681,51 @@ public class MergeService {
                 String sql = """
                     INSERT INTO platform_car
                                           (platform_name, platform_car_key, car_no, car_id,
-                                           maker_code, model_group_code, model_code, trim_code,
-                                           maker_name, model_group_name, model_name, trim_name,
+                                           maker_code, model_group_code, model_code, trim_code, grade_code,
+                                           maker_name, model_group_name, model_name, trim_name, grade_name,
                                            price, km, displacement, yymm, status,
                                            color, fuel, transmission, body_type, region,
                                            m_url, pc_url,
                                            first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
                     
                     SELECT
-                    'CHARANCHA', R.SELL_NO, R.CAR_NO, NULL,
-                    R.maker_code, R.model_code, R.model_detail_code, R.grade_code,
-                    R.maker_name, R.model_name, R.model_detail_name, R.grade_name,
-                    r.sell_price, r.mileage, r.displacement, substr(r.yyyymm,1,4), 'SALE',
-                    COLOR_EXPR, FUEL_EXPR, R.transmission_name,
-                    CASE R.car_type
+                    'CHARANCHA',
+                    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.SELL_NO')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sell_no')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sellNo')), ''),
+                    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.CAR_NO')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.car_no')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carNo')), ''),
+                    NULL,
+                    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.maker_code')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.makerCode')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.makerCd'))),
+                    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_code')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelCode')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_cd'))),
+                    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_detail_code')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelDetailCode')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_detail'))),
+                    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.grade_code')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.gradeCode')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.grade_cd'))),
+                    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.maker_name')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.makerName')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.makerNm'))),
+                    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_group_name')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelGroupName')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelGroupNm'))),
+                    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_name')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelName')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelNm'))),
+                    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.trim_name')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.trimName')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.trimNm'))),
+                    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.grade_name')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.gradeName')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.gradeNm'))),
+                    CAST(NULLIF(TRIM(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sell_price')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sellPrice'))), ',', ''), '' ) AS UNSIGNED),
+                    CAST(NULLIF(TRIM(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.mileage')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.runDistance'))), ',', ''), '' ) AS UNSIGNED),
+                    CAST(NULLIF(TRIM(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.displacement')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.capacity'))), ',', ''), '' ) AS UNSIGNED),
+                    LEFT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.yyyymm')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.yyymm')), '0000'), 4), 'SALE',
+                    COLOR_EXPR, FUEL_EXPR, COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.transmission_name')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.transmissionName')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.transmission'))),
+                    CASE COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.car_type')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carType')))
                       WHEN '소형' THEN '소형' WHEN '중형' THEN '중형' WHEN '대형' THEN '대형'
                       WHEN '경형(일반형)' THEN '경차' WHEN '준중형' THEN '준중형'
                       WHEN '기타' THEN '기타' WHEN '경형(초소형)' THEN '경차'
-                      ELSE R.car_type
+                      ELSE COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.car_type')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carType')))
                     END,
-                    r.region_name,
-                    CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
-                    CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
+                    COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.region_name')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.regionName')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.areaNm'))),
+                    CONCAT('https://charancha.com/bu/sell/view?sellNo=',
+                           COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sell_no')),
+                                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sellNo')),
+                                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.SELL_NO')),
+                                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.car_seq_no')),
+                                    '')),
+                    CONCAT('https://charancha.com/bu/sell/view?sellNo=',
+                           COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sell_no')),
+                                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sellNo')),
+                                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.SELL_NO')),
+                                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.car_seq_no')),
+                                    '')),
                       NULL, AD_DATE_EXPR_CHARANCHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
                     FROM raw_charancha r
                     WHERE r.id > ? AND r.id <= ?
@@ -729,8 +752,8 @@ public class MergeService {
                       grade_name = COALESCE(platform_car.grade_name, VALUES(grade_name))
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
                    .replace("AD_DATE_EXPR_CHARANCHA", AD_DATE_EXPR_CHARANCHA)
-                   .replace("COLOR_EXPR", mapColorExpr("R.color_name"))
-                   .replace("FUEL_EXPR", mapFuelExpr("R.fuel_name"));
+                   .replace("COLOR_EXPR", mapColorExpr("COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.color_name')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.colorName')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.color')), '')"))
+                   .replace("FUEL_EXPR", mapFuelExpr("COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuel_name')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuelName')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuel')), '')"));
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
                 log.debug("CHARANCHA upsert affected={}", affected);
                 return null;
@@ -1210,34 +1233,101 @@ public class MergeService {
                 String sql = """
                     INSERT IGNORE INTO platform_car
                       (platform_name, platform_car_key, car_no, car_id,
-                       maker_code, model_group_code, model_code, trim_code,
-                       maker_name, model_group_name, model_name, trim_name,
+                       maker_code, model_group_code, model_code, trim_code, grade_code,
+                       maker_name, model_group_name, model_name, trim_name, grade_name,
                        price, km, displacement, yymm, status,
                        color, fuel, transmission, body_type, region,
                        m_url, pc_url,
                        first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
                     SELECT
-                      'CHARANCHA', R.SELL_NO, R.CAR_NO, NULL,
-                      R.maker_code, R.model_code, R.model_detail_code, R.grade_code,
-                      R.maker_name, R.model_name, R.model_detail_name, R.grade_name,
-                      r.sell_price, r.mileage, r.displacement, substr(r.yyyymm,1,4), 'SALE',
-                      COLOR_EXPR, FUEL_EXPR, R.transmission_name,
-                      CASE R.car_type
+                      'CHARANCHA', COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sell_no')),
+                                     JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sellNo')),
+                                     JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.SELL_NO')),
+                                     ''),
+                      COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.car_no')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carNo')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.CAR_NO')),
+                               ''),
+                      NULL,
+                      COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.maker_code')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.makerCode')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.makerCd')),
+                               ''),
+                      COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_code')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelCode')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_cd')),
+                               ''),
+                      COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_detail_code')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelDetailCode')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_detail')),
+                               ''),
+                      COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.grade_code')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.gradeCode')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.grade_cd')),
+                               ''),
+                      COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.maker_name')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.makerName')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.makerNm')),
+                               ''),
+                      COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_name')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelName')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelNm')),
+                               ''),
+                      COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_detail_name')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelDetailName')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.trim_name')),
+                               ''),
+                      COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.grade_name')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.gradeName')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.gradeNm')),
+                               ''),
+                      CAST(NULLIF(TRIM(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sell_price')),
+                                                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sellPrice'))), ',', ''), '' ) AS UNSIGNED),
+                      CAST(NULLIF(TRIM(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.mileage')),
+                                                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.runDistance'))), ',', ''), '' ) AS UNSIGNED),
+                      CAST(NULLIF(TRIM(REPLACE(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.displacement')),
+                                                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.capacity'))), ',', ''), '' ) AS UNSIGNED),
+                      LEFT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.yyyymm')),
+                                   JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.yyymm')),
+                                   JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carYear')), '0000'), 4), 'SALE',
+                      COLOR_EXPR, FUEL_EXPR,
+                      COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.transmission_name')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.transmissionName')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.transmission')),
+                               ''),
+                      CASE COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.car_type')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carType')),
+                               '')
                         WHEN '소형' THEN '소형' WHEN '중형' THEN '중형' WHEN '대형' THEN '대형'
                         WHEN '경형(일반형)' THEN '경차' WHEN '준중형' THEN '준중형'
                         WHEN '기타' THEN '기타' WHEN '경형(초소형)' THEN '경차'
-                        ELSE R.car_type
+                        ELSE COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.car_type')),
+                                     JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carType')),
+                                     '')
                       END,
-                      r.region_name,
-                      CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
-                      CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
+                      COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.region_name')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.regionName')),
+                               JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.areaNm')),
+                               ''),
+                      CONCAT('https://charancha.com/bu/sell/view?sellNo=',
+                             COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sell_no')),
+                                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sellNo')),
+                                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.SELL_NO')),
+                                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.car_seq_no')),
+                                      '')),
+                      CONCAT('https://charancha.com/bu/sell/view?sellNo=',
+                             COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sell_no')),
+                                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sellNo')),
+                                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.SELL_NO')),
+                                      JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.car_seq_no')),
+                                      '')),
                       NULL, AD_DATE_EXPR_CHARANCHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
                     FROM raw_charancha r
                     WHERE r.id > ? AND r.id <= ?
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
                    .replace("AD_DATE_EXPR_CHARANCHA", AD_DATE_EXPR_CHARANCHA)
-                   .replace("COLOR_EXPR", mapColorExpr("R.color_name"))
-                   .replace("FUEL_EXPR", mapFuelExpr("R.fuel_name"));
+                   .replace("COLOR_EXPR", mapColorExpr("COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.color_name')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.colorName')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.color')), '')"))
+                   .replace("FUEL_EXPR", mapFuelExpr("COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuel_name')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuelName')), JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuel')), '')"));
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });
