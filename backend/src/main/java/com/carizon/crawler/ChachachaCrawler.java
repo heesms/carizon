@@ -341,12 +341,12 @@ public class ChachachaCrawler {
                 // no-op
             }
             try {
-                return LocalDate.parse(value, STRATEGY_YEAR_MONTH_DASH).withDayOfMonth(1).format(STRATEGY_DATE_OUTPUT);
+                return java.time.YearMonth.parse(value, STRATEGY_YEAR_MONTH_DASH).atDay(1).format(STRATEGY_DATE_OUTPUT);
             } catch (DateTimeParseException e) {
                 // no-op
             }
             try {
-                return LocalDate.parse(value, STRATEGY_YEAR_MONTH).withDayOfMonth(1).format(STRATEGY_DATE_OUTPUT);
+                return java.time.YearMonth.parse(value, STRATEGY_YEAR_MONTH).atDay(1).format(STRATEGY_DATE_OUTPUT);
             } catch (DateTimeParseException e) {
                 // no-op
             }
