@@ -536,154 +536,160 @@ public class MasterMergeService {
         log.info("[master] rebuildCarMasterFromScratchPreserveCarId: preserve next car_id={}", nextCarId);
 
         String mapTable = "car_master_id_retain_map";
+        String mapRunId = "PRESERVE";
 
         // 기존 car_master의 CAR_NO -> CAR_ID를 임시 보존 맵에 저장 후 재생성 시 재매핑
         jdbc.execute("TRUNCATE TABLE " + mapTable);
-            jdbc.update("""
-                INSERT INTO car_master_id_retain_map (run_id, car_no, car_id)
-                SELECT ?, CAR_NO, CAR_ID
-                FROM car_master
-                WHERE CAR_NO IS NOT NULL
-                """, "PRESERVE");
-            logBatchSql("snapshotCarMasterIdMap", "INSERT INTO car_master_id_retain_map... run_id=PRESERVE");
+        int retainedRows = jdbc.update("""
+            INSERT INTO car_master_id_retain_map (run_id, car_no, car_id)
+            SELECT ?, CAR_NO, CAR_ID
+            FROM car_master
+            WHERE CAR_NO IS NOT NULL
+            """, mapRunId);
+        logBatchSql("snapshotCarMasterIdMap", "INSERT INTO car_master_id_retain_map... run_id=" + mapRunId);
+        log.info("[master] rebuildCarMasterFromScratchPreserveCarId: snapshotCarMasterIdMap rows={}", retainedRows);
 
-            // 우선순위 테이블 보장 (별도 트랜잭션으로 분리하여 락 타임아웃 방지)
-            try {
-                ensurePrioritySeed();
-            } catch (Exception e) {
-                log.warn("[master] ensurePrioritySeed failed (lock timeout?), continuing: {}", e.getMessage());
-            }
+        if (retainedRows == 0) {
+            log.warn("[master] rebuildCarMasterFromScratchPreserveCarId: no retained car_no/car_id rows found in car_master for run_id={}", mapRunId);
+        }
 
-            // 1단계: car_master TRUNCATE (car_id 리셋은 linkToMaster 단계에서 처리)
-            tx.execute(status -> {
-                log.info("[master] rebuildCarMasterFromScratchPreserveCarId: car_master TRUNCATE start");
-                jdbc.execute("TRUNCATE TABLE car_master");
-                carMasterIdSequenceService.restoreNextCarId(nextCarId);
-                log.info("[master] rebuildCarMasterFromScratchPreserveCarId: car_master TRUNCATE done");
-                return null;
+        // 우선순위 테이블 보장 (별도 트랜잭션으로 분리하여 락 타임아웃 방지)
+        try {
+            ensurePrioritySeed();
+        } catch (Exception e) {
+            log.warn("[master] ensurePrioritySeed failed (lock timeout?), continuing: {}", e.getMessage());
+        }
+
+        // 1단계: car_master TRUNCATE (car_id 리셋은 linkToMaster 단계에서 처리)
+        tx.execute(status -> {
+            log.info("[master] rebuildCarMasterFromScratchPreserveCarId: car_master TRUNCATE start");
+            jdbc.execute("TRUNCATE TABLE car_master");
+            carMasterIdSequenceService.restoreNextCarId(nextCarId);
+            log.info("[master] rebuildCarMasterFromScratchPreserveCarId: car_master TRUNCATE done");
+            return null;
+        });
+
+        // 2단계: 처리할 CAR_NO 목록 조회 (배치 처리용)
+        // platform_car가 이미 재생성되었으므로 last_seen_date 조건 불필요
+        log.info("[master] rebuildCarMasterFromScratchPreserveCarId: CAR_NO list fetch start");
+        List<String> carNos = jdbc.query("""
+            SELECT DISTINCT p.CAR_NO
+            FROM platform_car p
+            WHERE p.CAR_NO IS NOT NULL
+            ORDER BY p.CAR_NO
+        """, (rs, i) -> rs.getString(1));
+
+        if (carNos.isEmpty()) {
+            log.info("[master] rebuildCarMasterFromScratchPreserveCarId: no data to process");
+            return 0;
+        }
+
+        log.info("[master] rebuildCarMasterFromScratchPreserveCarId: {} CAR_NO to process", carNos.size());
+
+        // 3단계: 배치별로 처리
+        int totalAffected = 0;
+        int batchCount = 0;
+
+        for (int from = 0; from < carNos.size(); from += MASTER_MERGE_BATCH_SIZE) {
+            int to = Math.min(from + MASTER_MERGE_BATCH_SIZE, carNos.size());
+            List<String> batch = carNos.subList(from, to);
+            batchCount++;
+
+            long batchStart = System.currentTimeMillis();
+            Integer affected = txTemplate.execute(status -> {
+                String placeholders = batch.stream().map(c -> "?").collect(Collectors.joining(","));
+                String sql = String.format("""
+                    INSERT INTO car_master
+                    (CAR_ID, CAR_NO, MAKER_CODE, MODEL_GROUP_CODE, MODEL_CODE, TRIM_CODE, GRADE_CODE,
+                     YEAR, MILEAGE, COLOR, TRANSMISSiON, FUEL, REGION, DISPLACEMENT, BODY_TYPE, price_new,
+                     adv_status, last_seen_date, UPDATED_AT)
+                    SELECT
+                      cm_map.CAR_ID,
+                      t.CAR_NO,
+                      (SELECT cm.maker_code FROM cz_code_map cm
+                       WHERE cm.platform_name = t.PLATFORM_NAME
+                         AND cm.p_maker_code = t.MAKER_CODE
+                         AND cm.status IN ('LOCKED','AUTO')
+                       LIMIT 1) AS MAKER_CODE,
+                      (SELECT cm.model_group_code FROM cz_code_map cm
+                       WHERE cm.platform_name = t.PLATFORM_NAME
+                         AND cm.p_maker_code = t.MAKER_CODE
+                         AND cm.p_model_group_code = t.MODEL_GROUP_CODE
+                         AND cm.status IN ('LOCKED','AUTO')
+                       LIMIT 1) AS MODEL_GROUP_CODE,
+                      (SELECT cm.model_code FROM cz_code_map cm
+                       WHERE cm.platform_name = t.PLATFORM_NAME
+                         AND cm.p_maker_code = t.MAKER_CODE
+                         AND cm.p_model_group_code = t.MODEL_GROUP_CODE
+                         AND cm.p_model_code = t.MODEL_CODE
+                         AND cm.status IN ('LOCKED','AUTO')
+                       LIMIT 1) AS MODEL_CODE,
+                      (SELECT cm.trim_code FROM cz_code_map cm
+                       WHERE cm.platform_name = t.PLATFORM_NAME
+                         AND cm.p_maker_code = t.MAKER_CODE
+                         AND cm.p_model_group_code = t.MODEL_GROUP_CODE
+                         AND cm.p_model_code = t.MODEL_CODE
+                         AND cm.p_trim_code = t.TRIM_CODE
+                         AND cm.status IN ('LOCKED','AUTO')
+                       LIMIT 1) AS TRIM_CODE,
+                      NULLIF((SELECT cm.grade_code FROM cz_code_map cm
+                       WHERE cm.platform_name = t.PLATFORM_NAME
+                         AND cm.p_maker_code = t.MAKER_CODE
+                         AND cm.p_model_group_code = t.MODEL_GROUP_CODE
+                         AND cm.p_model_code = t.MODEL_CODE
+                         AND cm.p_trim_code = t.TRIM_CODE
+                         AND cm.p_grade_code = t.GRADE_CODE
+                         AND cm.status IN ('LOCKED','AUTO')
+                       LIMIT 1), 'null') AS GRADE_CODE,
+                      t.YYMM AS YEAR,
+                      t.KM AS MILEAGE,
+                      t.COLOR,
+                      t.TRANSMISSiON,
+                      t.FUEL,
+                      t.REGION,
+                      t.DISPLACEMENT,
+                      t.BODY_TYPE,
+                      (SELECT MAX(pc2.price_new) FROM platform_car pc2
+                       WHERE pc2.CAR_NO = t.CAR_NO AND pc2.price_new IS NOT NULL AND pc2.price_new > 0) AS price_new,
+                      'ONSALE', NOW(), NOW()
+                    FROM (
+                        SELECT t_inner.*
+                        FROM (
+                            SELECT pc.*,
+                                   COALESCE(pp.priority, 9) AS pr,
+                                   ROW_NUMBER() OVER (
+                                     PARTITION BY pc.CAR_NO
+                                     ORDER BY COALESCE(pp.priority, 9),
+                                              CASE WHEN TRIM(COALESCE(pc.FUEL, '')) IN ('가솔린', '휘발유')
+                                                       OR UPPER(TRIM(COALESCE(pc.FUEL, ''))) = 'GASOLINE' THEN 0 ELSE 1 END,
+                                              pc.last_seen_date DESC,
+                                              pc.PLATFORM_CAR_ID DESC
+                                   ) AS rn
+                            FROM platform_car pc
+                            LEFT JOIN cz_platform_priority pp
+                                   ON pp.platform_name = pc.PLATFORM_NAME
+                            WHERE pc.CAR_NO IN (%s)
+                        ) t_inner
+                        WHERE t_inner.rn = 1
+                    ) t
+                    LEFT JOIN car_master_id_retain_map cm_map
+                      ON cm_map.CAR_NO = t.CAR_NO
+                    """, placeholders);
+                List<Object> params = new ArrayList<>();
+                params.addAll(batch);
+                return jdbc.update(sql, params.toArray());
             });
 
-            // 2단계: 처리할 CAR_NO 목록 조회 (배치 처리용)
-            // platform_car가 이미 재생성되었으므로 last_seen_date 조건 불필요
-            log.info("[master] rebuildCarMasterFromScratchPreserveCarId: CAR_NO list fetch start");
-            List<String> carNos = jdbc.query("""
-                SELECT DISTINCT p.CAR_NO
-                FROM platform_car p
-                WHERE p.CAR_NO IS NOT NULL
-                ORDER BY p.CAR_NO
-            """, (rs, i) -> rs.getString(1));
+            int batchAffected = affected != null ? affected : 0;
+            totalAffected += batchAffected;
+            long batchTime = System.currentTimeMillis() - batchStart;
+            log.info("[master] rebuildCarMasterFromScratchPreserveCarId batch {}/{} done: {} rows ({}ms)",
+                    batchCount, (carNos.size() + MASTER_MERGE_BATCH_SIZE - 1) / MASTER_MERGE_BATCH_SIZE,
+                    batchAffected, batchTime);
+        }
 
-            if (carNos.isEmpty()) {
-                log.info("[master] rebuildCarMasterFromScratchPreserveCarId: no data to process");
-                return 0;
-            }
-
-            log.info("[master] rebuildCarMasterFromScratchPreserveCarId: {} CAR_NO to process", carNos.size());
-
-            // 3단계: 배치별로 처리
-            int totalAffected = 0;
-            int batchCount = 0;
-
-            for (int from = 0; from < carNos.size(); from += MASTER_MERGE_BATCH_SIZE) {
-                int to = Math.min(from + MASTER_MERGE_BATCH_SIZE, carNos.size());
-                List<String> batch = carNos.subList(from, to);
-                batchCount++;
-
-                long batchStart = System.currentTimeMillis();
-                Integer affected = txTemplate.execute(status -> {
-                    String placeholders = batch.stream().map(c -> "?").collect(Collectors.joining(","));
-                    String sql = String.format("""
-                        INSERT INTO car_master
-                        (CAR_ID, CAR_NO, MAKER_CODE, MODEL_GROUP_CODE, MODEL_CODE, TRIM_CODE, GRADE_CODE,
-                         YEAR, MILEAGE, COLOR, TRANSMISSiON, FUEL, REGION, DISPLACEMENT, BODY_TYPE, price_new,
-                         adv_status, last_seen_date, UPDATED_AT)
-                        SELECT
-                          cm_map.CAR_ID,
-                          t.CAR_NO,
-                          (SELECT cm.maker_code FROM cz_code_map cm
-                           WHERE cm.platform_name = t.PLATFORM_NAME
-                             AND cm.p_maker_code = t.MAKER_CODE
-                             AND cm.status IN ('LOCKED','AUTO')
-                           LIMIT 1) AS MAKER_CODE,
-                          (SELECT cm.model_group_code FROM cz_code_map cm
-                           WHERE cm.platform_name = t.PLATFORM_NAME
-                             AND cm.p_maker_code = t.MAKER_CODE
-                             AND cm.p_model_group_code = t.MODEL_GROUP_CODE
-                             AND cm.status IN ('LOCKED','AUTO')
-                           LIMIT 1) AS MODEL_GROUP_CODE,
-                          (SELECT cm.model_code FROM cz_code_map cm
-                           WHERE cm.platform_name = t.PLATFORM_NAME
-                             AND cm.p_maker_code = t.MAKER_CODE
-                             AND cm.p_model_group_code = t.MODEL_GROUP_CODE
-                             AND cm.p_model_code = t.MODEL_CODE
-                             AND cm.status IN ('LOCKED','AUTO')
-                           LIMIT 1) AS MODEL_CODE,
-                          (SELECT cm.trim_code FROM cz_code_map cm
-                           WHERE cm.platform_name = t.PLATFORM_NAME
-                             AND cm.p_maker_code = t.MAKER_CODE
-                             AND cm.p_model_group_code = t.MODEL_GROUP_CODE
-                             AND cm.p_model_code = t.MODEL_CODE
-                             AND cm.p_trim_code = t.TRIM_CODE
-                             AND cm.status IN ('LOCKED','AUTO')
-                           LIMIT 1) AS TRIM_CODE,
-                          NULLIF((SELECT cm.grade_code FROM cz_code_map cm
-                           WHERE cm.platform_name = t.PLATFORM_NAME
-                             AND cm.p_maker_code = t.MAKER_CODE
-                             AND cm.p_model_group_code = t.MODEL_GROUP_CODE
-                             AND cm.p_model_code = t.MODEL_CODE
-                             AND cm.p_trim_code = t.TRIM_CODE
-                             AND cm.p_grade_code = t.GRADE_CODE
-                             AND cm.status IN ('LOCKED','AUTO')
-                           LIMIT 1), 'null') AS GRADE_CODE,
-                          t.YYMM AS YEAR,
-                          t.KM AS MILEAGE,
-                          t.COLOR,
-                          t.TRANSMISSiON,
-                          t.FUEL,
-                          t.REGION,
-                          t.DISPLACEMENT,
-                          t.BODY_TYPE,
-                          (SELECT MAX(pc2.price_new) FROM platform_car pc2
-                           WHERE pc2.CAR_NO = t.CAR_NO AND pc2.price_new IS NOT NULL AND pc2.price_new > 0) AS price_new,
-                          'ONSALE', NOW(), NOW()
-                        FROM (
-                            SELECT t_inner.*
-                            FROM (
-                                SELECT pc.*,
-                                       COALESCE(pp.priority, 9) AS pr,
-                                       ROW_NUMBER() OVER (
-                                         PARTITION BY pc.CAR_NO
-                                         ORDER BY COALESCE(pp.priority, 9),
-                                                  CASE WHEN TRIM(COALESCE(pc.FUEL, '')) IN ('가솔린', '휘발유')
-                                                           OR UPPER(TRIM(COALESCE(pc.FUEL, ''))) = 'GASOLINE' THEN 0 ELSE 1 END,
-                                                  pc.last_seen_date DESC,
-                                                  pc.PLATFORM_CAR_ID DESC
-                                       ) AS rn
-                                FROM platform_car pc
-                                LEFT JOIN cz_platform_priority pp
-                                       ON pp.platform_name = pc.PLATFORM_NAME
-                                WHERE pc.CAR_NO IN (%s)
-                            ) t_inner
-                            WHERE t_inner.rn = 1
-                        ) t
-                        LEFT JOIN car_master_id_retain_map cm_map
-                          ON cm_map.CAR_NO = t.CAR_NO
-                        """, placeholders);
-                    List<Object> params = new ArrayList<>();
-                    params.addAll(batch);
-                    return jdbc.update(sql, params.toArray());
-                });
-
-                int batchAffected = affected != null ? affected : 0;
-                totalAffected += batchAffected;
-                long batchTime = System.currentTimeMillis() - batchStart;
-                log.info("[master] rebuildCarMasterFromScratchPreserveCarId batch {}/{} done: {} rows ({}ms)",
-                        batchCount, (carNos.size() + MASTER_MERGE_BATCH_SIZE - 1) / MASTER_MERGE_BATCH_SIZE,
-                        batchAffected, batchTime);
-            }
-
-            log.info("[master] rebuildCarMasterFromScratchPreserveCarId: done - {} rows ({} batches)", totalAffected, batchCount);
-            return totalAffected;
+        log.info("[master] rebuildCarMasterFromScratchPreserveCarId: done - {} rows ({} batches)", totalAffected, batchCount);
+        return totalAffected;
     }
 
     private long snapshotNextCarIdByMax() {
