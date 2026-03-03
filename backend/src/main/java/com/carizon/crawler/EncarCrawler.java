@@ -527,6 +527,7 @@ public class EncarCrawler {
                 WHERE id > ?
                   AND sell_type = 'NORMAL'
                   AND use_yn = 'Y'
+                  AND fetched_at IS NULL
                 ORDER BY id ASC
                 LIMIT ?
                 """;
@@ -811,16 +812,27 @@ public class EncarCrawler {
 
     private EncarExtraData fetchEncarExtraData(String vehicleId, String vehicleNo, Map<String, Object> vehicleSummary) {
         try {
-            Map<String, Object> detail = extractOptionSpecFromVehicleSummary(vehicleSummary);
-            boolean needsOptionSpecFetch = detail.isEmpty() || !hasOptionsContainer(detail) || !hasSeatCountValue(detail);
-            if (needsOptionSpecFetch) {
-                Map<String, Object> fetched = fetchVehicleDetailForOptionAndSpec(vehicleId);
-                detail = mergeOptionSpec(detail, fetched);
-            }
+            Map<String, Object> baseDetail = extractOptionSpecFromVehicleSummary(vehicleSummary);
+            boolean needsOptionSpecFetch = baseDetail.isEmpty() || !hasOptionsContainer(baseDetail) || !hasSeatCountValue(baseDetail);
+
+            // 독립적인 API 호출을 병렬 실행 (extraApiPool 데드락 방지를 위해 commonPool 사용)
+            CompletableFuture<Map<String, Object>> detailFuture = needsOptionSpecFetch
+                    ? CompletableFuture.supplyAsync(() -> fetchVehicleDetailForOptionAndSpec(vehicleId))
+                    : CompletableFuture.completedFuture(Map.of());
+            CompletableFuture<Map<String, String>> standardFuture =
+                    CompletableFuture.supplyAsync(() -> fetchOptionCodeNameMap(vehicleId, "standard"));
+            CompletableFuture<Map<String, String>> choiceFuture =
+                    CompletableFuture.supplyAsync(() -> fetchOptionCodeNameMap(vehicleId, "choice"));
+            CompletableFuture<Map<String, Object>> openFuture =
+                    CompletableFuture.supplyAsync(() -> fetchVehicleOpenRecord(vehicleId, vehicleNo));
+
+            Map<String, Object> detail = needsOptionSpecFetch
+                    ? mergeOptionSpec(baseDetail, detailFuture.join())
+                    : baseDetail;
             log.debug("[ENCAR][OPTION] vehicleId={} needsOptionSpecFetch={} hasOptions={} hasSeatCount={}",
                     vehicleId, needsOptionSpecFetch, hasOptionsContainer(detail), hasSeatCountValue(detail));
-            Map<String, String> standardOptionMap = fetchOptionCodeNameMap(vehicleId, "standard");
-            Map<String, String> choiceOptionMap = fetchOptionCodeNameMap(vehicleId, "choice");
+            Map<String, String> standardOptionMap = standardFuture.join();
+            Map<String, String> choiceOptionMap = choiceFuture.join();
 
             List<String> standardCodes = extractOptionCodes(detail, "standard");
             List<String> choiceCodes = extractOptionCodes(detail, "choice");
@@ -843,7 +855,7 @@ public class EncarCrawler {
                     selOptionArray != null && !selOptionArray.isBlank(),
                     seatCount);
 
-            Map<String, Object> open = fetchVehicleOpenRecord(vehicleId, vehicleNo);
+            Map<String, Object> open = openFuture.join();
             Integer myAccidentCnt = toInteger(open.get("myAccidentCnt"));
             Long myAccidentCost = toLong(open.get("myAccidentCost"));
             Integer otherAccidentCnt = toInteger(open.get("otherAccidentCnt"));
