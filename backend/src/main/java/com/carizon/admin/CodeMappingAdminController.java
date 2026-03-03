@@ -188,6 +188,68 @@ public class CodeMappingAdminController {
         }
     }
 
+    @GetMapping("/search")
+    @Operation(summary = "코드 매핑 검색",
+               description = "상태/플랫폼/키워드로 cz_code_map 전체를 검색합니다.")
+    public ApiResponse<Map<String, Object>> searchMappings(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String platformName,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        try {
+            StringBuilder where = new StringBuilder(" WHERE 1=1");
+            List<Object> params = new ArrayList<>();
+
+            if (status != null && !status.isEmpty()) {
+                where.append(" AND status = ?");
+                params.add(status.toUpperCase());
+            }
+            if (platformName != null && !platformName.isEmpty()) {
+                where.append(" AND platform_name = ?");
+                params.add(platformName.toUpperCase());
+            }
+            if (keyword != null && !keyword.isEmpty()) {
+                where.append(" AND (p_model_name_norm LIKE ? OR p_maker_name_norm LIKE ? OR p_model_group_name_norm LIKE ?)");
+                String kw = "%" + keyword + "%";
+                params.add(kw); params.add(kw); params.add(kw);
+            }
+
+            String baseSql = """
+                SELECT platform_name,
+                    p_maker_code, p_model_group_code, p_model_code, p_trim_code, p_grade_code,
+                    p_maker_name_norm, p_model_group_name_norm, p_model_name_norm,
+                    p_trim_name_norm, p_grade_name_norm,
+                    maker_code, model_group_code, model_code, trim_code, grade_code,
+                    confidence_score, match_reason, status,
+                    first_seen, last_seen
+                FROM cz_code_map
+                """;
+
+            List<Object> pageParams = new ArrayList<>(params);
+            pageParams.add(size);
+            pageParams.add(page * size);
+
+            List<Map<String, Object>> items = jdbc.queryForList(
+                baseSql + where + " ORDER BY status, confidence_score DESC, last_seen DESC LIMIT ? OFFSET ?",
+                pageParams.toArray());
+
+            Long total = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM cz_code_map" + where,
+                Long.class, params.toArray());
+
+            return ApiResponse.success(Map.of(
+                    "items", items,
+                    "total", total,
+                    "page", page,
+                    "size", size
+            ));
+        } catch (Exception e) {
+            log.error("[code mapping] search failed", e);
+            return ApiResponse.error("검색 실패: " + e.getMessage());
+        }
+    }
+
     @PostMapping("/auto-mapping/{platformName}")
     @Operation(summary = "코드 매핑 자동 실행", 
                description = "특정 플랫폼의 코드 매핑을 자동으로 실행합니다.")

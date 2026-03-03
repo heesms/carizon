@@ -17,13 +17,190 @@ import {
   Popconfirm,
   Tabs,
 } from 'antd'
-import { ReloadOutlined, EditOutlined, CheckCircleOutlined, LockOutlined } from '@ant-design/icons'
+import {
+  ReloadOutlined,
+  EditOutlined,
+  CheckCircleOutlined,
+  LockOutlined,
+  PlusOutlined,
+  SearchOutlined,
+} from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { codeMappingApi, CodeMapping as CodeMappingType } from '../../api/admin/codeMapping'
 import { forcedMappingApi, ForcedMapping } from '../../api/admin/forcedMapping'
 
 const { Title } = Typography
 const { Option } = Select
+
+const PLATFORMS = [
+  { value: 'ENCAR', label: 'ENCAR' },
+  { value: 'KCAR', label: 'KCAR' },
+  { value: 'CHACHACHA', label: 'CHACHACHA' },
+  { value: 'CHUTCHA', label: 'CHUTCHA' },
+  { value: 'CHARANCHA', label: 'CHARANCHA' },
+  { value: 'TCAR', label: 'TCAR' },
+]
+
+function PlatformOptions() {
+  return (
+    <>
+      {PLATFORMS.map(p => (
+        <Option key={p.value} value={p.value}>{p.label}</Option>
+      ))}
+    </>
+  )
+}
+
+function buildColumns(
+  onEdit: (r: CodeMappingType) => void,
+  onLock: (r: CodeMappingType) => void,
+) {
+  return [
+    { title: '플랫폼', dataIndex: 'platform_name', key: 'platform_name', width: 110 },
+    {
+      title: '상태',
+      dataIndex: 'status',
+      key: 'status',
+      width: 90,
+      render: (s: string) => {
+        const colors: Record<string, string> = { AUTO: 'green', REVIEW: 'orange', LOCKED: 'purple' }
+        return <Tag color={colors[s] || 'default'}>{s}</Tag>
+      },
+    },
+    {
+      title: '플랫폼 코드',
+      key: 'p_codes',
+      width: 200,
+      render: (_: any, r: CodeMappingType) => (
+        <div style={{ fontSize: 12 }}>
+          <div>Maker: {r.p_maker_code || '-'}</div>
+          <div>Group: {r.p_model_group_code || '-'}</div>
+          <div>Model: {r.p_model_code || '-'}</div>
+          <div>Trim: {r.p_trim_code || '-'}</div>
+          <div>Grade: {r.p_grade_code || '-'}</div>
+        </div>
+      ),
+    },
+    {
+      title: '플랫폼 이름',
+      key: 'p_names',
+      width: 200,
+      render: (_: any, r: CodeMappingType) => (
+        <div style={{ fontSize: 12 }}>
+          <div>{r.p_maker_name_norm || '-'}</div>
+          <div>{r.p_model_group_name_norm || '-'}</div>
+          <div>{r.p_model_name_norm || '-'}</div>
+          <div>{r.p_trim_name_norm || '-'}</div>
+          <div>{r.p_grade_name_norm || '-'}</div>
+        </div>
+      ),
+    },
+    {
+      title: '표준 코드',
+      key: 'cz_codes',
+      width: 200,
+      render: (_: any, r: CodeMappingType) => (
+        <div style={{ fontSize: 12 }}>
+          <div>Maker: {r.maker_code || '-'}</div>
+          <div>Group: {r.model_group_code || '-'}</div>
+          <div>Model: {r.model_code || '-'}</div>
+          <div>Trim: {r.trim_code || '-'}</div>
+          <div>Grade: {r.grade_code || '-'}</div>
+        </div>
+      ),
+    },
+    {
+      title: '신뢰도',
+      dataIndex: 'confidence_score',
+      key: 'confidence_score',
+      width: 100,
+      render: (score: number) => (
+        <Tag color={score >= 0.93 ? 'green' : score >= 0.85 ? 'orange' : 'red'}>
+          {(score * 100).toFixed(1)}%
+        </Tag>
+      ),
+      sorter: (a: CodeMappingType, b: CodeMappingType) => a.confidence_score - b.confidence_score,
+    },
+    {
+      title: '매칭 사유',
+      dataIndex: 'match_reason',
+      key: 'match_reason',
+      width: 120,
+      render: (reason: string) => {
+        const colors: Record<string, string> = { PLATE_EQUAL: 'green', HIER_TEXT: 'blue', MANUAL: 'purple' }
+        return <Tag color={colors[reason] || 'default'}>{reason}</Tag>
+      },
+    },
+    {
+      title: '작업',
+      key: 'actions',
+      fixed: 'right' as const,
+      width: 150,
+      render: (_: any, r: CodeMappingType) => (
+        <Space>
+          <Button type="link" icon={<EditOutlined />} onClick={() => onEdit(r)} size="small">수정</Button>
+          <Popconfirm title="이 매핑을 고정하시겠습니까?" onConfirm={() => onLock(r)}>
+            <Button type="link" icon={<LockOutlined />} size="small" danger>고정</Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ]
+}
+
+function EditMappingModal({
+  editingMapping,
+  form,
+  onOk,
+  onCancel,
+  loading,
+}: {
+  editingMapping: CodeMappingType | null
+  form: any
+  onOk: () => void
+  onCancel: () => void
+  loading: boolean
+}) {
+  return (
+    <Modal
+      title="코드 매핑 수정"
+      open={!!editingMapping}
+      onOk={onOk}
+      onCancel={onCancel}
+      confirmLoading={loading}
+      width={600}
+    >
+      {editingMapping && (
+        <Form form={form} layout="vertical">
+          <Form.Item label="플랫폼"><Input value={editingMapping.platform_name} disabled /></Form.Item>
+          <Form.Item label="플랫폼 코드">
+            <Input value={`${editingMapping.p_maker_code || ''}/${editingMapping.p_model_code || ''}`} disabled />
+          </Form.Item>
+          <Form.Item label="플랫폼 이름">
+            <Input value={editingMapping.p_model_name_norm || ''} disabled />
+          </Form.Item>
+          <Form.Item label="표준 Maker 코드" name="maker_code" rules={[{ required: true, message: 'Maker 코드를 입력해주세요.' }]}>
+            <Input placeholder="예: KIA" />
+          </Form.Item>
+          <Form.Item label="표준 Model Group 코드" name="model_group_code">
+            <Input placeholder="예: SUV" />
+          </Form.Item>
+          <Form.Item label="표준 Model 코드" name="model_code" rules={[{ required: true, message: 'Model 코드를 입력해주세요.' }]}>
+            <Input placeholder="예: KORANDO" />
+          </Form.Item>
+          <Form.Item label="표준 Trim 코드" name="trim_code"><Input placeholder="예: SPORT" /></Form.Item>
+          <Form.Item label="표준 Grade 코드" name="grade_code"><Input placeholder="예: PREMIUM" /></Form.Item>
+          <Form.Item label="상태" name="status" rules={[{ required: true }]}>
+            <Select>
+              <Option value="AUTO">AUTO (자동 업데이트 허용)</Option>
+              <Option value="LOCKED">LOCKED (수동 고정)</Option>
+            </Select>
+          </Form.Item>
+        </Form>
+      )}
+    </Modal>
+  )
+}
 
 export default function CodeMapping() {
   const [platformFilter, setPlatformFilter] = useState<string | undefined>()
@@ -61,7 +238,8 @@ export default function CodeMapping() {
     mutationFn: ({ platformName, scope }: { platformName: string; scope: 'TODAY' | 'FULL' }) =>
       codeMappingApi.runAutoMapping(platformName, scope),
     onSuccess: (data) => {
-      message.success(`${data.data.platform} 플랫폼 매핑 완료: ${data.data.mappedCount}건`)
+      const result = (data as any).data?.data
+      message.success(`${result?.platform} 플랫폼 매핑 완료: ${result?.mappedCount}건`)
       queryClient.invalidateQueries({ queryKey: ['code-mapping'] })
     },
     onError: (error: any) => {
@@ -77,13 +255,13 @@ export default function CodeMapping() {
       model_code: record.model_code,
       trim_code: record.trim_code,
       grade_code: record.grade_code,
-      status: 'AUTO',
+      status: record.status === 'LOCKED' ? 'LOCKED' : 'AUTO',
     })
   }
 
   const handleSave = () => {
     if (!editingMapping) return
-    form.validateFields().then((values) => {
+    form.validateFields().then((values: any) => {
       updateMutation.mutate({
         platformName: editingMapping.platform_name,
         data: {
@@ -117,87 +295,10 @@ export default function CodeMapping() {
     })
   }
 
-  const columns = [
-    { title: '플랫폼', dataIndex: 'platform_name', key: 'platform_name', width: 100 },
-    {
-      title: '플랫폼 코드',
-      key: 'platform_codes',
-      width: 200,
-      render: (_: any, record: CodeMappingType) => (
-        <div style={{ fontSize: '12px' }}>
-          <div>Maker: {record.p_maker_code || '-'}</div>
-          <div>Group: {record.p_model_group_code || '-'}</div>
-          <div>Model: {record.p_model_code || '-'}</div>
-          <div>Trim: {record.p_trim_code || '-'}</div>
-          <div>Grade: {record.p_grade_code || '-'}</div>
-        </div>
-      ),
-    },
-    {
-      title: '플랫폼 이름',
-      key: 'platform_names',
-      width: 200,
-      render: (_: any, record: CodeMappingType) => (
-        <div style={{ fontSize: '12px' }}>
-          <div>{record.p_maker_name_norm || '-'}</div>
-          <div>{record.p_model_group_name_norm || '-'}</div>
-          <div>{record.p_model_name_norm || '-'}</div>
-          <div>{record.p_trim_name_norm || '-'}</div>
-          <div>{record.p_grade_name_norm || '-'}</div>
-        </div>
-      ),
-    },
-    {
-      title: '표준 코드',
-      key: 'standard_codes',
-      width: 200,
-      render: (_: any, record: CodeMappingType) => (
-        <div style={{ fontSize: '12px' }}>
-          <div>Maker: {record.maker_code || '-'}</div>
-          <div>Group: {record.model_group_code || '-'}</div>
-          <div>Model: {record.model_code || '-'}</div>
-          <div>Trim: {record.trim_code || '-'}</div>
-          <div>Grade: {record.grade_code || '-'}</div>
-        </div>
-      ),
-    },
-    {
-      title: '신뢰도',
-      dataIndex: 'confidence_score',
-      key: 'confidence_score',
-      width: 100,
-      render: (score: number) => (
-        <Tag color={score >= 0.93 ? 'green' : score >= 0.85 ? 'orange' : 'red'}>
-          {(score * 100).toFixed(1)}%
-        </Tag>
-      ),
-      sorter: (a: CodeMappingType, b: CodeMappingType) => a.confidence_score - b.confidence_score,
-    },
-    {
-      title: '매칭 사유',
-      dataIndex: 'match_reason',
-      key: 'match_reason',
-      width: 120,
-      render: (reason: string) => {
-        const colors: Record<string, string> = { PLATE_EQUAL: 'green', HIER_TEXT: 'blue', MANUAL: 'purple' }
-        return <Tag color={colors[reason]}>{reason}</Tag>
-      },
-    },
-    {
-      title: '작업',
-      key: 'actions',
-      fixed: 'right' as const,
-      width: 150,
-      render: (_: any, record: CodeMappingType) => (
-        <Space>
-          <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small">수정</Button>
-          <Popconfirm title="이 매핑을 고정하시겠습니까?" onConfirm={() => handleLock(record)}>
-            <Button type="link" icon={<LockOutlined />} size="small" danger>고정</Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ]
+  const columns = buildColumns(handleEdit, handleLock)
+
+  const statusStats: Array<{ status: string; count: number }> = (stats as any)?.data?.data?.statusStats || []
+  const totalCount = statusStats.reduce((s: number, x: any) => s + (x.count || 0), 0)
 
   return (
     <div>
@@ -206,29 +307,49 @@ export default function CodeMapping() {
       <Card style={{ marginBottom: 16 }}>
         <Row gutter={16}>
           <Col span={6}>
-            <Statistic title="AUTO 상태" value={stats?.data?.statusStats?.find((s: any) => s.status === 'AUTO')?.count || 0} prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />} />
+            <Statistic
+              title="AUTO 상태"
+              value={statusStats.find(s => s.status === 'AUTO')?.count || 0}
+              prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+            />
           </Col>
           <Col span={6}>
-            <Statistic title="REVIEW 상태" value={stats?.data?.statusStats?.find((s: any) => s.status === 'REVIEW')?.count || 0} prefix={<CheckCircleOutlined style={{ color: '#faad14' }} />} />
+            <Statistic
+              title="REVIEW 상태"
+              value={statusStats.find(s => s.status === 'REVIEW')?.count || 0}
+              prefix={<CheckCircleOutlined style={{ color: '#faad14' }} />}
+            />
           </Col>
           <Col span={6}>
-            <Statistic title="LOCKED 상태" value={stats?.data?.statusStats?.find((s: any) => s.status === 'LOCKED')?.count || 0} prefix={<LockOutlined style={{ color: '#722ed1' }} />} />
+            <Statistic
+              title="LOCKED 상태"
+              value={statusStats.find(s => s.status === 'LOCKED')?.count || 0}
+              prefix={<LockOutlined style={{ color: '#722ed1' }} />}
+            />
           </Col>
           <Col span={6}>
-            <Statistic title="총 매핑 수" value={stats?.data?.statusStats?.reduce((sum: number, s: any) => sum + s.count, 0) || 0} />
+            <Statistic title="총 매핑 수" value={totalCount} />
           </Col>
         </Row>
       </Card>
 
       <Card style={{ marginBottom: 16 }}>
-        <Space>
-          <Select placeholder="플랫폼 필터" allowClear style={{ width: 150 }} value={platformFilter} onChange={setPlatformFilter}>
-            <Option value="ENCAR">ENCAR</Option>
-            <Option value="CHACHACHA">CHACHACHA</Option>
-            <Option value="CHUTCHA">CHUTCHA</Option>
-            <Option value="KCAR">KCAR</Option>
+        <Space wrap>
+          <Select
+            placeholder="플랫폼 필터"
+            allowClear
+            style={{ width: 150 }}
+            value={platformFilter}
+            onChange={v => { setPlatformFilter(v); setPage(0) }}
+          >
+            <PlatformOptions />
           </Select>
-          <Button icon={<ReloadOutlined />} onClick={() => queryClient.invalidateQueries({ queryKey: ['code-mapping'] })}>새로고침</Button>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => queryClient.invalidateQueries({ queryKey: ['code-mapping'] })}
+          >
+            새로고침
+          </Button>
           <Button
             type="primary"
             onClick={() => {
@@ -240,7 +361,19 @@ export default function CodeMapping() {
             }}
             loading={autoMappingMutation.isPending}
           >
-            자동 매핑 실행
+            자동 매핑 실행 (오늘)
+          </Button>
+          <Button
+            onClick={() => {
+              if (platformFilter) {
+                autoMappingMutation.mutate({ platformName: platformFilter, scope: 'FULL' })
+              } else {
+                message.warning('플랫폼을 선택해주세요.')
+              }
+            }}
+            loading={autoMappingMutation.isPending}
+          >
+            자동 매핑 실행 (전체)
           </Button>
         </Space>
       </Card>
@@ -249,25 +382,31 @@ export default function CodeMapping() {
         items={[
           {
             key: 'review',
-            label: 'REVIEW 매핑',
+            label: `REVIEW 매핑 (${(reviewData as any)?.data?.data?.total ?? 0})`,
             children: (
               <Card>
                 <Table
                   columns={columns}
-                  dataSource={reviewData?.data?.items || []}
+                  dataSource={(reviewData as any)?.data?.data?.items || []}
                   loading={isLoading}
-                  rowKey={(record) => `${record.platform_name}-${record.p_maker_code}-${record.p_model_code}`}
+                  rowKey={(r: CodeMappingType) => `${r.platform_name}-${r.p_maker_code}-${r.p_model_code}-${r.p_trim_code}`}
                   pagination={{
                     current: page + 1,
                     pageSize: size,
-                    total: reviewData?.data?.total || 0,
+                    total: (reviewData as any)?.data?.data?.total || 0,
                     onChange: (newPage) => setPage(newPage - 1),
                     showSizeChanger: false,
+                    showTotal: (total) => `총 ${total}건`,
                   }}
                   scroll={{ x: 1200 }}
                 />
               </Card>
             ),
+          },
+          {
+            key: 'search',
+            label: '전체 조회',
+            children: <SearchTab onEdit={handleEdit} onLock={handleLock} />,
           },
           {
             key: 'forced',
@@ -277,39 +416,105 @@ export default function CodeMapping() {
         ]}
       />
 
-      <Modal title="코드 매핑 수정" open={!!editingMapping} onOk={handleSave} onCancel={() => { setEditingMapping(null); form.resetFields() }} confirmLoading={updateMutation.isPending} width={600}>
-        {editingMapping && (
-          <Form form={form} layout="vertical">
-            <Form.Item label="플랫폼"><Input value={editingMapping.platform_name} disabled /></Form.Item>
-            <Form.Item label="플랫폼 코드"><Input value={`${editingMapping.p_maker_code || ''}/${editingMapping.p_model_code || ''}`} disabled /></Form.Item>
-            <Form.Item label="플랫폼 이름"><Input value={editingMapping.p_model_name_norm || ''} disabled /></Form.Item>
-            <Form.Item label="표준 Maker 코드" name="maker_code" rules={[{ required: true, message: 'Maker 코드를 입력해주세요.' }]}>
-              <Input placeholder="예: KIA" />
-            </Form.Item>
-            <Form.Item label="표준 Model Group 코드" name="model_group_code">
-              <Input placeholder="예: SUV" />
-            </Form.Item>
-            <Form.Item label="표준 Model 코드" name="model_code" rules={[{ required: true, message: 'Model 코드를 입력해주세요.' }]}>
-              <Input placeholder="예: KORANDO" />
-            </Form.Item>
-            <Form.Item label="표준 Trim 코드" name="trim_code"><Input placeholder="예: SPORT" /></Form.Item>
-            <Form.Item label="표준 Grade 코드" name="grade_code"><Input placeholder="예: PREMIUM" /></Form.Item>
-            <Form.Item label="상태" name="status" rules={[{ required: true }]}>
-              <Select>
-                <Option value="AUTO">AUTO (자동 업데이트 허용)</Option>
-                <Option value="LOCKED">LOCKED (수동 고정)</Option>
-              </Select>
-            </Form.Item>
-          </Form>
-        )}
-      </Modal>
+      <EditMappingModal
+        editingMapping={editingMapping}
+        form={form}
+        onOk={handleSave}
+        onCancel={() => { setEditingMapping(null); form.resetFields() }}
+        loading={updateMutation.isPending}
+      />
     </div>
+  )
+}
+
+function SearchTab({
+  onEdit,
+  onLock,
+}: {
+  onEdit: (r: CodeMappingType) => void
+  onLock: (r: CodeMappingType) => void
+}) {
+  const [platform, setPlatform] = useState<string | undefined>()
+  const [status, setStatus] = useState<string | undefined>()
+  const [keyword, setKeyword] = useState('')
+  const [searchParams, setSearchParams] = useState<{
+    platform?: string
+    status?: string
+    keyword?: string
+    page: number
+  }>({ page: 0 })
+  const [size] = useState(50)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['code-mapping', 'search', searchParams, size],
+    queryFn: () => codeMappingApi.searchMappings({ ...searchParams, size }),
+  })
+
+  const columns = buildColumns(onEdit, onLock)
+
+  const handleSearch = () => {
+    setSearchParams({ platform, status, keyword: keyword || undefined, page: 0 })
+  }
+
+  return (
+    <Card>
+      <Space wrap style={{ marginBottom: 16 }}>
+        <Select
+          placeholder="플랫폼"
+          allowClear
+          style={{ width: 140 }}
+          value={platform}
+          onChange={setPlatform}
+        >
+          <PlatformOptions />
+        </Select>
+        <Select
+          placeholder="상태"
+          allowClear
+          style={{ width: 120 }}
+          value={status}
+          onChange={setStatus}
+        >
+          <Option value="AUTO">AUTO</Option>
+          <Option value="REVIEW">REVIEW</Option>
+          <Option value="LOCKED">LOCKED</Option>
+        </Select>
+        <Input
+          placeholder="모델명 키워드 검색"
+          style={{ width: 200 }}
+          value={keyword}
+          onChange={e => setKeyword(e.target.value)}
+          onPressEnter={handleSearch}
+        />
+        <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
+          검색
+        </Button>
+      </Space>
+      <Table
+        columns={columns}
+        dataSource={(data as any)?.data?.data?.items || []}
+        loading={isLoading}
+        rowKey={(r: CodeMappingType) =>
+          `${r.platform_name}-${r.p_maker_code}-${r.p_model_code}-${r.p_trim_code}-${r.p_grade_code}`
+        }
+        pagination={{
+          current: searchParams.page + 1,
+          pageSize: size,
+          total: (data as any)?.data?.data?.total || 0,
+          onChange: (p) => setSearchParams(prev => ({ ...prev, page: p - 1 })),
+          showSizeChanger: false,
+          showTotal: (total) => `총 ${total}건`,
+        }}
+        scroll={{ x: 1200 }}
+      />
+    </Card>
   )
 }
 
 function ForcedMappingTab() {
   const [platformFilter, setPlatformFilter] = useState<string | undefined>()
-  const [editingMapping, setEditingMapping] = useState<ForcedMapping | null>(null)
+  const [showModal, setShowModal] = useState(false)
+  const [editingRecord, setEditingRecord] = useState<ForcedMapping | null>(null)
   const [form] = Form.useForm()
   const queryClient = useQueryClient()
 
@@ -322,7 +527,7 @@ function ForcedMappingTab() {
     mutationFn: (data: Partial<ForcedMapping>) => forcedMappingApi.createForcedMapping(data),
     onSuccess: () => {
       message.success('강제 매핑이 추가되었습니다.')
-      setEditingMapping(null)
+      setShowModal(false)
       form.resetFields()
       queryClient.invalidateQueries({ queryKey: ['forced-mapping'] })
     },
@@ -331,9 +536,30 @@ function ForcedMappingTab() {
     },
   })
 
+  const updateMutation = useMutation({
+    mutationFn: ({ platformName, data }: { platformName: string; data: Partial<ForcedMapping> }) =>
+      forcedMappingApi.updateForcedMapping(platformName, data),
+    onSuccess: () => {
+      message.success('강제 매핑이 수정되었습니다.')
+      setShowModal(false)
+      setEditingRecord(null)
+      form.resetFields()
+      queryClient.invalidateQueries({ queryKey: ['forced-mapping'] })
+    },
+    onError: (error: any) => {
+      message.error(`수정 실패: ${error.message || '알 수 없는 오류'}`)
+    },
+  })
+
   const deleteMutation = useMutation({
-    mutationFn: (params: { platformName: string; pMakerCode?: string; pModelCode?: string }) =>
-      forcedMappingApi.deleteForcedMapping(params.platformName, params),
+    mutationFn: (record: ForcedMapping) =>
+      forcedMappingApi.deleteForcedMapping(record.platform_name, {
+        pMakerCode: record.p_maker_code,
+        pModelGroupCode: record.p_model_group_code,
+        pModelCode: record.p_model_code,
+        pTrimCode: record.p_trim_code,
+        pGradeCode: record.p_grade_code,
+      }),
     onSuccess: () => {
       message.success('강제 매핑이 삭제되었습니다.')
       queryClient.invalidateQueries({ queryKey: ['forced-mapping'] })
@@ -343,87 +569,211 @@ function ForcedMappingTab() {
     },
   })
 
+  const openCreate = () => {
+    setEditingRecord(null)
+    form.resetFields()
+    setShowModal(true)
+  }
+
+  const openEdit = (record: ForcedMapping) => {
+    setEditingRecord(record)
+    form.setFieldsValue({
+      platform_name: record.platform_name,
+      p_maker_code: record.p_maker_code,
+      p_model_group_code: record.p_model_group_code,
+      p_model_code: record.p_model_code,
+      p_trim_code: record.p_trim_code,
+      p_grade_code: record.p_grade_code,
+      maker_code: record.maker_code,
+      model_group_code: record.model_group_code,
+      model_code: record.model_code,
+      trim_code: record.trim_code,
+      grade_code: record.grade_code,
+    })
+    setShowModal(true)
+  }
+
+  const handleSubmit = () => {
+    form.validateFields().then((values: any) => {
+      if (editingRecord) {
+        updateMutation.mutate({
+          platformName: editingRecord.platform_name,
+          data: {
+            p_maker_code: editingRecord.p_maker_code,
+            p_model_group_code: editingRecord.p_model_group_code,
+            p_model_code: editingRecord.p_model_code,
+            p_trim_code: editingRecord.p_trim_code,
+            p_grade_code: editingRecord.p_grade_code,
+            maker_code: values.maker_code,
+            model_group_code: values.model_group_code,
+            model_code: values.model_code,
+            trim_code: values.trim_code,
+            grade_code: values.grade_code,
+          },
+        })
+      } else {
+        createMutation.mutate(values)
+      }
+    })
+  }
+
   const forcedColumns = [
-    { title: '플랫폼', dataIndex: 'platform_name', key: 'platform_name' },
-    { title: 'Depth', dataIndex: 'depth', key: 'depth' },
+    { title: '플랫폼', dataIndex: 'platform_name', key: 'platform_name', width: 110 },
+    { title: 'Depth', dataIndex: 'depth', key: 'depth', width: 70 },
     {
       title: '플랫폼 코드',
-      key: 'platform_codes',
-      render: (_: any, record: ForcedMapping) => (
-        <div style={{ fontSize: '12px' }}>
-          <div>Maker: {record.p_maker_code || '-'}</div>
-          <div>Model: {record.p_model_code || '-'}</div>
+      key: 'p_codes',
+      width: 200,
+      render: (_: any, r: ForcedMapping) => (
+        <div style={{ fontSize: 12 }}>
+          <div>Maker: {r.p_maker_code || '-'}</div>
+          <div>Group: {r.p_model_group_code || '-'}</div>
+          <div>Model: {r.p_model_code || '-'}</div>
+          <div>Trim: {r.p_trim_code || '-'}</div>
+          <div>Grade: {r.p_grade_code || '-'}</div>
         </div>
       ),
     },
     {
       title: '카리즌 코드',
-      key: 'carizon_codes',
-      render: (_: any, record: ForcedMapping) => (
-        <div style={{ fontSize: '12px' }}>
-          <div>Maker: {record.maker_code}</div>
-          <div>Model: {record.model_code}</div>
+      key: 'cz_codes',
+      width: 200,
+      render: (_: any, r: ForcedMapping) => (
+        <div style={{ fontSize: 12 }}>
+          <div>Maker: {r.maker_code}</div>
+          <div>Group: {r.model_group_code || '-'}</div>
+          <div>Model: {r.model_code}</div>
+          <div>Trim: {r.trim_code || '-'}</div>
+          <div>Grade: {r.grade_code || '-'}</div>
         </div>
       ),
     },
     {
       title: '작업',
       key: 'actions',
-      render: (_: any, record: ForcedMapping) => (
-        <Popconfirm title="이 강제 매핑을 삭제하시겠습니까?" onConfirm={() => deleteMutation.mutate({ platformName: record.platform_name, pMakerCode: record.p_maker_code, pModelCode: record.p_model_code })}>
-          <Button type="link" danger size="small">삭제</Button>
-        </Popconfirm>
+      fixed: 'right' as const,
+      width: 130,
+      render: (_: any, r: ForcedMapping) => (
+        <Space>
+          <Button type="link" icon={<EditOutlined />} size="small" onClick={() => openEdit(r)}>
+            수정
+          </Button>
+          <Popconfirm title="이 강제 매핑을 삭제하시겠습니까?" onConfirm={() => deleteMutation.mutate(r)}>
+            <Button type="link" danger size="small">삭제</Button>
+          </Popconfirm>
+        </Space>
       ),
     },
   ]
 
+  const isPending = createMutation.isPending || updateMutation.isPending
+
   return (
     <div>
       <Card style={{ marginBottom: 16 }}>
-        <Space>
-          <Select placeholder="플랫폼 필터" allowClear style={{ width: 150 }} value={platformFilter} onChange={setPlatformFilter}>
-            <Option value="ENCAR">ENCAR</Option>
-            <Option value="CHACHACHA">CHACHACHA</Option>
-            <Option value="CHUTCHA">CHUTCHA</Option>
-            <Option value="KCAR">KCAR</Option>
+        <Space wrap>
+          <Select
+            placeholder="플랫폼 필터"
+            allowClear
+            style={{ width: 150 }}
+            value={platformFilter}
+            onChange={setPlatformFilter}
+          >
+            <PlatformOptions />
           </Select>
-          <Button type="primary" onClick={() => setEditingMapping({} as ForcedMapping)}>강제 매핑 추가</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            강제 매핑 추가
+          </Button>
         </Space>
       </Card>
+
       <Card>
-        <Table columns={forcedColumns} dataSource={forcedMappings?.data || []} loading={isLoading} rowKey={(record) => `${record.platform_name}-${record.p_maker_code}-${record.p_model_code}`} pagination={{ pageSize: 20 }} />
+        <Table
+          columns={forcedColumns}
+          dataSource={(forcedMappings as any)?.data?.data || []}
+          loading={isLoading}
+          rowKey={(r: ForcedMapping) =>
+            `${r.platform_name}-${r.p_maker_code}-${r.p_model_group_code}-${r.p_model_code}`
+          }
+          pagination={{ pageSize: 20, showTotal: (total) => `총 ${total}건` }}
+          scroll={{ x: 800 }}
+        />
       </Card>
+
       <Modal
-        title="강제 매핑 추가"
-        open={!!editingMapping}
-        onOk={() => {
-          form.validateFields().then((values) => {
-            createMutation.mutate({
-              platform_name: values.platform_name,
-              p_maker_code: values.p_maker_code,
-              p_model_code: values.p_model_code,
-              maker_code: values.maker_code,
-              model_code: values.model_code,
-            })
-          })
-        }}
-        onCancel={() => { setEditingMapping(null); form.resetFields() }}
-        confirmLoading={createMutation.isPending}
-        width={600}
+        title={editingRecord ? '강제 매핑 수정' : '강제 매핑 추가'}
+        open={showModal}
+        onOk={handleSubmit}
+        onCancel={() => { setShowModal(false); setEditingRecord(null); form.resetFields() }}
+        confirmLoading={isPending}
+        width={640}
       >
         <Form form={form} layout="vertical">
-          <Form.Item label="플랫폼" name="platform_name" rules={[{ required: true }]}>
-            <Select>
-              <Option value="ENCAR">ENCAR</Option>
-              <Option value="CHACHACHA">CHACHACHA</Option>
-              <Option value="CHUTCHA">CHUTCHA</Option>
-              <Option value="KCAR">KCAR</Option>
+          <Form.Item label="플랫폼" name="platform_name" rules={[{ required: true, message: '플랫폼을 선택해주세요.' }]}>
+            <Select disabled={!!editingRecord} placeholder="플랫폼 선택">
+              <PlatformOptions />
             </Select>
           </Form.Item>
-          <Form.Item label="플랫폼 Maker 코드" name="p_maker_code"><Input placeholder="예: KIA" /></Form.Item>
-          <Form.Item label="플랫폼 Model 코드" name="p_model_code"><Input placeholder="예: KORANDO_SPORT" /></Form.Item>
-          <Form.Item label="카리즌 Maker 코드" name="maker_code" rules={[{ required: true }]}><Input placeholder="예: KIA" /></Form.Item>
-          <Form.Item label="카리즌 Model 코드" name="model_code" rules={[{ required: true }]}><Input placeholder="예: KORANDO" /></Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="플랫폼 Maker 코드" name="p_maker_code">
+                <Input placeholder="예: KIA" disabled={!!editingRecord} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="카리즌 Maker 코드" name="maker_code" rules={[{ required: true, message: '필수 입력' }]}>
+                <Input placeholder="예: KIA" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="플랫폼 Model Group 코드" name="p_model_group_code">
+                <Input placeholder="예: SUV" disabled={!!editingRecord} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="카리즌 Model Group 코드" name="model_group_code">
+                <Input placeholder="예: SUV" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="플랫폼 Model 코드" name="p_model_code">
+                <Input placeholder="예: KORANDO_SPORT" disabled={!!editingRecord} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="카리즌 Model 코드" name="model_code" rules={[{ required: true, message: '필수 입력' }]}>
+                <Input placeholder="예: KORANDO" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="플랫폼 Trim 코드" name="p_trim_code">
+                <Input placeholder="예: SPORT" disabled={!!editingRecord} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="카리즌 Trim 코드" name="trim_code">
+                <Input placeholder="예: SPORT" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="플랫폼 Grade 코드" name="p_grade_code">
+                <Input placeholder="예: PREMIUM" disabled={!!editingRecord} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="카리즌 Grade 코드" name="grade_code">
+                <Input placeholder="예: PREMIUM" />
+              </Form.Item>
+            </Col>
+          </Row>
         </Form>
       </Modal>
     </div>

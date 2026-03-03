@@ -52,6 +52,27 @@ export const codeMappingApi = {
     return apiClient.get<CodeMappingStats>('/admin/code-mapping/stats')
   },
 
+  searchMappings: (params: {
+    status?: string
+    platform?: string
+    keyword?: string
+    page?: number
+    size?: number
+  }) => {
+    const q = new URLSearchParams()
+    if (params.status) q.append('status', params.status)
+    if (params.platform) q.append('platformName', params.platform)
+    if (params.keyword) q.append('keyword', params.keyword)
+    q.append('page', String(params.page || 0))
+    q.append('size', String(params.size || 50))
+    return apiClient.get<{
+      items: CodeMapping[]
+      total: number
+      page: number
+      size: number
+    }>(`/admin/code-mapping/search?${q}`)
+  },
+
   updateMapping: (platformName: string, data: {
     p_maker_code?: string
     p_model_group_code?: string
