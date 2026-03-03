@@ -705,7 +705,7 @@ public class MergeService {
                     CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
                     CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
                       NULL, AD_DATE_EXPR_CHARANCHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
-                    FROM RAW_CHARANCHA r
+                    FROM raw_charancha r
                     WHERE r.id > ? AND r.id <= ?
                     ON DUPLICATE KEY UPDATE
                       price          = VALUES(price),
@@ -1234,7 +1234,7 @@ public class MergeService {
                       CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
                       CONCAT('https://charancha.com/bu/sell/view?sellNo=', r.SELL_NO),
                       NULL, AD_DATE_EXPR_CHARANCHA, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url
-                    FROM RAW_CHARANCHA r
+                    FROM raw_charancha r
                     WHERE r.id > ? AND r.id <= ?
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
                    .replace("AD_DATE_EXPR_CHARANCHA", AD_DATE_EXPR_CHARANCHA)
