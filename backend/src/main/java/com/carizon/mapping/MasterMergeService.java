@@ -13,7 +13,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import java.util.UUID;
 
 @Slf4j
 @Service
@@ -539,25 +538,18 @@ public class MasterMergeService {
         long nextCarId = snapshotNextCarIdByMax();
         log.info("[master] rebuildCarMasterFromScratchPreserveCarId: preserve next car_id={}", nextCarId);
 
-        String runId = UUID.randomUUID().toString();
         String mapTable = "car_master_id_retain_map";
 
         try {
-            // 기존 car_master의 CAR_NO -> CAR_ID를 run_id 단위로 저장 (동시 실행 안전)
-            jdbc.update("DELETE FROM " + mapTable + " WHERE run_id = ?", runId);
+            // 기존 car_master의 CAR_NO -> CAR_ID를 임시 보존 맵에 저장 후 재생성 시 재매핑
+            jdbc.execute("TRUNCATE TABLE " + mapTable);
             jdbc.update("""
                 INSERT INTO car_master_id_retain_map (run_id, car_no, car_id)
                 SELECT ?, CAR_NO, CAR_ID
                 FROM car_master
                 WHERE CAR_NO IS NOT NULL
-                """, runId);
-            logBatchSql("snapshotCarMasterIdMap", "INSERT INTO car_master_id_retain_map... run_id=" + runId);
-
-            // 동시성/스토리지 관리용 오래된 매핑 정리 (선택)
-            jdbc.update("""
-                DELETE FROM car_master_id_retain_map
-                WHERE created_at < NOW() - INTERVAL 2 DAY
-                """);
+                """, "PRESERVE");
+            logBatchSql("snapshotCarMasterIdMap", "INSERT INTO car_master_id_retain_map... run_id=PRESERVE");
 
             // 우선순위 테이블 보장 (별도 트랜잭션으로 분리하여 락 타임아웃 방지)
             try {
@@ -683,11 +675,9 @@ public class MasterMergeService {
                         ) t
                         LEFT JOIN car_master_id_retain_map cm_map
                           ON cm_map.CAR_NO = t.CAR_NO
-                         AND cm_map.RUN_ID = ?
                         """, placeholders);
                     List<Object> params = new ArrayList<>();
                     params.addAll(batch);
-                    params.add(runId);
                     return jdbc.update(sql, params.toArray());
                 });
 
@@ -701,14 +691,6 @@ public class MasterMergeService {
 
             log.info("[master] rebuildCarMasterFromScratchPreserveCarId: done - {} rows ({} batches)", totalAffected, batchCount);
             return totalAffected;
-        } finally {
-            try {
-                int cleaned = jdbc.update("DELETE FROM " + mapTable + " WHERE run_id = ?", runId);
-                log.info("[master] rebuildCarMasterFromScratchPreserveCarId: cleared retain map rows={}, run_id={}", cleaned, runId);
-            } catch (Exception e) {
-                log.warn("[master] rebuildCarMasterFromScratchPreserveCarId: failed to clean retain map rows run_id={}: {}",
-                        runId, e.getMessage());
-            }
         }
     }
 

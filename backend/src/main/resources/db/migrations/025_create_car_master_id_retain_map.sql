@@ -5,5 +5,6 @@ CREATE TABLE IF NOT EXISTS car_master_id_retain_map (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (run_id, car_no),
   KEY idx_run_id (run_id),
+  KEY idx_car_no (car_no),
   KEY idx_created_at (created_at)
 ) ENGINE=InnoDB;
