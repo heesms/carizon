@@ -13,6 +13,9 @@ import MyLikes from './pages/MyLikes'
 import AiRankingBest from './pages/AiRankingBest'
 import Info from './pages/Info'
 import NotFound from './pages/NotFound'
+import AdminLayout from './pages/admin/AdminLayout'
+import AdminLogin from './pages/admin/AdminLogin'
+import AdminRoute from './components/AdminRoute'
 import { applyRouteSeo } from './utils/seo'
 import { initGoogleAnalytics, trackPageView } from './utils/analytics'
 
@@ -36,6 +39,9 @@ function AppRoutes() {
   return (
     <>
       <Routes location={backgroundLocation || location}>
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin/*" element={<AdminRoute><AdminLayout /></AdminRoute>} />
+        <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>} />
         <Route path="/" element={<Layout />}>
           <Route index element={<Home />} />
           <Route path="search" element={<Search />} />
