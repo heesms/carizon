@@ -39,14 +39,14 @@ public class ChutchaCrawler {
             .build();
 
     // 상세 병렬 처리 풀 (너무 높이면 차단 위험 — 12~16 추천)
-    private final ExecutorService detailPool = Executors.newFixedThreadPool(12);
+    private final ExecutorService detailPool = Executors.newFixedThreadPool(16);
 
     // --------------------- CONST ---------------------
     private static final String HOST = "https://web.chutcha.net";
     private static final String SEARCH_PAGE = HOST + "/bmc/search?brandGroup=1&modelTree=%7B%7D&priceRange=0,0&mileage=0,0&year=&saleType=&accident=&fuel=&transmission=&region=&color=&option=&cpo=&theme=&sort=1&carType=";
     private static final String LIST_URL = HOST + "/web001/car/getSearchCarList";
-    private static final int PAGE_SIZE = 50;
-    private static final int PAGE_DELAY_MS = 200;
+    private static final int PAGE_SIZE = 100;
+    private static final int PAGE_DELAY_MS = 150;
 
     // --------------------- ENTRY ---------------------
     public int runOnceFull() {

@@ -152,7 +152,7 @@ public class ChachachaCrawler {
                         break;
                     }
 
-                    Thread.sleep(600); // 서버 부하 완화
+                    Thread.sleep(150); // 서버 부하 완화
                 }
             } catch (Exception e) {
                 log.error("[CRAWL] exception page={} → stop: {}", page, e.toString(), e);
