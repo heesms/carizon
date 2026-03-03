@@ -673,9 +673,11 @@ public class MasterMergeService {
                         WHERE t_inner.rn = 1
                     ) t
                     LEFT JOIN car_master_id_retain_map cm_map
-                      ON cm_map.CAR_NO = t.CAR_NO
+                      ON cm_map.run_id = ?
+                     AND cm_map.CAR_NO COLLATE utf8mb4_general_ci = t.CAR_NO COLLATE utf8mb4_general_ci
                     """, placeholders);
                 List<Object> params = new ArrayList<>();
+                params.add("PRESERVE");
                 params.addAll(batch);
                 return jdbc.update(sql, params.toArray());
             });
