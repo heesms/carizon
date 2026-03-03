@@ -18,6 +18,7 @@ import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
 import co.elastic.clients.elasticsearch.core.bulk.IndexOperation;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch._types.ElasticsearchException;
+import co.elastic.clients.elasticsearch._types.Time;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -214,14 +215,32 @@ public class ElasticsearchCarSearchService {
         try {
             boolean exists = client.indices().exists(e -> e.index(INDEX)).value();
             if (exists) {
-                client.indices().delete(d -> d.index(INDEX));
-                log.info("[Elasticsearch] index [{}] deleted", INDEX);
+                deleteIndexWithRetry();
             }
             createIndexWithMapping();
             log.info("[Elasticsearch] index [{}] created with fixed mapping", INDEX);
         } catch (Exception e) {
             log.error("[Elasticsearch] reset index with mapping failed", e);
             throw new RuntimeException("Elasticsearch 인덱스 재생성 실패", e);
+        }
+    }
+
+    private void deleteIndexWithRetry() throws Exception {
+        int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                client.indices().delete(d -> d
+                    .index(INDEX)
+                    .masterTimeout(Time.of(t -> t.time("60s")))
+                    .timeout(Time.of(t -> t.time("60s")))
+                );
+                log.info("[Elasticsearch] index [{}] deleted (attempt {})", INDEX, attempt);
+                return;
+            } catch (Exception e) {
+                log.warn("[Elasticsearch] delete attempt {}/{} failed: {}", attempt, maxRetries, e.getMessage());
+                if (attempt == maxRetries) throw e;
+                Thread.sleep(5000L * attempt);
+            }
         }
     }
 
