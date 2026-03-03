@@ -24,16 +24,22 @@ public class CrawlJobService {
 
     // 스케쥴 비활성화 - FridayNightPipelineScheduler 에서 통합 관리
     public void runDaily() {
+        runDailyWithCounts();
+    }
+
+    public java.util.Map<String, Integer> runDailyWithCounts() {
+        java.util.Map<String, Integer> counts = new java.util.LinkedHashMap<>();
         log.info("[CRAWL] daily schedule start (sequential)");
         // 순서: 차차차 -> kcar -> tcar -> 차란차 -> 첫차 -> 엔카 -> 엔카트럭
-        chachacha.runOnce();
-        kcar.runOnceFull();
-        tcar.runOnceFull();
-        charancha.runOnceFull();
-        chutcha.runOnceFull();
-        encar.runOnce();  // 엔카를 마지막으로
-        encarTruck.runOnce();
+        counts.put("CHACHACHA", chachacha.runOnce());
+        counts.put("KCAR", kcar.runOnceFull());
+        counts.put("TCAR", tcar.runOnceFull());
+        counts.put("CHARANCHA", charancha.runOnceFull());
+        counts.put("CHUTCHA", chutcha.runOnceFull());
+        counts.put("ENCAR", encar.runOnce());  // 엔카를 마지막으로
+        counts.put("ENCAR_TRUCK", encarTruck.runOnce());
         log.info("[CRAWL] daily schedule end");
+        return counts;
     }
 
     /**

@@ -10,6 +10,9 @@ import org.springframework.stereotype.Component;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -65,6 +68,17 @@ public class ApiRunRecorder {
      * @param result 결과 데이터 (Map 또는 Object)
      */
     public void recordSuccess(String runId, int totalItems, Object result) {
+        recordSuccess(runId, totalItems, result, null);
+    }
+
+    /**
+     * API 호출 성공 기록 (플랫폼별 카운트 포함)
+     * @param runId 실행 ID
+     * @param totalItems 처리된 아이템 수
+     * @param result 결과 데이터 (Map 또는 Object)
+     * @param platformCounts 플랫폼별 성공 건수
+     */
+    public void recordSuccess(String runId, int totalItems, Object result, Map<String, Integer> platformCounts) {
         Instant endedAt = Instant.now();
         String resultJson = null;
 
@@ -92,8 +106,29 @@ public class ApiRunRecorder {
 
         String source = runSourceCache.remove(runId);
         String dur = formatDuration(durationMs != null ? durationMs : 0);
-        slackAsync(String.format("✅ *[배치 완료]* `%s`\n📦 %,d건 · ⏱️ %s",
-                source != null ? source : runId, totalItems, dur));
+        String countText = buildPlatformCountText(platformCounts);
+        slackAsync(String.format("✅ *[배치 완료]* `%s`\n📦 %,d건 · ⏱️ %s%s",
+                source != null ? source : runId, totalItems, dur,
+                countText != null ? "\n" + countText : ""));
+    }
+
+    private String buildPlatformCountText(Map<String, Integer> platformCounts) {
+        if (platformCounts == null || platformCounts.isEmpty()) {
+            return null;
+        }
+
+        Map<String, Integer> ordered = new LinkedHashMap<>(platformCounts);
+        StringBuilder sb = new StringBuilder();
+        sb.append("📊 플랫폼별 성공 건수");
+        for (Map.Entry<String, Integer> entry : ordered.entrySet()) {
+            int count = entry.getValue() == null ? 0 : entry.getValue();
+            sb.append("\n• ")
+                    .append(entry.getKey())
+                    .append(": ")
+                    .append(String.format(Locale.ROOT, "%,d", count))
+                    .append("건");
+        }
+        return sb.toString();
     }
 
     /**

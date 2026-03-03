@@ -616,38 +616,38 @@ public class MasterMergeService {
                           cm_map.CAR_ID,
                           t.CAR_NO,
                           (SELECT cm.maker_code FROM cz_code_map cm
-                           WHERE cm.platform_name = t.PLATFORM_NAME
-                             AND cm.p_maker_code = t.MAKER_CODE
+                           WHERE cm.platform_name COLLATE utf8mb4_0900_ai_ci = t.PLATFORM_NAME COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_maker_code COLLATE utf8mb4_0900_ai_ci = t.MAKER_CODE COLLATE utf8mb4_0900_ai_ci
                              AND cm.status IN ('LOCKED','AUTO')
                            LIMIT 1) AS MAKER_CODE,
                           (SELECT cm.model_group_code FROM cz_code_map cm
-                           WHERE cm.platform_name = t.PLATFORM_NAME
-                             AND cm.p_maker_code = t.MAKER_CODE
-                             AND cm.p_model_group_code = t.MODEL_GROUP_CODE
+                           WHERE cm.platform_name COLLATE utf8mb4_0900_ai_ci = t.PLATFORM_NAME COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_maker_code COLLATE utf8mb4_0900_ai_ci = t.MAKER_CODE COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_model_group_code COLLATE utf8mb4_0900_ai_ci = t.MODEL_GROUP_CODE COLLATE utf8mb4_0900_ai_ci
                              AND cm.status IN ('LOCKED','AUTO')
                            LIMIT 1) AS MODEL_GROUP_CODE,
                           (SELECT cm.model_code FROM cz_code_map cm
-                           WHERE cm.platform_name = t.PLATFORM_NAME
-                             AND cm.p_maker_code = t.MAKER_CODE
-                             AND cm.p_model_group_code = t.MODEL_GROUP_CODE
-                             AND cm.p_model_code = t.MODEL_CODE
+                           WHERE cm.platform_name COLLATE utf8mb4_0900_ai_ci = t.PLATFORM_NAME COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_maker_code COLLATE utf8mb4_0900_ai_ci = t.MAKER_CODE COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_model_group_code COLLATE utf8mb4_0900_ai_ci = t.MODEL_GROUP_CODE COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_model_code COLLATE utf8mb4_0900_ai_ci = t.MODEL_CODE COLLATE utf8mb4_0900_ai_ci
                              AND cm.status IN ('LOCKED','AUTO')
                            LIMIT 1) AS MODEL_CODE,
                           (SELECT cm.trim_code FROM cz_code_map cm
-                           WHERE cm.platform_name = t.PLATFORM_NAME
-                             AND cm.p_maker_code = t.MAKER_CODE
-                             AND cm.p_model_group_code = t.MODEL_GROUP_CODE
-                             AND cm.p_model_code = t.MODEL_CODE
-                             AND cm.p_trim_code = t.TRIM_CODE
+                           WHERE cm.platform_name COLLATE utf8mb4_0900_ai_ci = t.PLATFORM_NAME COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_maker_code COLLATE utf8mb4_0900_ai_ci = t.MAKER_CODE COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_model_group_code COLLATE utf8mb4_0900_ai_ci = t.MODEL_GROUP_CODE COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_model_code COLLATE utf8mb4_0900_ai_ci = t.MODEL_CODE COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_trim_code COLLATE utf8mb4_0900_ai_ci = t.TRIM_CODE COLLATE utf8mb4_0900_ai_ci
                              AND cm.status IN ('LOCKED','AUTO')
                            LIMIT 1) AS TRIM_CODE,
                           NULLIF((SELECT cm.grade_code FROM cz_code_map cm
-                           WHERE cm.platform_name = t.PLATFORM_NAME
-                             AND cm.p_maker_code = t.MAKER_CODE
-                             AND cm.p_model_group_code = t.MODEL_GROUP_CODE
-                             AND cm.p_model_code = t.MODEL_CODE
-                             AND cm.p_trim_code = t.TRIM_CODE
-                             AND cm.p_grade_code = t.GRADE_CODE
+                           WHERE cm.platform_name COLLATE utf8mb4_0900_ai_ci = t.PLATFORM_NAME COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_maker_code COLLATE utf8mb4_0900_ai_ci = t.MAKER_CODE COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_model_group_code COLLATE utf8mb4_0900_ai_ci = t.MODEL_GROUP_CODE COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_model_code COLLATE utf8mb4_0900_ai_ci = t.MODEL_CODE COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_trim_code COLLATE utf8mb4_0900_ai_ci = t.TRIM_CODE COLLATE utf8mb4_0900_ai_ci
+                             AND cm.p_grade_code COLLATE utf8mb4_0900_ai_ci = t.GRADE_CODE COLLATE utf8mb4_0900_ai_ci
                              AND cm.status IN ('LOCKED','AUTO')
                            LIMIT 1), 'null') AS GRADE_CODE,
                           t.YYMM AS YEAR,
@@ -682,7 +682,8 @@ public class MasterMergeService {
                             WHERE t_inner.rn = 1
                         ) t
                         LEFT JOIN car_master_id_retain_map cm_map
-                          ON cm_map.CAR_NO = t.CAR_NO AND cm_map.RUN_ID = ?
+                          ON cm_map.CAR_NO COLLATE utf8mb4_0900_ai_ci = t.CAR_NO COLLATE utf8mb4_0900_ai_ci
+                         AND cm_map.RUN_ID COLLATE utf8mb4_0900_ai_ci = CAST(? AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_0900_ai_ci
                         """, placeholders);
                     List<Object> params = new ArrayList<>();
                     params.addAll(batch);

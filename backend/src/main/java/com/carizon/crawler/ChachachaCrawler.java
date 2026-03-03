@@ -57,7 +57,7 @@ public class ChachachaCrawler {
     }
 
     @SuppressWarnings("unchecked")
-    public void runOnce() {
+    public int runOnce() {
         Instant started = Instant.now();
         String runId = recorder.recordStart("CHACHACHA", started);  // ✅ 시작 기록
 
@@ -75,7 +75,7 @@ public class ChachachaCrawler {
             log.warn("[CRAWL] TRUNCATE raw_chachacha done");
         } catch (Exception e) {
             log.error("[CRAWL] TRUNCATE failed: {}", e.toString(), e);
-            return; // 초기화 안 되면 적재하지 않음 (원하면 계속 진행하도록 바꿔도 됨)
+            return fetchedTotal; // 초기화 안 되면 적재하지 않음 (원하면 계속 진행하도록 바꿔도 됨)
         }
 
         log.info("[CRAWL] KB Chachacha start pageSize={}", pageSize);
@@ -165,6 +165,8 @@ public class ChachachaCrawler {
         }
 
         log.info("[CRAWL] done totalItems={} elapsed={}s", fetchedTotal, Duration.between(started, Instant.now()).toSeconds());
+
+        return fetchedTotal;
     }
 
     private int insertRowsWithSkip(List<RawChachachaInsertRow> rows, int page) {
