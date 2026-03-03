@@ -678,88 +678,6 @@ public class MergeService {
 
             inTxWithNamedLock(lockName, () -> {
                 String bizDateStr = bizDate.toString();
-                String sellNoExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sell_no')),\n" +
-                        "                     JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sellNo')),\n" +
-                        "                     JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.SELL_NO')),\n" +
-                        "                     JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.car_seq_no')),\n" +
-                        "                     '')";
-                String carNoExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.car_no')),\n" +
-                        "                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carNo')),\n" +
-                        "                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.CAR_NO')),\n" +
-                        "                    '')";
-                String makerCodeExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.maker_code')),\n" +
-                        "                        JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.makerCode')),\n" +
-                        "                        JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.makerCd')),\n" +
-                        "                        '')";
-                String modelGroupCodeExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_code')),\n" +
-                        "                            JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelCode')),\n" +
-                        "                            JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_cd')),\n" +
-                        "                            '')";
-                String modelCodeExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_detail_code')),\n" +
-                        "                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelDetailCode')),\n" +
-                        "                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_detail')),\n" +
-                        "                    '')";
-                String gradeCodeExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.grade_code')),\n" +
-                        "                   JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.gradeCode')),\n" +
-                        "                   JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.grade_cd')),\n" +
-                        "                   '')";
-                String makerNameExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.maker_name')),\n" +
-                        "                   JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.makerName')),\n" +
-                        "                   JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.makerNm')),\n" +
-                        "                   '')";
-                String modelGroupNameExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_group_name')),\n" +
-                        "                         JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelGroupName')),\n" +
-                        "                         JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_name')),\n" +
-                        "                         JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelName')),\n" +
-                        "                         '')";
-                String modelNameExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_name')),\n" +
-                        "                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelName')),\n" +
-                        "                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelNm')),\n" +
-                        "                    '')";
-                String trimNameExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.model_detail_name')),\n" +
-                        "                   JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.modelDetailName')),\n" +
-                        "                   JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.trim_name')),\n" +
-                        "                   JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.trimName')),\n" +
-                        "                   '')";
-                String gradeNameExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.grade_name')),\n" +
-                        "                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.gradeName')),\n" +
-                        "                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.gradeNm')),\n" +
-                        "                    '')";
-                String priceExpr = "CAST(NULLIF(REPLACE(TRIM(CAST(COALESCE(\n" +
-                        "  JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sell_price')),\n" +
-                        "  JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.sellPrice')),\n" +
-                        "  ''\n" +
-                        " ) AS CHAR)), ',', ''), '') AS UNSIGNED)";
-                String kmExpr = "CAST(NULLIF(REPLACE(TRIM(CAST(COALESCE(\n" +
-                        "  JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.mileage')),\n" +
-                        "  JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.runDistance')),\n" +
-                        "  ''\n" +
-                        " ) AS CHAR)), ',', ''), '') AS UNSIGNED)";
-                String displacementExpr = "CAST(NULLIF(REPLACE(TRIM(CAST(COALESCE(\n" +
-                        "  JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.displacement')),\n" +
-                        "  JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.capacity')),\n" +
-                        "  ''\n" +
-                        " ) AS CHAR)), ',', ''), '') AS UNSIGNED)";
-                String yyyymmExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.yyyymm')),\n" +
-                        "                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.yyymm')),\n" +
-                        "                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carYear')))";
-                String carTypeExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.car_type')),\n" +
-                        "                    JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carType')),\n" +
-                        "                    '')";
-                String regionExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.region_name')),\n" +
-                        "                   JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.regionName')),\n" +
-                        "                   JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.areaNm')),\n" +
-                        "                   '')";
-                String transmissionExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.transmission_name')),\n" +
-                        "                          JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.transmissionName')),\n" +
-                        "                          JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.transmission')),\n" +
-                        "                          '')";
-                String colorExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.color_name')),\n" +
-                        "                  JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.colorName')),\n" +
-                        "                  JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.color')))";
-                String fuelExpr = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuel_name')),\n" +
-                        "                 JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuelName')),\n" +
-                        "                 JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.fuel')))";
                 String sql = """
                     INSERT INTO platform_car
                                           (platform_name, platform_car_key, car_no, car_id,
@@ -773,11 +691,12 @@ public class MergeService {
                     SELECT
                     'CHARANCHA',
                     CHARAN_NO_EXPR, CHARAN_CAR_NO_EXPR, NULL,
-                    CHARAN_MAKER_CODE, CHARAN_MODEL_GROUP_CODE, CHARAN_MODEL_CODE, CHARAN_GRADE_CODE,
+                    CHARAN_MAKER_CODE, CHARAN_MODEL_GROUP_CODE, CHARAN_MODEL_CODE, CHARAN_TRIM_CODE, CHARAN_GRADE_CODE,
                     CHARAN_MAKER_NAME, CHARAN_MODEL_GROUP_NAME, CHARAN_MODEL_NAME, CHARAN_TRIM_NAME, CHARAN_GRADE_NAME,
                     CHARAN_PRICE, CHARAN_KM, CHARAN_DISPLACEMENT,
                     SUBSTR(CHARAN_YYYMM,1,4), 'SALE',
-                    COLOR_EXPR, FUEL_EXPR, CHARAN_TRANSMISSION,
+                    COLOR_EXPR, FUEL_EXPR,
+                    CHARAN_TRANSMISSION,
                     CASE CHARAN_CAR_TYPE
                       WHEN '소형' THEN '소형' WHEN '중형' THEN '중형' WHEN '대형' THEN '대형'
                       WHEN '경형(일반형)' THEN '경차' WHEN '준중형' THEN '준중형'
@@ -813,26 +732,27 @@ public class MergeService {
                       grade_name = COALESCE(platform_car.grade_name, VALUES(grade_name))
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
                    .replace("AD_DATE_EXPR_CHARANCHA", AD_DATE_EXPR_CHARANCHA)
-                   .replace("CHARAN_NO_EXPR", sellNoExpr)
-                   .replace("CHARAN_CAR_NO_EXPR", carNoExpr)
-                   .replace("CHARAN_MAKER_CODE", makerCodeExpr)
-                   .replace("CHARAN_MODEL_GROUP_CODE", modelGroupCodeExpr)
-                   .replace("CHARAN_MODEL_CODE", modelCodeExpr)
-                   .replace("CHARAN_GRADE_CODE", gradeCodeExpr)
-                   .replace("CHARAN_MAKER_NAME", makerNameExpr)
-                   .replace("CHARAN_MODEL_GROUP_NAME", modelGroupNameExpr)
-                   .replace("CHARAN_MODEL_NAME", modelNameExpr)
-                   .replace("CHARAN_TRIM_NAME", trimNameExpr)
-                   .replace("CHARAN_GRADE_NAME", gradeNameExpr)
-                   .replace("CHARAN_PRICE", priceExpr)
-                   .replace("CHARAN_KM", kmExpr)
-                   .replace("CHARAN_DISPLACEMENT", displacementExpr)
-                   .replace("CHARAN_YYYMM", yyyymmExpr)
-                   .replace("CHARAN_CAR_TYPE", carTypeExpr)
-                   .replace("CHARAN_REGION", regionExpr)
-                   .replace("CHARAN_TRANSMISSION", transmissionExpr)
-                   .replace("COLOR_EXPR", mapColorExpr(colorExpr))
-                   .replace("FUEL_EXPR", mapFuelExpr(fuelExpr));
+                   .replace("CHARAN_NO_EXPR", "r.sell_no")
+                   .replace("CHARAN_CAR_NO_EXPR", "r.car_no")
+                   .replace("CHARAN_MAKER_CODE", "r.maker_code")
+                   .replace("CHARAN_MODEL_GROUP_CODE", "r.model_code")
+                   .replace("CHARAN_MODEL_CODE", "r.model_detail_code")
+                   .replace("CHARAN_TRIM_CODE", "NULL")
+                   .replace("CHARAN_GRADE_CODE", "r.grade_code")
+                   .replace("CHARAN_MAKER_NAME", "r.maker_name")
+                   .replace("CHARAN_MODEL_GROUP_NAME", "COALESCE(r.model_name, '')")
+                   .replace("CHARAN_MODEL_NAME", "r.model_name")
+                   .replace("CHARAN_TRIM_NAME", "r.model_detail_name")
+                   .replace("CHARAN_GRADE_NAME", "r.grade_name")
+                   .replace("CHARAN_PRICE", "r.sell_price")
+                   .replace("CHARAN_KM", "r.mileage")
+                   .replace("CHARAN_DISPLACEMENT", "r.displacement")
+                   .replace("CHARAN_YYYMM", "r.yyyymm")
+                   .replace("CHARAN_TRANSMISSION", "r.transmission_name")
+                   .replace("CHARAN_REGION", "r.region_name")
+                   .replace("CHARAN_CAR_TYPE", "r.car_type")
+                   .replace("COLOR_EXPR", mapColorExpr("r.color_name"))
+                   .replace("FUEL_EXPR", mapFuelExpr("r.fuel_name"));
                 int affected = jdbc.update(sql, cursorFrom, cursorTo);
                 log.debug("CHARANCHA upsert affected={}", affected);
                 return null;
@@ -1402,7 +1322,7 @@ public class MergeService {
                       first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
                     SELECT
                       'CHARANCHA', CHARAN_NO_EXPR, CHARAN_CAR_NO_EXPR, NULL,
-                      CHARAN_MAKER_CODE, CHARAN_MODEL_GROUP_CODE, CHARAN_MODEL_CODE, CHARAN_GRADE_CODE,
+                      CHARAN_MAKER_CODE, CHARAN_MODEL_GROUP_CODE, CHARAN_MODEL_CODE, CHARAN_TRIM_CODE, CHARAN_GRADE_CODE,
                       CHARAN_MAKER_NAME, CHARAN_MODEL_GROUP_NAME, CHARAN_MODEL_NAME, CHARAN_TRIM_NAME, CHARAN_GRADE_NAME,
                       CHARAN_PRICE, CHARAN_KM, CHARAN_DISPLACEMENT,
                       SUBSTR(CHARAN_YYYMM,1,4), 'SALE',
@@ -1421,26 +1341,27 @@ public class MergeService {
                     WHERE r.id > ? AND r.id <= ?
                 """.replace("BIZ_DATE_PLACEHOLDER", bizDateStr)
                    .replace("AD_DATE_EXPR_CHARANCHA", AD_DATE_EXPR_CHARANCHA)
-                   .replace("CHARAN_NO_EXPR", sellNoExpr)
-                   .replace("CHARAN_CAR_NO_EXPR", carNoExpr)
-                   .replace("CHARAN_MAKER_CODE", makerCodeExpr)
-                   .replace("CHARAN_MODEL_GROUP_CODE", modelGroupCodeExpr)
-                   .replace("CHARAN_MODEL_CODE", modelCodeExpr)
-                   .replace("CHARAN_GRADE_CODE", gradeCodeExpr)
-                   .replace("CHARAN_MAKER_NAME", makerNameExpr)
-                   .replace("CHARAN_MODEL_GROUP_NAME", modelGroupNameExpr)
-                   .replace("CHARAN_MODEL_NAME", modelNameExpr)
-                   .replace("CHARAN_TRIM_NAME", trimNameExpr)
-                   .replace("CHARAN_GRADE_NAME", gradeNameExpr)
-                   .replace("CHARAN_PRICE", priceExpr)
-                   .replace("CHARAN_KM", kmExpr)
-                   .replace("CHARAN_DISPLACEMENT", displacementExpr)
-                   .replace("CHARAN_YYYMM", yyyymmExpr)
-                   .replace("CHARAN_CAR_TYPE", carTypeExpr)
-                   .replace("CHARAN_REGION", regionExpr)
-                   .replace("CHARAN_TRANSMISSION", transmissionExpr)
-                   .replace("COLOR_EXPR", mapColorExpr(colorExpr))
-                   .replace("FUEL_EXPR", mapFuelExpr(fuelExpr));
+                   .replace("CHARAN_NO_EXPR", "r.sell_no")
+                   .replace("CHARAN_CAR_NO_EXPR", "r.car_no")
+                   .replace("CHARAN_MAKER_CODE", "r.maker_code")
+                   .replace("CHARAN_MODEL_GROUP_CODE", "r.model_code")
+                   .replace("CHARAN_MODEL_CODE", "r.model_detail_code")
+                   .replace("CHARAN_TRIM_CODE", "NULL")
+                   .replace("CHARAN_GRADE_CODE", "r.grade_code")
+                   .replace("CHARAN_MAKER_NAME", "r.maker_name")
+                   .replace("CHARAN_MODEL_GROUP_NAME", "COALESCE(r.model_name, '')")
+                   .replace("CHARAN_MODEL_NAME", "r.model_name")
+                   .replace("CHARAN_TRIM_NAME", "r.model_detail_name")
+                   .replace("CHARAN_GRADE_NAME", "r.grade_name")
+                   .replace("CHARAN_PRICE", "r.sell_price")
+                   .replace("CHARAN_KM", "r.mileage")
+                   .replace("CHARAN_DISPLACEMENT", "r.displacement")
+                   .replace("CHARAN_YYYMM", "r.yyyymm")
+                   .replace("CHARAN_CAR_TYPE", "r.car_type")
+                   .replace("CHARAN_REGION", "r.region_name")
+                   .replace("CHARAN_TRANSMISSION", "r.transmission_name")
+                   .replace("COLOR_EXPR", mapColorExpr("r.color_name"))
+                   .replace("FUEL_EXPR", mapFuelExpr("r.fuel_name"));
                 jdbc.update(sql, cursorFrom, cursorTo);
                 return null;
             });
