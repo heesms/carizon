@@ -803,7 +803,7 @@ public class MergeService {
         THEN NULL
         ELSE DATE_FORMAT(STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.postStartDt')), '%Y-%m-%d %H:%i:%s.%f'), '%Y%m%d')
       END,
-                      AD_DATE_EXPR_TCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url2
+                      AD_DATE_EXPR_TCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url2, NULL
                     FROM raw_tcar r
                     WHERE r.id > ? AND r.id <= ?
                       AND UPPER(TRIM(COALESCE(
