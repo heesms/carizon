@@ -760,8 +760,7 @@ public class MergeService {
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
                        price, price_new, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url,
-                       option_array)
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url
                     SELECT
                       'TCAR', 
                       JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.carId')),
@@ -803,7 +802,7 @@ public class MergeService {
         THEN NULL
         ELSE DATE_FORMAT(STR_TO_DATE(JSON_UNQUOTE(JSON_EXTRACT(r.payload, '$.postStartDt')), '%Y-%m-%d %H:%i:%s.%f'), '%Y%m%d')
       END,
-                      AD_DATE_EXPR_TCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url2, NULL
+                      AD_DATE_EXPR_TCAR, NOW(), NOW(), r.payload, DATE('BIZ_DATE_PLACEHOLDER'), r.car_image_url2
                     FROM raw_tcar r
                     WHERE r.id > ? AND r.id <= ?
                       AND UPPER(TRIM(COALESCE(
