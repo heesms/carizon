@@ -31,6 +31,8 @@ public class ChachachaCrawler {
     private static final DateTimeFormatter STRATEGY_DATE_ONLY = DateTimeFormatter.ofPattern("uuuu-MM-dd").withResolverStyle(ResolverStyle.STRICT);
     private static final DateTimeFormatter STRATEGY_DATE_ONLY_FLEX = DateTimeFormatter.ofPattern("uuuu-M-d").withResolverStyle(ResolverStyle.STRICT);
     private static final DateTimeFormatter STRATEGY_DATE_COMPACT = DateTimeFormatter.ofPattern("uuuuMMdd").withResolverStyle(ResolverStyle.STRICT);
+    private static final DateTimeFormatter STRATEGY_YEAR_MONTH = DateTimeFormatter.ofPattern("uuuuMM").withResolverStyle(ResolverStyle.STRICT);
+    private static final DateTimeFormatter STRATEGY_YEAR_MONTH_DASH = DateTimeFormatter.ofPattern("uuuu-MM").withResolverStyle(ResolverStyle.STRICT);
     private static final DateTimeFormatter STRATEGY_DATETIME_COMPACT = DateTimeFormatter.ofPattern("uuuuMMddHHmmss").withResolverStyle(ResolverStyle.STRICT);
     private static final DateTimeFormatter STRATEGY_DATETIME_OUTPUT = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss");
     private static final DateTimeFormatter STRATEGY_DATE_OUTPUT = DateTimeFormatter.ofPattern("uuuu-MM-dd");
@@ -333,6 +335,16 @@ public class ChachachaCrawler {
             }
             try {
                 return LocalDate.parse(value, STRATEGY_DATE_COMPACT).format(STRATEGY_DATE_OUTPUT);
+            } catch (DateTimeParseException e) {
+                // no-op
+            }
+            try {
+                return LocalDate.parse(value, STRATEGY_YEAR_MONTH_DASH).withDayOfMonth(1).format(STRATEGY_DATE_OUTPUT);
+            } catch (DateTimeParseException e) {
+                // no-op
+            }
+            try {
+                return LocalDate.parse(value, STRATEGY_YEAR_MONTH).withDayOfMonth(1).format(STRATEGY_DATE_OUTPUT);
             } catch (DateTimeParseException e) {
                 // no-op
             }
