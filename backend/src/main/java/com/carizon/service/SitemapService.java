@@ -21,7 +21,7 @@ public class SitemapService {
 
     private final JdbcTemplate jdbc;
 
-    @Value("${seo.site-url:https://carizon.shop}")
+    @Value("${seo.site-url:https://www.carizon.shop}")
     private String siteUrl;
 
     @Value("${seo.sitemap.detail-page-size:5000}")
@@ -189,8 +189,8 @@ public class SitemapService {
     }
 
     private String absoluteUrl(String path) {
-        String base = siteUrl == null ? "https://carizon.shop" : siteUrl.trim();
-        if (base.isEmpty()) base = "https://carizon.shop";
+        String base = siteUrl == null ? "https://www.carizon.shop" : siteUrl.trim();
+        if (base.isEmpty()) base = "https://www.carizon.shop";
         if (base.endsWith("/")) base = base.substring(0, base.length() - 1);
         if (path == null || path.isBlank()) return base;
         if (path.startsWith("/")) return base + path;

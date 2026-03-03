@@ -48,7 +48,7 @@ app:
     car-sync-topic: ${KAFKA_CAR_SYNC_TOPIC:car-index-sync}
 
 seo:
-  site-url: ${SEO_SITE_URL:https://carizon.shop}
+  site-url: ${SEO_SITE_URL:https://www.carizon.shop}
   sitemap:
     detail-page-size: ${SEO_SITEMAP_DETAIL_PAGE_SIZE:5000}
     maker-limit: ${SEO_SITEMAP_MAKER_LIMIT:60}
