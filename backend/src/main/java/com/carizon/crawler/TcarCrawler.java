@@ -70,7 +70,7 @@ public class TcarCrawler {
                     log.warn("[TCAR] TRUNCATE raw_tcar done");
                 } catch (Exception e) {
                     log.error("[TCAR] TRUNCATE failed: {}", e.toString(), e);
-                    return totalInserted;
+                    return fetchedTotal;
                 }
 
             log.info("[TCAR] start: perPage={}, carTypes={}", perPage, CAR_TYPE_MAP.size());
