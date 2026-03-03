@@ -378,7 +378,8 @@ public class MergeService {
                        maker_code, model_group_code, model_code, trim_code, grade_code,
                        maker_name, model_group_name, model_name, trim_name, grade_name,
                       price, km, displacement, yymm, status, color, fuel, transmission, body_type, region,
-                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url)
+                       m_url, pc_url, first_ad_day, ad_date, created_at, updated_at, extra, last_seen_date, car_image_url,
+                       option_array)
                     SELECT
                        'CHACHACHA', r.car_seq, r.car_no, NULL,
                        r.MAKER_CODE, r.CLASS_CODE, r.CAR_CODE, r.MODEL_CODE, r.GRADE_CODE,
