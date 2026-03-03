@@ -466,15 +466,15 @@ public class EncarTruckCrawler {
         }
 
         String sql = "INSERT INTO raw_encar_truck(payload, car_image_url, price_new, option_array, sel_option_array, seat_count, " +
-                "my_accident_cnt, my_accident_cost, other_accident_cnt, other_accident_cost, owner_change_cnt, car_no_change_cnt, total_loss_cnt, flood_total_loss_cnt, robber_cnt) " +
-                "VALUES (CAST(? AS JSON), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) AS new_row " +
+                "my_accident_cnt, my_accident_cost, other_accident_cnt, other_accident_cost, owner_change_cnt, car_no_change_cnt, total_loss_cnt, flood_total_loss_cnt, robber_cnt, fetched_at) " +
+                "VALUES (CAST(? AS JSON), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL) AS new_row " +
                 "ON DUPLICATE KEY UPDATE " +
                 "payload=new_row.payload, car_image_url=new_row.car_image_url, price_new=new_row.price_new, " +
                 "option_array=new_row.option_array, sel_option_array=new_row.sel_option_array, seat_count=new_row.seat_count, " +
                 "my_accident_cnt=new_row.my_accident_cnt, my_accident_cost=new_row.my_accident_cost, other_accident_cnt=new_row.other_accident_cnt, " +
                 "other_accident_cost=new_row.other_accident_cost, owner_change_cnt=new_row.owner_change_cnt, car_no_change_cnt=new_row.car_no_change_cnt, " +
                 "total_loss_cnt=new_row.total_loss_cnt, flood_total_loss_cnt=new_row.flood_total_loss_cnt, robber_cnt=new_row.robber_cnt, " +
-                "fetched_at=CURRENT_TIMESTAMP";
+                "fetched_at=NULL";
 
         int inserted = 0;
         int skipped = 0;
