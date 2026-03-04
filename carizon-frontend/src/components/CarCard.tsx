@@ -42,6 +42,7 @@ type Props = {
   showLikeCount?: boolean
   loadLikeOnMount?: boolean
   initialLiked?: boolean
+  savedItemCount?: number
   onConfirmUnlike?: (carId: number) => boolean | Promise<boolean>
   onLikeChanged?: (carId: number, liked: boolean, count: number) => void
 }
@@ -52,6 +53,7 @@ export default function CarCard({
   showLikeCount = true,
   loadLikeOnMount = true,
   initialLiked = false,
+  savedItemCount,
   onConfirmUnlike,
   onLikeChanged,
 }: Props) {
@@ -152,6 +154,7 @@ export default function CarCard({
           sessionStorage.setItem('search_scroll_y', JSON.stringify({
             url: `${location.pathname}${location.search}`,
             y: window.scrollY,
+            itemCount: savedItemCount ?? 0,
           }))
         }
         trackSelectItem(item.carId, maker, model, source)

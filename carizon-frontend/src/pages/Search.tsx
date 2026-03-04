@@ -100,6 +100,8 @@ export default function Search() {
   const nextPageRef         = useRef(0)
   const sentinelRef         = useRef<HTMLDivElement>(null)
   const paramsRef           = useRef<Record<string, string>>({})
+  const savedItemCountRef   = useRef(0)
+  const loadPageRef         = useRef<(pageNum: number, reset: boolean) => Promise<void>>(async () => {})
   paramsRef.current = useMemo(() => Object.fromEntries(sp.entries()), [sp])
 
   // 뒤로가기 시 스크롤 위치 복원
@@ -115,10 +117,11 @@ export default function Search() {
       return
     }
     try {
-      const { url, y } = JSON.parse(raw)
+      const { url, y, itemCount } = JSON.parse(raw)
       if (url === `${location.pathname}${location.search}`) {
         sessionStorage.removeItem('search_scroll_y')
         savedScrollRef.current = y
+        savedItemCountRef.current = Number(itemCount) || 0
       } else {
         sessionStorage.removeItem('search_scroll_y')
       }
@@ -144,14 +147,23 @@ export default function Search() {
 
   const activeChips = useMemo(() => buildActiveChips(params), [params])
 
-  // 뒤로가기 시 스크롤 복원 - 카드 목록이 실제로 채워진 후 실행
+  // 뒤로가기 시 스크롤 복원: 이전에 로드됐던 아이템 수만큼 채운 후 스크롤 복원
   useEffect(() => {
-    if (loading || filteredVisibleList.length === 0) return
     if (savedScrollRef.current === null) return
+    if (filteredVisibleList.length === 0) return
+    const targetCount = savedItemCountRef.current
+    // 아직 부족하고 더 로드할 수 있으면 다음 페이지 먼저 로드
+    if (targetCount > 0 && filteredVisibleList.length < targetCount && hasMore && !loading) {
+      loadPageRef.current(nextPageRef.current, false)
+      return
+    }
+    // 충분히 로드됐거나 더 이상 없으면 로딩 끝날 때 스크롤 복원
+    if (loading) return
     const y = savedScrollRef.current
     savedScrollRef.current = null
+    savedItemCountRef.current = 0
     requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
-  }, [loading, filteredVisibleList.length])
+  }, [loading, filteredVisibleList.length, hasMore])
 
   useEffect(() => {
     let cancelled = false
@@ -172,6 +184,7 @@ export default function Search() {
     return () => { cancelled = true }
   }, [])
 
+  // eslint-disable-next-line prefer-const
   const loadPage = useCallback(async (pageNum: number, reset: boolean) => {
     if (busyRef.current) return
     busyRef.current = true
@@ -192,6 +205,7 @@ export default function Search() {
       busyRef.current = false
     }
   }, [])
+  loadPageRef.current = loadPage
 
   // 필터/정렬 변경 시 초기화 후 첫 페이지 로드
   useEffect(() => {
@@ -426,6 +440,7 @@ export default function Search() {
                     showLikeCount={false}
                     loadLikeOnMount={false}
                     initialLiked={likedCarIds.has(it.carId)}
+                    savedItemCount={filteredVisibleList.length}
                     onLikeChanged={(carId, liked) => {
                       setLikedCarIds((prev) => {
                         const next = new Set(prev)
