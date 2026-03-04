@@ -211,7 +211,7 @@ export default function Search() {
           loadPage(nextPageRef.current, false)
         }
       },
-      { rootMargin: '400px' }
+      { rootMargin: '800px' }
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
