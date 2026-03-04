@@ -33,15 +33,15 @@ public class SeoDataService {
                 agg.priceMin         AS priceMin,
                 agg.priceMax         AS priceMax
             FROM cz_model mo
-            LEFT JOIN cz_maker mk ON mk.maker_code = mo.maker_code
-            LEFT JOIN cz_model_embedding_source es ON es.model_code = mo.model_code
+            LEFT JOIN cz_maker mk ON mk.maker_code COLLATE utf8mb4_unicode_ci = mo.maker_code
+            LEFT JOIN cz_model_embedding_source es ON es.model_code COLLATE utf8mb4_unicode_ci = mo.model_code
             LEFT JOIN (
-                SELECT model_code, is_main, image_url,
+                SELECT model_code COLLATE utf8mb4_unicode_ci AS model_code, is_main, image_url,
                        ROW_NUMBER() OVER (PARTITION BY model_code ORDER BY is_main DESC, sort_order ASC) AS rn
                 FROM cz_model_image
             ) mi ON mi.model_code = mo.model_code AND mi.rn = 1
             LEFT JOIN (
-                SELECT cm.model_code,
+                SELECT cm.model_code COLLATE utf8mb4_unicode_ci AS model_code,
                        COUNT(*) AS carCount,
                        MIN(pc.price) AS priceMin,
                        MAX(pc.price) AS priceMax
@@ -84,7 +84,7 @@ public class SeoDataService {
                 agg.priceMax         AS priceMax
             FROM cz_model mo
             INNER JOIN (
-                SELECT cm.model_code,
+                SELECT cm.model_code COLLATE utf8mb4_unicode_ci AS model_code,
                        COUNT(*) AS carCount,
                        MIN(pc.price) AS priceMin,
                        MAX(pc.price) AS priceMax
@@ -94,10 +94,10 @@ public class SeoDataService {
                 GROUP BY cm.model_code
                 HAVING COUNT(*) > 0
             ) agg ON agg.model_code = mo.model_code
-            LEFT JOIN cz_maker mk ON mk.maker_code = mo.maker_code
-            LEFT JOIN cz_model_embedding_source es ON es.model_code = mo.model_code
+            LEFT JOIN cz_maker mk ON mk.maker_code COLLATE utf8mb4_unicode_ci = mo.maker_code
+            LEFT JOIN cz_model_embedding_source es ON es.model_code COLLATE utf8mb4_unicode_ci = mo.model_code
             LEFT JOIN (
-                SELECT model_code, image_url,
+                SELECT model_code COLLATE utf8mb4_unicode_ci AS model_code, image_url,
                        ROW_NUMBER() OVER (PARTITION BY model_code ORDER BY is_main DESC, sort_order ASC) AS rn
                 FROM cz_model_image
             ) mi ON mi.model_code = mo.model_code AND mi.rn = 1
