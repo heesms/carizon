@@ -94,8 +94,19 @@ export default function Search() {
   const [aiFallbackList, setAiFallbackList] = useState<CarListItem[]>([])
   const [aiFallbackMessage, setAiFallbackMessage] = useState('')
   const [aiFallbackLoading, setAiFallbackLoading] = useState(false)
-  const aiRequestedQueryRef = useRef('')
-  const savedScrollRef      = useRef<number | null>(null)
+  // 뒤로가기 스크롤 복원 중일 때 flash 방지 - 첫 렌더 전에 동기적으로 판단
+  const [isRestoring, setIsRestoring] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('search_scroll_y')
+      if (!raw) return false
+      const { url } = JSON.parse(raw)
+      return url === `${window.location.pathname}${window.location.search}`
+    } catch {
+      return false
+    }
+  })
+  const aiRequestedQueryRef  = useRef('')
+  const savedScrollRef       = useRef<number | null>(null)
   const busyRef             = useRef(false)
   const nextPageRef         = useRef(0)
   const sentinelRef         = useRef<HTMLDivElement>(null)
@@ -114,6 +125,7 @@ export default function Search() {
     if (!raw) return
     if (!shouldRestore) {
       sessionStorage.removeItem('search_scroll_y')
+      setIsRestoring(false)
       return
     }
     try {
@@ -124,9 +136,11 @@ export default function Search() {
         savedItemCountRef.current = Number(itemCount) || 0
       } else {
         sessionStorage.removeItem('search_scroll_y')
+        setIsRestoring(false)
       }
     } catch {
       sessionStorage.removeItem('search_scroll_y')
+      setIsRestoring(false)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -162,7 +176,10 @@ export default function Search() {
     const y = savedScrollRef.current
     savedScrollRef.current = null
     savedItemCountRef.current = 0
-    requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior })
+      setIsRestoring(false)
+    })
   }, [loading, filteredVisibleList.length, hasMore])
 
   useEffect(() => {
@@ -317,7 +334,7 @@ export default function Search() {
   const isTextFallbackMode = !loading && items.length === 0 && textQuery.length > 0
 
   return (
-    <div className="space-y-5 animate-fade-in">
+    <div className="space-y-5 animate-fade-in" style={isRestoring ? { visibility: 'hidden' } : undefined}>
       {/* 상단 필터 바 */}
       <FiltersPanel value={params} onChange={setFilters} onSearch={() => {}} />
 
