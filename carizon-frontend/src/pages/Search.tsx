@@ -21,7 +21,7 @@ function CarCardSkeleton() {
   return (
     <div className="card overflow-hidden flex flex-col animate-pulse">
       <div className="w-full aspect-[4/3] bg-gray-200" />
-      <div className="p-2.5 sm:p-3 flex flex-col gap-2 flex-1">
+      <div className="p-3 flex flex-col gap-2 flex-1">
         <div className="h-4 bg-gray-200 rounded w-3/4" />
         <div className="flex gap-1 flex-wrap">
           <div className="h-5 bg-gray-200 rounded w-12" />
@@ -376,7 +376,7 @@ export default function Search() {
       )}
 
       {/* 카드 그리드 */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading
           ? Array.from({ length: 6 }).map((_, i) => <CarCardSkeleton key={i} />)
           : filteredVisibleList.map((it, idx) => (
