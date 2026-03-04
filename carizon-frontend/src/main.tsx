@@ -49,9 +49,9 @@ function AppRoutes() {
           <Route index element={<Home />} />
           <Route path="search" element={<Search />} />
           <Route path="likes" element={<MyLikes />} />
-          <Route path="cars/maker/:makerCode" element={<MakerPage />} />
-          <Route path="cars/maker/:makerCode/:modelCode" element={<ModelPage />} />
-          <Route path="cars/type/:bodyType" element={<BodyTypePage />} />
+          <Route path="cars/maker/:makerSlug" element={<MakerPage />} />
+          <Route path="cars/maker/:makerSlug/:modelCode" element={<ModelPage />} />
+          <Route path="cars/type/:bodyTypeSlug" element={<BodyTypePage />} />
           <Route path="cars/:id" element={<CarDetail />} />
           <Route path="recommendation" element={<Recommendation />} />
           <Route path="ai-ranking" element={<AiRankingBest />} />

@@ -19,6 +19,41 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class SitemapService {
 
+    private static final java.util.Map<String, String> MAKER_CODE_TO_SLUG = java.util.Map.ofEntries(
+        java.util.Map.entry("101", "hyundai"),
+        java.util.Map.entry("102", "kia"),
+        java.util.Map.entry("103", "chevrolet"),
+        java.util.Map.entry("104", "kg-mobility"),
+        java.util.Map.entry("105", "renault"),
+        java.util.Map.entry("107", "bmw"),
+        java.util.Map.entry("108", "mercedes-benz"),
+        java.util.Map.entry("109", "audi"),
+        java.util.Map.entry("110", "volkswagen"),
+        java.util.Map.entry("111", "volvo"),
+        java.util.Map.entry("112", "ford"),
+        java.util.Map.entry("113", "lexus"),
+        java.util.Map.entry("114", "toyota"),
+        java.util.Map.entry("115", "honda"),
+        java.util.Map.entry("116", "nissan"),
+        java.util.Map.entry("117", "porsche"),
+        java.util.Map.entry("120", "mini"),
+        java.util.Map.entry("118", "land-rover"),
+        java.util.Map.entry("121", "jeep"),
+        java.util.Map.entry("189", "genesis")
+    );
+
+    private static final java.util.Map<String, String> BODY_TYPE_TO_SLUG = java.util.Map.ofEntries(
+        java.util.Map.entry("SUV", "suv"),
+        java.util.Map.entry("세단", "sedan"),
+        java.util.Map.entry("RV", "rv"),
+        java.util.Map.entry("해치백", "hatchback"),
+        java.util.Map.entry("쿠페", "coupe"),
+        java.util.Map.entry("컨버터블", "convertible"),
+        java.util.Map.entry("픽업트럭", "pickup"),
+        java.util.Map.entry("트럭", "truck"),
+        java.util.Map.entry("미니밴", "minivan")
+    );
+
     private final JdbcTemplate jdbc;
 
     @Value("${seo.site-url:https://www.carizon.shop}")
@@ -76,7 +111,7 @@ public class SitemapService {
         Set<String> dedup = new LinkedHashSet<>();
         LocalDate today = LocalDate.now();
 
-        // 브랜드 전용관 페이지: /cars/maker/{makerCode}
+        // 브랜드 전용관 페이지: /cars/maker/{slug}
         List<String> makers = jdbc.query("""
             SELECT cm.maker_code
             FROM car_master cm
@@ -92,13 +127,15 @@ public class SitemapService {
         """, (rs, i) -> rs.getString(1), clamp(makerLimit, 0, 200));
         for (String makerCode : makers) {
             if (makerCode == null || makerCode.isBlank()) continue;
-            String path = "/cars/maker/" + urlEncode(makerCode.trim());
+            String slug = MAKER_CODE_TO_SLUG.get(makerCode.trim());
+            if (slug == null) continue; // skip if no slug mapping
+            String path = "/cars/maker/" + slug;
             if (dedup.add(path)) {
                 entries.add(new SitemapEntry(path, today.toString()));
             }
         }
 
-        // 차종 전용관 페이지: /cars/type/{bodyType}
+        // 차종 전용관 페이지: /cars/type/{slug}
         List<String> bodyTypes = jdbc.query("""
             SELECT cm.body_type
             FROM car_master cm
@@ -112,13 +149,15 @@ public class SitemapService {
         """, (rs, i) -> rs.getString(1), clamp(bodyTypeLimit, 0, 200));
         for (String bodyType : bodyTypes) {
             if (bodyType == null || bodyType.isBlank()) continue;
-            String path = "/cars/type/" + urlEncode(bodyType.trim());
+            String slug = BODY_TYPE_TO_SLUG.get(bodyType.trim());
+            if (slug == null) continue; // skip if no slug mapping
+            String path = "/cars/type/" + slug;
             if (dedup.add(path)) {
                 entries.add(new SitemapEntry(path, today.toString()));
             }
         }
 
-        // 모델 전용관 페이지: /cars/maker/{makerCode}/{modelCode}
+        // 모델 전용관 페이지: /cars/maker/{makerSlug}/{modelCode}
         // embed_text3 있는 모델만 포함 (콘텐츠가 있는 페이지만 sitemap에 노출)
         List<String[]> models = jdbc.query("""
             SELECT mo.maker_code, mo.model_code
@@ -135,7 +174,9 @@ public class SitemapService {
         """, (rs, i) -> new String[]{rs.getString(1), rs.getString(2)}, clamp(modelLimit, 0, 500));
         for (String[] row : models) {
             if (row[0] == null || row[0].isBlank() || row[1] == null || row[1].isBlank()) continue;
-            String path = "/cars/maker/" + urlEncode(row[0].trim()) + "/" + urlEncode(row[1].trim());
+            String makerSlug = MAKER_CODE_TO_SLUG.get(row[0].trim());
+            if (makerSlug == null) continue; // skip if no slug mapping
+            String path = "/cars/maker/" + makerSlug + "/" + urlEncode(row[1].trim());
             if (dedup.add(path)) {
                 entries.add(new SitemapEntry(path, today.toString()));
             }

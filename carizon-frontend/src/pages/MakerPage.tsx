@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { getMakers, type CodeItem } from '@/api/codes'
 import { getMakerLogoUrl } from '@/api/seo'
 import SeoCarsSection from '@/components/SeoCarsSection'
+import { makerSlugToCode, makerSlugToDisplayName } from '@/utils/slugs'
 
 const SITE_NAME = 'Carizon'
 
@@ -26,12 +27,13 @@ function MakerLogo({ makerCode, makerName }: { makerCode: string; makerName: str
 }
 
 export default function MakerPage() {
-  const { makerCode = '' } = useParams<{ makerCode: string }>()
+  const { makerSlug = '' } = useParams<{ makerSlug: string }>()
+  const makerCode = makerSlugToCode(makerSlug) ?? ''
   const [maker, setMaker] = useState<CodeItem | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!makerCode) return
+    if (!makerCode) { setLoading(false); return }
     getMakers()
       .then(makers => {
         const found = makers.find(m => m.code === makerCode) ?? null
@@ -41,7 +43,7 @@ export default function MakerPage() {
       .finally(() => setLoading(false))
   }, [makerCode])
 
-  const makerName = maker?.name ?? ''
+  const makerName = maker?.name ?? makerSlugToDisplayName(makerSlug) ?? ''
   const carCount = maker?.carCount ?? 0
   const isDomestic = maker?.domestic === 1 || maker?.domestic === true || maker?.domestic === '1'
 
@@ -60,7 +62,7 @@ export default function MakerPage() {
       '@type': 'BreadcrumbList',
       itemListElement: [
         { '@type': 'ListItem', position: 1, name: '홈', item: 'https://www.carizon.shop/' },
-        { '@type': 'ListItem', position: 2, name: `${makerName} 중고차`, item: `https://www.carizon.shop/cars/maker/${makerCode}` },
+        { '@type': 'ListItem', position: 2, name: `${makerName} 중고차`, item: `https://www.carizon.shop/cars/maker/${makerSlug}` },
       ],
     }
     let script = document.querySelector<HTMLScriptElement>('script[type="application/ld+json"][data-seo-page]')
@@ -74,7 +76,7 @@ export default function MakerPage() {
     return () => {
       document.querySelector('script[type="application/ld+json"][data-seo-page]')?.remove()
     }
-  }, [makerName, makerCode, carCount])
+  }, [makerName, makerSlug, carCount])
 
   if (loading) {
     return (
@@ -90,7 +92,7 @@ export default function MakerPage() {
     )
   }
 
-  if (!maker) {
+  if (!makerCode) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-20 text-center text-gray-400">
         브랜드를 찾을 수 없습니다.

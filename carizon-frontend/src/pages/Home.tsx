@@ -59,26 +59,26 @@ const QUICK_SEARCHES = [
 
 // 브랜드 전용관 (국산/수입 구분)
 const BRAND_GALLERY = [
-  { makerCode: '101', name: '현대' },
-  { makerCode: '102', name: '기아' },
-  { makerCode: '104', name: '쌍용' },
-  { makerCode: '103', name: 'GM한국' },
-  { makerCode: '107', name: 'BMW' },
-  { makerCode: '108', name: '벤츠' },
-  { makerCode: '109', name: '아우디' },
-  { makerCode: '110', name: '폭스바겐' },
-  { makerCode: '111', name: '볼보' },
-  { makerCode: '112', name: '포드' },
-  { makerCode: '113', name: '렉서스' },
-  { makerCode: '114', name: '토요타' },
+  { makerCode: '101', slug: 'hyundai', name: 'HYUNDAI' },
+  { makerCode: '102', slug: 'kia', name: 'KIA' },
+  { makerCode: '104', slug: 'kg-mobility', name: 'KG모빌리티' },
+  { makerCode: '103', slug: 'chevrolet', name: '쉐보레' },
+  { makerCode: '189', slug: 'genesis', name: 'GENESIS' },
+  { makerCode: '107', slug: 'bmw', name: 'BMW' },
+  { makerCode: '108', slug: 'mercedes-benz', name: '벤츠' },
+  { makerCode: '109', slug: 'audi', name: '아우디' },
+  { makerCode: '110', slug: 'volkswagen', name: '폭스바겐' },
+  { makerCode: '111', slug: 'volvo', name: '볼보' },
+  { makerCode: '113', slug: 'lexus', name: '렉서스' },
+  { makerCode: '114', slug: 'toyota', name: '토요타' },
 ]
 
 const BODY_TYPE_GALLERY = [
-  { bodyType: 'SUV', icon: '🚙', label: 'SUV' },
-  { bodyType: '세단', icon: '🚗', label: '세단' },
-  { bodyType: 'RV', icon: '🚐', label: 'RV' },
-  { bodyType: '해치백', icon: '🚗', label: '해치백' },
-  { bodyType: '쿠페', icon: '🏎️', label: '쿠페' },
+  { slug: 'suv',       icon: '🚙', label: 'SUV' },
+  { slug: 'sedan',     icon: '🚗', label: '세단' },
+  { slug: 'rv',        icon: '🚐', label: 'RV' },
+  { slug: 'hatchback', icon: '🚗', label: '해치백' },
+  { slug: 'coupe',     icon: '🏎️', label: '쿠페' },
 ]
 
 function BrandLogo({ makerCode, name }: { makerCode: string; name: string }) {
@@ -524,7 +524,7 @@ export default function Home() {
           {BRAND_GALLERY.map(b => (
             <Link
               key={b.makerCode}
-              to={`/cars/maker/${b.makerCode}`}
+              to={`/cars/maker/${b.slug}`}
               className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white border border-gray-100 hover:border-blue-300 hover:shadow-sm transition-all group"
             >
               <BrandLogo makerCode={b.makerCode} name={b.name} />
@@ -547,8 +547,8 @@ export default function Home() {
         <div className="flex flex-wrap gap-2 sm:gap-3">
           {BODY_TYPE_GALLERY.map(b => (
             <Link
-              key={b.bodyType}
-              to={`/cars/type/${encodeURIComponent(b.bodyType)}`}
+              key={b.slug}
+              to={`/cars/type/${b.slug}`}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-gray-100 hover:border-green-300 hover:shadow-sm transition-all group"
             >
               <span className="text-xl">{b.icon}</span>

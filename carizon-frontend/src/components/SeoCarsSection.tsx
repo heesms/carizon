@@ -1,19 +1,24 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
+import FiltersPanel from '@/components/FiltersPanel'
 import CarCard from '@/components/CarCard'
+import AdSlot from '@/components/AdSlot'
 import { searchCars, type CarListItem } from '@/api/cars'
 import { getMyLikes } from '@/api/likes'
+import { trackFilterApply } from '@/lib/analytics'
 
-const SORT_OPTIONS = [
+const SIMPLE_SORTS = [
   { value: '', label: '추천순' },
   { value: 'RECENT', label: '최신순' },
-  { value: 'LOW_PRICE', label: '가격 낮은순' },
-  { value: 'HIGH_PRICE', label: '가격 높은순' },
-  { value: 'LOW_KM', label: '주행 적은순' },
-  { value: 'NEW_YEAR', label: '신형순' },
-]
+] as const
 
-function Skeleton({ compact }: { compact: boolean }) {
+const TOGGLE_SORTS = [
+  { a: 'LOW_PRICE',  b: 'HIGH_PRICE', labelA: '가격 낮은순', labelB: '가격 높은순' },
+  { a: 'LOW_KM',    b: 'HIGH_KM',    labelA: '주행 적은순', labelB: '주행 많은순' },
+  { a: 'NEW_YEAR',  b: 'OLD_YEAR',   labelA: '신형순',       labelB: '구형순' },
+] as const
+
+function CarCardSkeleton({ compact = false }: { compact?: boolean }) {
   if (compact) {
     return (
       <div className="card overflow-hidden flex flex-row animate-pulse">
@@ -34,6 +39,7 @@ function Skeleton({ compact }: { compact: boolean }) {
         <div className="flex gap-1 flex-wrap">
           <div className="h-5 bg-gray-200 rounded w-12" />
           <div className="h-5 bg-gray-200 rounded w-16" />
+          <div className="h-5 bg-gray-200 rounded w-10" />
         </div>
         <div className="mt-auto h-6 bg-gray-200 rounded w-2/5" />
       </div>
@@ -41,20 +47,58 @@ function Skeleton({ compact }: { compact: boolean }) {
   )
 }
 
+function buildActiveChips(params: Record<string, string>, fixedKeys: string[]) {
+  const chips: Array<{ key: string; label: string; removeKeys: string[] }> = []
+
+  // Skip fixed keys - they appear in the banner, not as removable chips
+  if (params.q)
+    chips.push({ key: 'q', label: `🔍 "${params.q}"`, removeKeys: ['q'] })
+
+  if (!fixedKeys.includes('makerCode') && !fixedKeys.includes('modelCode')) {
+    if (params.makerCode)
+      chips.push({ key: 'maker', label: '🚗 제조사', removeKeys: ['makerCode', 'modelGroupCode', 'modelCode', 'trimCode'] })
+    else if (params.modelCode)
+      chips.push({ key: 'model', label: '🚗 모델', removeKeys: ['modelCode', 'trimCode'] })
+  }
+
+  if (params.priceMin || params.priceMax) {
+    const min = params.priceMin ? `${Number(params.priceMin).toLocaleString()}만원` : ''
+    const max = params.priceMax ? `${Number(params.priceMax).toLocaleString()}만원` : ''
+    const label = min && max ? `${min}~${max}` : min ? `${min} 이상` : `${max} 이하`
+    chips.push({ key: 'price', label: `💰 ${label}`, removeKeys: ['priceMin', 'priceMax'] })
+  }
+
+  if (params.yearMin || params.yearMax) {
+    const min = params.yearMin ?? ''
+    const max = params.yearMax ?? ''
+    const label = min && max ? `${min}~${max}년식` : min ? `${min}년 이후` : `${max}년 이전`
+    chips.push({ key: 'year', label: `📅 ${label}`, removeKeys: ['yearMin', 'yearMax'] })
+  }
+
+  if (params.kmMax)
+    chips.push({ key: 'km', label: `🛣️ ${Number(params.kmMax).toLocaleString()}km 이하`, removeKeys: ['kmMin', 'kmMax'] })
+
+  if (params.noAccident)
+    chips.push({ key: 'noAccident', label: '✅ 무사고', removeKeys: ['noAccident'] })
+
+  if (params.fuel)
+    chips.push({ key: 'fuel', label: '⛽ 연료', removeKeys: ['fuel'] })
+
+  if (!fixedKeys.includes('bodyType') && params.bodyType)
+    chips.push({ key: 'bodyType', label: '🚙 차체', removeKeys: ['bodyType'] })
+
+  if (params.color)
+    chips.push({ key: 'color', label: '🎨 색상', removeKeys: ['color'] })
+
+  return chips
+}
+
 type Props = {
-  /** 고정 필터 (브랜드/모델/차종 코드 등) - URL params와 병합됨 */
   fixedParams: Record<string, string>
 }
 
-/**
- * SEO 전용관 페이지에서 사용하는 차량 목록 섹션.
- * 기존 /search 페이지와 독립적으로 동작하며, fixedParams로 고정 필터를 지정한다.
- */
 export default function SeoCarsSection({ fixedParams }: Props) {
-  const location = useLocation()
   const [sp, setSp] = useSearchParams()
-
-  const sort = sp.get('sort') ?? ''
   const [items, setItems] = useState<CarListItem[]>([])
   const [likedCarIds, setLikedCarIds] = useState<Set<number>>(() => new Set())
   const [totalElements, setTotal] = useState<number | null>(null)
@@ -66,6 +110,12 @@ export default function SeoCarsSection({ fixedParams }: Props) {
   const busyRef = useRef(false)
   const nextPageRef = useRef(0)
   const sentinelRef = useRef<HTMLDivElement>(null)
+
+  const fixedKeys = useMemo(() => Object.keys(fixedParams), [fixedParams])
+  const urlParams = useMemo(() => Object.fromEntries(sp.entries()), [sp])
+  // Merged params for API call: fixedParams always win
+  const mergedParams = useMemo(() => ({ ...urlParams, ...fixedParams }), [urlParams, fixedParams])
+  const currentSort = sp.get('sort') ?? ''
 
   useEffect(() => {
     let mounted = true
@@ -84,7 +134,7 @@ export default function SeoCarsSection({ fixedParams }: Props) {
     busyRef.current = true
     setLoading(true)
     try {
-      const res = await searchCars({ ...fixedParams, sort, page: pageNum, size: 30 })
+      const res = await searchCars({ ...mergedParams, page: pageNum, size: 30 })
       const content = res?.content ?? []
       if (reset) setItems(content)
       else setItems(prev => [...prev, ...content])
@@ -97,9 +147,8 @@ export default function SeoCarsSection({ fixedParams }: Props) {
       setLoading(false)
       busyRef.current = false
     }
-  }, [sort, JSON.stringify(fixedParams)]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(mergedParams)]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // sort 또는 fixedParams 변경 시 초기화
   useEffect(() => {
     setItems([])
     setHasMore(false)
@@ -129,93 +178,196 @@ export default function SeoCarsSection({ fixedParams }: Props) {
     return (typeof min === 'number' && min >= 1) || (typeof max === 'number' && max >= 1)
   })
 
-  const setSort = (value: string) => {
-    setSp(prev => {
-      const next = new URLSearchParams(prev)
-      if (value) next.set('sort', value)
-      else next.delete('sort')
-      return next
-    }, { replace: true })
+  // onChange: never touch fixedParam keys
+  const setFilters = (v: Record<string, any>) => {
+    trackFilterApply(v)
+    const usp = new URLSearchParams()
+    Object.entries(v).forEach(([k, val]) => {
+      if (fixedKeys.includes(k)) return // protect fixed params
+      if (val !== undefined && val !== null && val !== '') usp.set(k, String(val))
+    })
+    setSp(usp)
   }
+
+  const setSort = (sort: string) => {
+    const usp = new URLSearchParams(sp)
+    if (sort) usp.set('sort', sort)
+    else usp.delete('sort')
+    setSp(usp)
+  }
+
+  const removeChip = (removeKeys: string[]) => {
+    const usp = new URLSearchParams(sp)
+    removeKeys.forEach(k => usp.delete(k))
+    setSp(usp)
+  }
+
+  const clearAllFilters = () => {
+    // Only clear non-fixed params
+    setSp(new URLSearchParams())
+  }
+
+  const activeChips = useMemo(() => buildActiveChips({ ...urlParams, ...fixedParams }, fixedKeys), [urlParams, fixedParams, fixedKeys])
+  // Only show removable chips (not from fixedKeys)
+  const removableChips = activeChips.filter(c => !c.removeKeys.every(k => fixedKeys.includes(k)))
 
   const compact = viewMode === 'list'
 
+  // Value for FiltersPanel: merged params (shows current state including fixed)
+  const filterValue = useMemo(() => ({ ...urlParams, ...fixedParams }), [urlParams, fixedParams])
+
   return (
-    <div>
-      {/* 정렬 + 뷰 토글 툴바 */}
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {totalElements != null && (
-            <span className="text-sm text-gray-500 mr-1">
-              {totalElements.toLocaleString()}대
-            </span>
-          )}
-          {SORT_OPTIONS.map(opt => (
+    <div className="space-y-5">
+      {/* FiltersPanel - same as Search */}
+      <FiltersPanel value={filterValue} onChange={setFilters} onSearch={() => {}} />
+
+      {/* 결과 헤더 + 정렬 탭 */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">검색 결과</h2>
+            {totalElements !== null && (
+              <p className="text-sm text-gray-500 mt-0.5">
+                총 <strong className="text-gray-900">{totalElements.toLocaleString()}</strong>개 매물
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {loading && <div className="spinner" />}
+            {/* 모바일 전용 뷰 토글 */}
+            <div className="sm:hidden flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+              <button
+                onClick={() => { setViewMode('card'); localStorage.setItem('search_view_mode', 'card') }}
+                className={`p-1.5 rounded-md transition-all ${viewMode === 'card' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400'}`}
+                aria-label="카드 뷰"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="3" y="3" width="18" height="11" rx="1.5"/>
+                  <rect x="3" y="16.5" width="13" height="2" rx="1"/>
+                  <rect x="3" y="20" width="9" height="2" rx="1"/>
+                </svg>
+              </button>
+              <button
+                onClick={() => { setViewMode('list'); localStorage.setItem('search_view_mode', 'list') }}
+                className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400'}`}
+                aria-label="리스트 뷰"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="3" y="3" width="6" height="6" rx="1"/>
+                  <rect x="11" y="4.5" width="10" height="2" rx="1"/>
+                  <rect x="11" y="7" width="7" height="1.5" rx="0.75"/>
+                  <rect x="3" y="12" width="6" height="6" rx="1"/>
+                  <rect x="11" y="13.5" width="10" height="2" rx="1"/>
+                  <rect x="11" y="16" width="7" height="1.5" rx="0.75"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 정렬 탭 */}
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
+          {SIMPLE_SORTS.map(o => (
             <button
-              key={opt.value}
-              onClick={() => setSort(opt.value)}
-              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                sort === opt.value
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-blue-400'
+              key={o.value}
+              onClick={() => setSort(o.value)}
+              className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold transition-all shrink-0 ${
+                currentSort === o.value
+                  ? 'bg-brand-600 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {opt.label}
+              {o.label}
             </button>
           ))}
+          {TOGGLE_SORTS.map(o => {
+            const isA = currentSort === o.a
+            const isB = currentSort === o.b
+            const isActive = isA || isB
+            const label = isB ? o.labelB : o.labelA
+            const nextSort = isA ? o.b : isB ? o.a : o.a
+            return (
+              <button
+                key={o.a}
+                onClick={() => setSort(nextSort)}
+                className={`whitespace-nowrap inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all shrink-0 ${
+                  isActive
+                    ? 'bg-brand-600 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {label}
+                {isActive && (
+                  <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
+                      d={isA ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'} />
+                  </svg>
+                )}
+              </button>
+            )
+          })}
         </div>
-        {/* 모바일 뷰 토글 */}
-        <button
-          className="sm:hidden text-gray-400 hover:text-gray-700 p-1"
-          onClick={() => {
-            const next = viewMode === 'card' ? 'list' : 'card'
-            setViewMode(next)
-            localStorage.setItem('search_view_mode', next)
-          }}
-          aria-label={viewMode === 'card' ? '리스트뷰' : '카드뷰'}
-        >
-          {viewMode === 'card' ? (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-            </svg>
-          ) : (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-            </svg>
-          )}
-        </button>
+
+        {/* 활성 필터 칩 (fixedParams 제외) */}
+        {removableChips.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {removableChips.map(chip => (
+              <button
+                key={chip.key}
+                onClick={() => removeChip(chip.removeKeys)}
+                className="inline-flex items-center gap-1 bg-brand-50 text-brand-700 border border-brand-200 rounded-full px-3 py-1 text-xs font-medium hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+              >
+                {chip.label}
+                <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            ))}
+            {removableChips.length > 1 && (
+              <button
+                onClick={clearAllFilters}
+                className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 rounded-full px-3 py-1 text-xs font-medium hover:bg-gray-200 transition-colors"
+              >
+                추가필터 초기화
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* 차량 그리드 */}
-      <div className={compact
-        ? 'flex flex-col gap-2'
-        : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3'
-      }>
-        {filteredItems.map(item => (
-          <CarCard
-            key={item.carId}
-            item={item}
-            compact={compact}
-            initialLiked={likedCarIds.has(item.carId)}
-            loadLikeOnMount={false}
-            onLikeChanged={(carId, liked) => {
-              setLikedCarIds(prev => {
-                const next = new Set(prev)
-                if (liked) next.add(carId)
-                else next.delete(carId)
-                return next
-              })
-            }}
-          />
-        ))}
-        {loading && Array.from({ length: 10 }).map((_, i) => (
-          <Skeleton key={i} compact={compact} />
-        ))}
+      {/* 광고 */}
+      <AdSlot id="seo-page-banner" variant="banner" />
+
+      {/* 카드 그리드 */}
+      <div className={compact ? 'flex flex-col gap-2 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-4' : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4'}>
+        {loading && filteredItems.length === 0
+          ? Array.from({ length: 6 }).map((_, i) => <CarCardSkeleton key={i} compact={compact} />)
+          : filteredItems.map((it, idx) => (
+              <React.Fragment key={it.carId}>
+                <div className="animate-fade-in" style={{ animationDelay: `${Math.min(idx, 5) * 0.03}s` }}>
+                  <CarCard
+                    item={it}
+                    showLikeCount={false}
+                    loadLikeOnMount={false}
+                    initialLiked={likedCarIds.has(it.carId)}
+                    savedItemCount={filteredItems.length}
+                    compact={compact}
+                    onLikeChanged={(carId, liked) => {
+                      setLikedCarIds(prev => {
+                        const next = new Set(prev)
+                        if (liked) next.add(carId)
+                        else next.delete(carId)
+                        return next
+                      })
+                    }}
+                  />
+                </div>
+              </React.Fragment>
+            ))}
       </div>
 
-      {/* 결과 없음 */}
       {!loading && filteredItems.length === 0 && (
-        <div className="text-center py-20 text-gray-400">
+        <div className="card p-12 text-center text-gray-400">
           <p className="text-lg mb-2">현재 등록된 매물이 없습니다</p>
           <p className="text-sm">잠시 후 다시 확인해 주세요</p>
         </div>

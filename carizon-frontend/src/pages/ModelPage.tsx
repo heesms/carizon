@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getModelSeo, getMakerLogoUrl, type ModelSeoData } from '@/api/seo'
 import SeoCarsSection from '@/components/SeoCarsSection'
+import { makerSlugToCode } from '@/utils/slugs'
 
 const SITE_NAME = 'Carizon'
 
@@ -51,7 +52,8 @@ function formatPriceRange(min?: number | null, max?: number | null): string | nu
 }
 
 export default function ModelPage() {
-  const { makerCode = '', modelCode = '' } = useParams<{ makerCode: string; modelCode: string }>()
+  const { makerSlug = '', modelCode = '' } = useParams<{ makerSlug: string; modelCode: string }>()
+  const makerCode = makerSlugToCode(makerSlug) ?? ''
   const [data, setData] = useState<ModelSeoData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -96,8 +98,8 @@ export default function ModelPage() {
       '@type': 'BreadcrumbList',
       itemListElement: [
         { '@type': 'ListItem', position: 1, name: '홈', item: 'https://www.carizon.shop/' },
-        { '@type': 'ListItem', position: 2, name: `${makerName} 중고차`, item: `https://www.carizon.shop/cars/maker/${makerCode}` },
-        { '@type': 'ListItem', position: 3, name: `${modelName} 중고차`, item: `https://www.carizon.shop/cars/maker/${makerCode}/${modelCode}` },
+        { '@type': 'ListItem', position: 2, name: `${makerName} 중고차`, item: `https://www.carizon.shop/cars/maker/${makerSlug}` },
+        { '@type': 'ListItem', position: 3, name: `${modelName} 중고차`, item: `https://www.carizon.shop/cars/maker/${makerSlug}/${modelCode}` },
       ],
     }
     let script = document.querySelector<HTMLScriptElement>('script[type="application/ld+json"][data-seo-page]')
@@ -111,7 +113,7 @@ export default function ModelPage() {
     return () => {
       document.querySelector('script[type="application/ld+json"][data-seo-page]')?.remove()
     }
-  }, [modelName, makerName, modelCode, makerCode, carCount, priceRange, description, imageUrl])
+  }, [modelName, makerName, modelCode, makerSlug, carCount, priceRange, description, imageUrl])
 
   if (loading) {
     return (
@@ -135,7 +137,7 @@ export default function ModelPage() {
       <nav className="text-xs text-gray-400 mb-4 flex items-center gap-1.5">
         <Link to="/" className="hover:text-blue-600">홈</Link>
         <span>›</span>
-        <Link to={`/cars/maker/${makerCode}`} className="hover:text-blue-600">{makerName} 중고차</Link>
+        <Link to={`/cars/maker/${makerSlug}`} className="hover:text-blue-600">{makerName} 중고차</Link>
         <span>›</span>
         <span className="text-gray-600 font-medium">{modelName} 중고차</span>
       </nav>
@@ -154,7 +156,7 @@ export default function ModelPage() {
             <div className="flex items-center gap-2 mb-3">
               <MakerLogo makerCode={data.makerCode} makerName={makerName} />
               <Link
-                to={`/cars/maker/${makerCode}`}
+                to={`/cars/maker/${makerSlug}`}
                 className="text-sm text-blue-600 hover:underline font-medium"
               >
                 {makerName}
