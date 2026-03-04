@@ -305,7 +305,7 @@ export default function Search() {
   return (
     <div className="space-y-5 animate-fade-in">
       {/* 상단 필터 바 */}
-      <FiltersPanel value={params} onChange={setFilters} onSearch={() => goPage(0)} />
+      <FiltersPanel value={params} onChange={setFilters} onSearch={() => {}} />
 
       {/* 결과 헤더 + 정렬 탭 */}
       <div className="space-y-2">
@@ -317,7 +317,7 @@ export default function Search() {
                 총 <strong className="text-gray-900">{totalElements.toLocaleString()}</strong>개 매물
               </p>
             )}
-            {!loading && list.length === 0 && filteredVisibleList.length > 0 && (
+            {!loading && items.length === 0 && filteredVisibleList.length > 0 && (
               <p className="text-xs text-brand-600 mt-1 font-medium">
                 검색결과가 없어 텍스트 기반 조건 추천 매물을 표시합니다.
               </p>
