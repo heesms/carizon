@@ -104,7 +104,7 @@ export default function Search() {
   const [loading, setLoading]         = useState(false)
   const [hasMore, setHasMore]         = useState(false)
   const [viewMode, setViewMode]       = useState<'card' | 'list'>(() => {
-    return (sessionStorage.getItem('search_view_mode') as 'card' | 'list') ?? 'card'
+    return (localStorage.getItem('search_view_mode') as 'card' | 'list') ?? 'card'
   })
   const [aiFallbackList, setAiFallbackList] = useState<CarListItem[]>([])
   const [aiFallbackMessage, setAiFallbackMessage] = useState('')
@@ -374,7 +374,7 @@ export default function Search() {
             {/* 모바일 전용 뷰 토글 */}
             <div className="sm:hidden flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
               <button
-                onClick={() => { setViewMode('card'); sessionStorage.setItem('search_view_mode', 'card') }}
+                onClick={() => { setViewMode('card'); localStorage.setItem('search_view_mode', 'card') }}
                 className={`p-1.5 rounded-md transition-all ${viewMode === 'card' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400'}`}
                 aria-label="카드 뷰"
               >
@@ -387,7 +387,7 @@ export default function Search() {
                 </svg>
               </button>
               <button
-                onClick={() => { setViewMode('list'); sessionStorage.setItem('search_view_mode', 'list') }}
+                onClick={() => { setViewMode('list'); localStorage.setItem('search_view_mode', 'list') }}
                 className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400'}`}
                 aria-label="리스트 뷰"
               >
