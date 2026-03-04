@@ -219,7 +219,7 @@ export default function SeoCarsSection({ fixedParams }: Props) {
   return (
     <div className="space-y-5">
       {/* FiltersPanel - same as Search */}
-      <FiltersPanel value={filterValue} onChange={setFilters} onSearch={() => {}} />
+      <FiltersPanel value={filterValue} onChange={setFilters} onSearch={() => {}} initialCollapsed={true} />
 
       {/* 결과 헤더 + 정렬 탭 */}
       <div className="space-y-2">

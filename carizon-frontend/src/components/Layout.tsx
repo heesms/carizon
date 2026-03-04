@@ -50,6 +50,7 @@ export default function Layout() {
 
   const pageTitle = (() => {
     const path = location.pathname
+    if (path.startsWith('/cars/maker/') || path.startsWith('/cars/type/')) return '전용관'
     if (path.startsWith('/cars/')) return '차량 상세'
     return PAGE_NAMES[path] ?? ''
   })()

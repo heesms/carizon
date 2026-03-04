@@ -18,6 +18,7 @@ type Props = {
   value: Filters
   onChange: (f: Filters) => void
   onSearch: () => void
+  initialCollapsed?: boolean
 }
 
 type SearchMode = 'structured' | 'text'
@@ -490,7 +491,7 @@ function ModalPortal({ children }: { children: React.ReactNode }) {
 // SPA 세션 동안 모델 코드→이름 매핑을 보존 (컴포넌트 언마운트/재마운트 후에도 유지)
 const modelNameSessionCache = new Map<string, string>()
 
-export default function FiltersPanel({ value, onChange, onSearch }: Props) {
+export default function FiltersPanel({ value, onChange, onSearch, initialCollapsed = false }: Props) {
   const [makers, setMakers] = useState<CodeItem[]>([])
   const [makersLoading, setMakersLoading] = useState(false)
   const [makersError, setMakersError] = useState('')
@@ -498,7 +499,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   const [models, setModels] = useState<CodeItem[]>([])
   const [trims, setTrims] = useState<CodeItem[]>([])
 
-  const [filtersCollapsed, setFiltersCollapsed] = useState(false)
+  const [filtersCollapsed, setFiltersCollapsed] = useState(initialCollapsed)
   const [detailOpen, setDetailOpen] = useState(false)
 
   const [makerPickerOpen, setMakerPickerOpen] = useState(false)
