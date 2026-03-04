@@ -184,29 +184,6 @@ public class SitemapService {
             }
         }
 
-        // 모델 전용관 페이지: /cars/maker/{makerSlug}/{modelCode}
-        // 매물이 있는 모델 포함 (embed_text3 조건 제거)
-        List<String[]> models = jdbc.query("""
-            SELECT mo.maker_code, mo.model_code
-            FROM cz_model mo
-            INNER JOIN car_master cm ON cm.model_code = mo.model_code
-                AND cm.adv_status = 'ONSALE'
-            WHERE mo.maker_code IS NOT NULL AND TRIM(mo.maker_code) <> ''
-              AND mo.maker_code <> '106'
-            GROUP BY mo.maker_code, mo.model_code
-            ORDER BY COUNT(*) DESC
-            LIMIT ?
-        """, (rs, i) -> new String[]{rs.getString(1), rs.getString(2)}, clamp(modelLimit, 0, 500));
-        for (String[] row : models) {
-            if (row[0] == null || row[0].isBlank() || row[1] == null || row[1].isBlank()) continue;
-            String makerSlug = MAKER_CODE_TO_SLUG.get(row[0].trim());
-            if (makerSlug == null) continue; // skip if no slug mapping
-            String path = "/cars/maker/" + makerSlug + "/" + urlEncode(row[1].trim());
-            if (dedup.add(path)) {
-                entries.add(new SitemapEntry(path, today.toString()));
-            }
-        }
-
         return buildUrlSet(entries);
     }
 
