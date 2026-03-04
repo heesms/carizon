@@ -185,12 +185,10 @@ public class SitemapService {
         }
 
         // 모델 전용관 페이지: /cars/maker/{makerSlug}/{modelCode}
-        // embed_text3 있는 모델만 포함 (콘텐츠가 있는 페이지만 sitemap에 노출)
+        // 매물이 있는 모델 포함 (embed_text3 조건 제거)
         List<String[]> models = jdbc.query("""
             SELECT mo.maker_code, mo.model_code
             FROM cz_model mo
-            INNER JOIN cz_model_embedding_source es ON es.model_code = mo.model_code
-                AND es.embed_text_3 IS NOT NULL AND TRIM(es.embed_text_3) <> ''
             INNER JOIN car_master cm ON cm.model_code = mo.model_code
                 AND cm.adv_status = 'ONSALE'
             WHERE mo.maker_code IS NOT NULL AND TRIM(mo.maker_code) <> ''

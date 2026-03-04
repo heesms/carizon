@@ -67,7 +67,7 @@ public class SeoDataService {
     }
 
     /**
-     * embed_text3 있는 모델 목록 (maker 기준 필터, sitemap/SEO 페이지 생성용)
+     * 매물이 있는 모델 목록 (maker 기준 필터, embed_text3 조건 제거)
      */
     public List<SeoModelDto> getModelsWithDescription(String makerCode, int limit) {
         String sql = """
@@ -78,19 +78,11 @@ public class SeoDataService {
                 mk.maker_name        AS makerName,
                 es.embed_text_3      AS description,
                 mi.image_url         AS imageUrl,
-                COALESCE(agg.carCount, 0) AS carCount,
+                agg.carCount         AS carCount,
                 agg.priceMin         AS priceMin,
                 agg.priceMax         AS priceMax
             FROM cz_model mo
-            INNER JOIN cz_model_embedding_source es ON es.model_code = mo.model_code
-                AND es.embed_text_3 IS NOT NULL AND TRIM(es.embed_text_3) <> ''
-            LEFT JOIN cz_maker mk ON mk.maker_code = mo.maker_code
-            LEFT JOIN (
-                SELECT model_code, image_url,
-                       ROW_NUMBER() OVER (PARTITION BY model_code ORDER BY is_main DESC, sort_order ASC) AS rn
-                FROM cz_model_image
-            ) mi ON mi.model_code = mo.model_code AND mi.rn = 1
-            LEFT JOIN (
+            INNER JOIN (
                 SELECT model_code,
                        COUNT(*) AS carCount,
                        MIN(price_min) AS priceMin,
@@ -98,9 +90,17 @@ public class SeoDataService {
                 FROM car_master
                 WHERE adv_status = 'ONSALE'
                 GROUP BY model_code
+                HAVING COUNT(*) > 0
             ) agg ON agg.model_code = mo.model_code
+            LEFT JOIN cz_maker mk ON mk.maker_code = mo.maker_code
+            LEFT JOIN cz_model_embedding_source es ON es.model_code = mo.model_code
+            LEFT JOIN (
+                SELECT model_code, image_url,
+                       ROW_NUMBER() OVER (PARTITION BY model_code ORDER BY is_main DESC, sort_order ASC) AS rn
+                FROM cz_model_image
+            ) mi ON mi.model_code = mo.model_code AND mi.rn = 1
         """ + (makerCode != null ? " WHERE mo.maker_code = ? " : "")
-            + " ORDER BY COALESCE(agg.carCount,0) DESC LIMIT ?";
+            + " ORDER BY agg.carCount DESC LIMIT ?";
 
         if (makerCode != null) {
             return jdbc.query(sql, (rs, i) -> new SeoModelDto(
