@@ -41,13 +41,14 @@ public class SeoDataService {
                 FROM cz_model_image
             ) mi ON mi.model_code = mo.model_code AND mi.rn = 1
             LEFT JOIN (
-                SELECT model_code,
+                SELECT cm.model_code,
                        COUNT(*) AS carCount,
-                       MIN(price_min) AS priceMin,
-                       MAX(price_max) AS priceMax
-                FROM car_master
-                WHERE adv_status = 'ONSALE'
-                GROUP BY model_code
+                       MIN(pc.price) AS priceMin,
+                       MAX(pc.price) AS priceMax
+                FROM car_master cm
+                LEFT JOIN platform_car pc ON pc.car_id = cm.car_id AND pc.price > 0
+                WHERE cm.adv_status = 'ONSALE'
+                GROUP BY cm.model_code
             ) agg ON agg.model_code = mo.model_code
             WHERE mo.model_code = ?
             LIMIT 1
@@ -83,13 +84,14 @@ public class SeoDataService {
                 agg.priceMax         AS priceMax
             FROM cz_model mo
             INNER JOIN (
-                SELECT model_code,
+                SELECT cm.model_code,
                        COUNT(*) AS carCount,
-                       MIN(price_min) AS priceMin,
-                       MAX(price_max) AS priceMax
-                FROM car_master
-                WHERE adv_status = 'ONSALE'
-                GROUP BY model_code
+                       MIN(pc.price) AS priceMin,
+                       MAX(pc.price) AS priceMax
+                FROM car_master cm
+                LEFT JOIN platform_car pc ON pc.car_id = cm.car_id AND pc.price > 0
+                WHERE cm.adv_status = 'ONSALE'
+                GROUP BY cm.model_code
                 HAVING COUNT(*) > 0
             ) agg ON agg.model_code = mo.model_code
             LEFT JOIN cz_maker mk ON mk.maker_code = mo.maker_code
