@@ -32,7 +32,6 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const headerVisible = useScrollHide()
-  const isDetailPage = location.pathname.startsWith('/cars/')
   const routeState = (location.state ?? {}) as { from?: string; source?: string; restoreSearchScrollFromDetail?: boolean }
 
   // 라우트 이동 시 즉시 상단으로 이동 (애니메이션 없음).
@@ -47,30 +46,6 @@ export default function Layout() {
 
   const clearSearchScrollMemory = () => {
     sessionStorage.removeItem('search_scroll_y')
-  }
-
-  const handleMobileDetailBack = () => {
-    const from = typeof routeState.from === 'string' ? routeState.from : ''
-    const source = routeState.source === 'ai'
-      ? 'ai'
-      : routeState.source === 'search'
-        ? 'search'
-        : 'other'
-
-    if (source === 'search') {
-      const target = from || '/'
-      if (target === '/') {
-        navigate(target)
-      } else {
-        navigate(target, { state: { restoreSearchScrollFromDetail: true } })
-      }
-      return
-    }
-    if (source === 'ai') {
-      navigate('/recommendation')
-      return
-    }
-    navigate('/')
   }
 
   const pageTitle = (() => {
@@ -102,21 +77,10 @@ export default function Layout() {
         style={{ transform: headerVisible ? 'translateY(0)' : 'translateY(-100%)' }}
       >
         <div className="flex items-center h-14 px-4 gap-3">
-          {/* 로고/뒤로가기(상세 전용) */}
-          {isDetailPage ? (
-            <button
-              type="button"
-              onClick={handleMobileDetailBack}
-              className="flex items-center shrink-0 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
-            >
-              <span className="mr-0.5">&lt;</span>
-              <span>검색결과</span>
-            </button>
-          ) : (
-            <Link to="/" className="flex items-center shrink-0">
-              <img src="/carizon_logo.png" alt="Carizon" className="h-7" />
-            </Link>
-          )}
+          {/* 로고 */}
+          <Link to="/" className="flex items-center shrink-0">
+            <img src="/carizon_logo.png" alt="Carizon" className="h-7" />
+          </Link>
           {/* 현재 페이지명 */}
           {pageTitle && (
             <span className="flex-1 text-center text-sm font-bold text-gray-800 truncate pr-14">

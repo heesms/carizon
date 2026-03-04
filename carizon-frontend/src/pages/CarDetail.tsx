@@ -335,21 +335,20 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
       <div className={`space-y-4 sm:space-y-6 animate-fade-in ${isModal ? 'px-3 sm:px-6 lg:px-7 pb-8' : ''}`}>
       {modalHeader}
 
-      {/* PC 비모달 뒤로가기 breadcrumb */}
+      {/* 뒤로가기 + 타이틀 */}
       {!isModal && (
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
               onClick={handleClose}
-              className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors group"
+              aria-label="뒤로가기"
+              className="shrink-0 h-9 w-9 inline-flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 active:bg-gray-300 transition-colors"
             >
-              <svg className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
               </svg>
-              목록으로
             </button>
-            <span className="text-gray-200 select-none">|</span>
             <span className="text-sm font-semibold text-gray-700 truncate">
               {[clean(car.maker), clean(car.model)].filter(Boolean).join(' ')}
               {clean(car.trim) && <span className="text-gray-400 font-normal ml-1">{car.trim}</span>}
