@@ -21,7 +21,19 @@ const TOGGLE_SORTS = [
 ] as const
 
 /** 로딩 중 표시할 스켈레톤 카드 */
-function CarCardSkeleton() {
+function CarCardSkeleton({ compact = false }: { compact?: boolean }) {
+  if (compact) {
+    return (
+      <div className="card overflow-hidden flex flex-row animate-pulse">
+        <div className="w-24 h-24 shrink-0 bg-gray-200" />
+        <div className="p-2.5 flex flex-col gap-2 flex-1 justify-center">
+          <div className="h-4 bg-gray-200 rounded w-3/4" />
+          <div className="h-3 bg-gray-200 rounded w-1/2" />
+          <div className="h-5 bg-gray-200 rounded w-2/5" />
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="card overflow-hidden flex flex-col animate-pulse">
       <div className="w-full aspect-[3/2] bg-gray-200" />
@@ -91,6 +103,9 @@ export default function Search() {
   const [totalElements, setTotal]     = useState<number | null>(null)
   const [loading, setLoading]         = useState(false)
   const [hasMore, setHasMore]         = useState(false)
+  const [viewMode, setViewMode]       = useState<'card' | 'list'>(() => {
+    return (localStorage.getItem('search_view_mode') as 'card' | 'list') ?? 'card'
+  })
   const [aiFallbackList, setAiFallbackList] = useState<CarListItem[]>([])
   const [aiFallbackMessage, setAiFallbackMessage] = useState('')
   const [aiFallbackLoading, setAiFallbackLoading] = useState(false)
@@ -357,8 +372,9 @@ export default function Search() {
           {loading && <div className="spinner shrink-0" />}
         </div>
 
-        {/* 정렬 탭 */}
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
+        {/* 정렬 탭 + 모바일 뷰 토글 */}
+        <div className="flex items-center gap-2">
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5 flex-1" style={{ scrollbarWidth: 'none' }}>
           {SIMPLE_SORTS.map(o => (
             <button
               key={o.value}
@@ -399,6 +415,32 @@ export default function Search() {
             )
           })}
         </div>
+        {/* 모바일 전용 뷰 토글 */}
+        <div className="sm:hidden flex shrink-0 gap-0.5 bg-gray-100 rounded-lg p-0.5">
+          <button
+            onClick={() => { setViewMode('card'); localStorage.setItem('search_view_mode', 'card') }}
+            className={`p-1.5 rounded-md transition-all ${viewMode === 'card' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400'}`}
+            aria-label="카드 뷰"
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/>
+              <rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>
+            </svg>
+          </button>
+          <button
+            onClick={() => { setViewMode('list'); localStorage.setItem('search_view_mode', 'list') }}
+            className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400'}`}
+            aria-label="리스트 뷰"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <rect x="3" y="4" width="5" height="5" rx="0.5" strokeWidth={1.5} fill="currentColor" stroke="none"/>
+              <path strokeLinecap="round" strokeWidth={1.5} d="M11 6.5h10M11 12h10M11 17.5h10"/>
+              <rect x="3" y="10" width="5" height="5" rx="0.5" strokeWidth={1.5} fill="currentColor" stroke="none"/>
+              <rect x="3" y="16" width="5" height="5" rx="0.5" strokeWidth={1.5} fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+        </div>
+        </div>{/* end 정렬 탭 + 뷰 토글 wrapper */}
 
         {/* 활성 필터 칩 */}
         {activeChips.length > 0 && (
@@ -446,9 +488,9 @@ export default function Search() {
       )}
 
       {/* 카드 그리드 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className={viewMode === 'list' ? 'flex flex-col gap-2 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-4' : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4'}>
         {loading && filteredVisibleList.length === 0
-          ? Array.from({ length: 6 }).map((_, i) => <CarCardSkeleton key={i} />)
+          ? Array.from({ length: 6 }).map((_, i) => <CarCardSkeleton key={i} compact={viewMode === 'list'} />)
           : filteredVisibleList.map((it, idx) => (
               <React.Fragment key={it.carId}>
                 <div className="animate-fade-in" style={{ animationDelay: `${Math.min(idx, 5) * 0.03}s` }}>
@@ -458,6 +500,7 @@ export default function Search() {
                     loadLikeOnMount={false}
                     initialLiked={likedCarIds.has(it.carId)}
                     savedItemCount={filteredVisibleList.length}
+                    compact={viewMode === 'list'}
                     onLikeChanged={(carId, liked) => {
                       setLikedCarIds((prev) => {
                         const next = new Set(prev)

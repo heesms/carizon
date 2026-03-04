@@ -43,6 +43,7 @@ type Props = {
   loadLikeOnMount?: boolean
   initialLiked?: boolean
   savedItemCount?: number
+  compact?: boolean
   onConfirmUnlike?: (carId: number) => boolean | Promise<boolean>
   onLikeChanged?: (carId: number, liked: boolean, count: number) => void
 }
@@ -54,6 +55,7 @@ export default function CarCard({
   loadLikeOnMount = true,
   initialLiked = false,
   savedItemCount,
+  compact = false,
   onConfirmUnlike,
   onLikeChanged,
 }: Props) {
@@ -148,7 +150,7 @@ export default function CarCard({
     <Link
       to={`/cars/${item.carId}`}
       state={state}
-      className="card-hover flex flex-col group overflow-hidden h-full"
+      className={`card-hover group overflow-hidden h-full ${compact ? 'flex flex-row' : 'flex flex-col'}`}
       onClick={() => {
         if (source === 'search') {
           sessionStorage.setItem('search_scroll_y', JSON.stringify({
@@ -160,8 +162,8 @@ export default function CarCard({
         trackSelectItem(item.carId, maker, model, source)
       }}
     >
-      {/* 이미지 - 4:3 비율 풀폭 */}
-      <div className="relative w-full aspect-[3/2] overflow-hidden bg-gray-50">
+      {/* 이미지 */}
+      <div className={`relative overflow-hidden bg-gray-50 shrink-0 ${compact ? 'w-24 h-24' : 'w-full aspect-[3/2]'}`}>
         {src ? (
           <img
             src={src}
@@ -176,7 +178,7 @@ export default function CarCard({
       </div>
 
       {/* 정보 */}
-      <div className="p-3 flex flex-col gap-1.5 flex-1 min-w-0">
+      <div className={`flex flex-col gap-1 flex-1 min-w-0 ${compact ? 'p-2.5 justify-center' : 'p-3 gap-1.5'}`}>
         {/* 차명 */}
         <h3 className="font-bold text-sm leading-snug text-gray-900 group-hover:text-brand-600 transition-colors line-clamp-1 truncate">
           {maker} {model}
@@ -184,16 +186,22 @@ export default function CarCard({
         </h3>
 
         {/* 스펙 태그 */}
-        <div className="flex flex-wrap gap-1 content-start">
-          {item.year    && <span className="badge badge-gray text-[11px]">{item.year}년식</span>}
-          {item.km != null && item.km > 0 && <span className="badge badge-gray text-[11px]">{item.km.toLocaleString()}km</span>}
-          {item.fuel    && <span className={`badge ${fuelBadge(item.fuel)} text-[11px]`}>{item.fuel}</span>}
-          {item.region  && <span className="badge badge-gray text-[11px]">{item.region.split(' ').slice(0, 2).join(' ')}</span>}
-        </div>
+        {compact ? (
+          <p className="text-[11px] text-gray-400 truncate">
+            {[item.year && `${item.year}년식`, item.km && item.km > 0 && `${item.km.toLocaleString()}km`, item.fuel].filter(Boolean).join(' · ')}
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-1 content-start">
+            {item.year    && <span className="badge badge-gray text-[11px]">{item.year}년식</span>}
+            {item.km != null && item.km > 0 && <span className="badge badge-gray text-[11px]">{item.km.toLocaleString()}km</span>}
+            {item.fuel    && <span className={`badge ${fuelBadge(item.fuel)} text-[11px]`}>{item.fuel}</span>}
+            {item.region  && <span className="badge badge-gray text-[11px]">{item.region.split(' ').slice(0, 2).join(' ')}</span>}
+          </div>
+        )}
 
         {/* 가격 + 좋아요 */}
         <div className="flex items-center justify-between">
-          <span className="text-lg font-black text-brand-600">{price}</span>
+          <span className={`font-black text-brand-600 ${compact ? 'text-base' : 'text-lg'}`}>{price}</span>
           <button
             type="button"
             onClick={onToggleLike}
