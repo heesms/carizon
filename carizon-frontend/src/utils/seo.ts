@@ -197,6 +197,8 @@ const removeJsonLd = () => {
 
 export type CarSeoData = {
   id: number | string
+  makerCode?: string | null
+  modelCode?: string | null
   maker?: string | null
   model?: string | null
   trim?: string | null
@@ -243,27 +245,51 @@ export const applyCarDetailSeo = (car: CarSeoData) => {
   setMetaProperty('twitter:image', imageUrl)
   setCanonical(canonical)
 
-  // JSON-LD Vehicle structured data
-  const jsonLd: Record<string, unknown> = {
+  // JSON-LD: Vehicle + BreadcrumbList
+  const origin = SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
+  const breadcrumbItems: Record<string, unknown>[] = [
+    { '@type': 'ListItem', position: 1, name: '홈', item: `${origin}/` },
+  ]
+  if (car.makerCode && car.maker) {
+    breadcrumbItems.push({ '@type': 'ListItem', position: 2, name: `${car.maker} 중고차`, item: `${origin}/cars/maker/${car.makerCode}` })
+    if (car.modelCode && car.model) {
+      breadcrumbItems.push({ '@type': 'ListItem', position: 3, name: `${car.model} 중고차`, item: `${origin}/cars/maker/${car.makerCode}/${car.modelCode}` })
+      breadcrumbItems.push({ '@type': 'ListItem', position: 4, name: name || '차량 상세', item: canonical })
+    } else {
+      breadcrumbItems.push({ '@type': 'ListItem', position: 3, name: name || '차량 상세', item: canonical })
+    }
+  } else {
+    breadcrumbItems.push({ '@type': 'ListItem', position: 2, name: name || '차량 상세', item: canonical })
+  }
+
+  const vehicleJsonLd: Record<string, unknown> = {
     '@context': 'https://schema.org',
     '@type': 'Vehicle',
     name: name || '중고차',
     url: canonical,
     ...(imageUrl !== DEFAULT_OG_IMAGE ? { image: imageUrl } : {}),
   }
-  if (car.maker) jsonLd.manufacturer = { '@type': 'Organization', name: car.maker }
-  if (car.model) jsonLd.model = car.model
-  if (car.year) jsonLd.modelDate = String(car.year)
-  if (car.mileage) jsonLd.mileageFromOdometer = { '@type': 'QuantitativeValue', value: car.mileage, unitCode: 'KMT' }
-  if (car.fuel) jsonLd.fuelType = car.fuel
+  if (car.maker) vehicleJsonLd.manufacturer = { '@type': 'Organization', name: car.maker }
+  if (car.model) vehicleJsonLd.model = car.model
+  if (car.year) vehicleJsonLd.modelDate = String(car.year)
+  if (car.mileage) vehicleJsonLd.mileageFromOdometer = { '@type': 'QuantitativeValue', value: car.mileage, unitCode: 'KMT' }
+  if (car.fuel) vehicleJsonLd.fuelType = car.fuel
   if (car.price) {
-    jsonLd.offers = {
+    vehicleJsonLd.offers = {
       '@type': 'Offer',
       priceCurrency: 'KRW',
       price: car.price * 10000,
       availability: 'https://schema.org/InStock',
       url: canonical,
     }
+  }
+
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      vehicleJsonLd,
+      { '@type': 'BreadcrumbList', itemListElement: breadcrumbItems },
+    ],
   }
   setJsonLd(jsonLd)
 }

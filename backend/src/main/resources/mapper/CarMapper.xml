@@ -69,6 +69,8 @@
   <!-- 상세: 플랫폼별 행 조회. 플랫폼별 순위 조인, 행별 이미지(car_image_url), 가격순 정렬 -->
   <select id="selectCarDetail" parameterType="long" resultType="com.carizon.dto.CarDetailRow">
     SELECT cm.car_id AS carId,
+           cm.maker_code AS makerCode,
+           cm.model_code AS modelCode,
            pc.maker_name, pc.model_group_name, pc.model_name, pc.trim_name,
            cm.year, cm.mileage, cm.displacement,
            COALESCE(pc.fuel, cm.fuel) AS fuel,

@@ -49,6 +49,8 @@ export type CarDetailData = {
   car: {
     carId: number
     carNo?: string
+    makerCode?: string
+    modelCode?: string
     maker: string
     model: string
     modelGroup?: string
@@ -62,7 +64,6 @@ export type CarDetailData = {
     bodyType?: string
     region?: string
     priceNew?: number
-    modelCode?: string
     representativeImageUrl?: string
     seatCount?: number
     myAccidentCnt?: number
@@ -144,6 +145,8 @@ export const getCarDetail = async (id: string | number): Promise<CarDetailData> 
   return {
     car: {
       carId: raw.carId,
+      makerCode: first.makerCode ?? first.maker_code,
+      modelCode: first.modelCode ?? first.model_code,
       maker: first.makerName ?? first.maker_name,
       model: first.modelName ?? first.model_name,
       modelGroup: first.modelGroupName ?? first.model_group_name,
@@ -156,7 +159,6 @@ export const getCarDetail = async (id: string | number): Promise<CarDetailData> 
       color: first.color,
       bodyType: first.bodyType ?? first.body_type,
       region: first.region,
-      modelCode: first.modelCode ?? first.model_code,
       representativeImageUrl: raw.representativeImageUrl ?? first.representativeImageUrl,
       seatCount: first.seatCount ?? first.seat_count ?? inferredSeatCount,
       myAccidentCnt: first.myAccidentCnt ?? first.my_accident_cnt ?? inferredMyAccidentCnt,

@@ -7,6 +7,7 @@ import AdSlot from '@/components/AdSlot'
 import { trackViewItem, trackPlatformLinkClick } from '@/lib/analytics'
 import { applyCarDetailSeo, clearCarDetailSeo } from '@/utils/seo'
 import CarImagePlaceholder from '@/components/CarImagePlaceholder'
+import { getMakerLogoUrl } from '@/api/seo'
 
 /** null / "null" / 빈문자열 → undefined 로 정리 */
 const clean = (v: any): string | undefined => {
@@ -226,6 +227,8 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
         if (!isModal) {
           applyCarDetailSeo({
             id,
+            makerCode: data.car.makerCode,
+            modelCode: data.car.modelCode,
             maker: data.car.maker,
             model: data.car.model,
             trim: data.car.trim,
@@ -334,6 +337,33 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
   return (
       <div className={`space-y-4 sm:space-y-6 animate-fade-in ${isModal ? 'px-3 sm:px-6 lg:px-7 pb-8' : ''}`}>
       {modalHeader}
+
+      {/* SEO 브레드크럼 (비모달 전용) */}
+      {!isModal && car.makerCode && (
+        <nav className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
+          <Link to="/" className="hover:text-blue-600">홈</Link>
+          <span>›</span>
+          {car.makerCode && (
+            <>
+              <Link to={`/cars/maker/${car.makerCode}`} className="hover:text-blue-600">
+                {clean(car.maker)} 중고차
+              </Link>
+              <span>›</span>
+            </>
+          )}
+          {car.makerCode && car.modelCode && clean(car.model) && (
+            <>
+              <Link to={`/cars/maker/${car.makerCode}/${car.modelCode}`} className="hover:text-blue-600">
+                {clean(car.model)} 중고차
+              </Link>
+              <span>›</span>
+            </>
+          )}
+          <span className="text-gray-600 truncate max-w-[120px]">
+            {[clean(car.year) ? `${car.year}년식` : '', clean(car.trim)].filter(Boolean).join(' ') || '차량 상세'}
+          </span>
+        </nav>
+      )}
 
       {/* 뒤로가기 + 타이틀 */}
       {!isModal && (
@@ -632,6 +662,48 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
               </div>
             </div>
           </div>
+
+          {/* 브랜드/모델 내부 링크 (SEO + UX) */}
+          {(car.makerCode || car.modelCode) && (
+            <div className="card p-4 sm:p-5">
+              <h3 className="text-sm font-bold text-gray-700 mb-3">관련 차량 바로가기</h3>
+              <div className="flex flex-wrap gap-2">
+                {car.makerCode && clean(car.maker) && (
+                  <Link
+                    to={`/cars/maker/${car.makerCode}`}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-sm text-gray-700 hover:text-blue-700"
+                  >
+                    <img
+                      src={getMakerLogoUrl(car.makerCode)}
+                      alt=""
+                      className="w-5 h-5 object-contain"
+                      onError={e => (e.currentTarget.style.display = 'none')}
+                    />
+                    {clean(car.maker)} 중고차 전체
+                  </Link>
+                )}
+                {car.makerCode && car.modelCode && clean(car.model) && (
+                  <Link
+                    to={`/cars/maker/${car.makerCode}/${car.modelCode}`}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-sm text-gray-700 hover:text-blue-700"
+                  >
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    {clean(car.model)} 중고차 전체
+                  </Link>
+                )}
+                {clean(car.bodyType) && (
+                  <Link
+                    to={`/cars/type/${encodeURIComponent(car.bodyType!)}`}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 hover:border-green-400 hover:bg-green-50 transition-all text-sm text-gray-700 hover:text-green-700"
+                  >
+                    🚙 {car.bodyType} 중고차 보기
+                  </Link>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

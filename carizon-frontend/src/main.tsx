@@ -16,6 +16,9 @@ import NotFound from './pages/NotFound'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminRoute from './components/AdminRoute'
+import MakerPage from './pages/MakerPage'
+import ModelPage from './pages/ModelPage'
+import BodyTypePage from './pages/BodyTypePage'
 import { applyRouteSeo } from './utils/seo'
 import { initGoogleAnalytics, trackPageView } from './utils/analytics'
 
@@ -46,6 +49,9 @@ function AppRoutes() {
           <Route index element={<Home />} />
           <Route path="search" element={<Search />} />
           <Route path="likes" element={<MyLikes />} />
+          <Route path="cars/maker/:makerCode" element={<MakerPage />} />
+          <Route path="cars/maker/:makerCode/:modelCode" element={<ModelPage />} />
+          <Route path="cars/type/:bodyType" element={<BodyTypePage />} />
           <Route path="cars/:id" element={<CarDetail />} />
           <Route path="recommendation" element={<Recommendation />} />
           <Route path="ai-ranking" element={<AiRankingBest />} />

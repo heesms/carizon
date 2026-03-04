@@ -4,6 +4,7 @@ import AdSlot from '@/components/AdSlot'
 import { getWeeklyBest } from '@/api/likes'
 import { trackSearch, trackQuickSearch, trackAiRecommendation, trackAiPromptClick, trackSelectItem } from '@/lib/analytics'
 import CarImagePlaceholder from '@/components/CarImagePlaceholder'
+import { getMakerLogoUrl } from '@/api/seo'
 
 const AI_QUICK_PROMPTS = [
   '500만원 이하 경제적인 소형차 추천해줘',
@@ -55,6 +56,49 @@ const QUICK_SEARCHES = [
   { label: 'SUV',   param: { bodyType: 'SUV' } },
   { label: '전기차', param: { fuel: '전기' } },
 ]
+
+// 브랜드 전용관 (국산/수입 구분)
+const BRAND_GALLERY = [
+  { makerCode: '101', name: '현대' },
+  { makerCode: '102', name: '기아' },
+  { makerCode: '104', name: '쌍용' },
+  { makerCode: '103', name: 'GM한국' },
+  { makerCode: '107', name: 'BMW' },
+  { makerCode: '108', name: '벤츠' },
+  { makerCode: '109', name: '아우디' },
+  { makerCode: '110', name: '폭스바겐' },
+  { makerCode: '111', name: '볼보' },
+  { makerCode: '112', name: '포드' },
+  { makerCode: '113', name: '렉서스' },
+  { makerCode: '114', name: '토요타' },
+]
+
+const BODY_TYPE_GALLERY = [
+  { bodyType: 'SUV', icon: '🚙', label: 'SUV' },
+  { bodyType: '세단', icon: '🚗', label: '세단' },
+  { bodyType: 'RV', icon: '🚐', label: 'RV' },
+  { bodyType: '해치백', icon: '🚗', label: '해치백' },
+  { bodyType: '쿠페', icon: '🏎️', label: '쿠페' },
+]
+
+function BrandLogo({ makerCode, name }: { makerCode: string; name: string }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) {
+    return (
+      <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 text-xs font-bold">
+        {name.slice(0, 2)}
+      </div>
+    )
+  }
+  return (
+    <img
+      src={getMakerLogoUrl(makerCode)}
+      alt={name}
+      className="w-12 h-12 object-contain"
+      onError={() => setFailed(true)}
+    />
+  )
+}
 
 const HISTORY_KEY = 'carizon_search_history'
 const MAX_HISTORY = 5
@@ -465,6 +509,54 @@ export default function Home() {
             </div>
           </div>
 
+        </div>
+      </section>
+
+      {/* ── 브랜드 전용관 ── */}
+      <section>
+        <div className="flex items-center justify-between mb-3 sm:mb-4">
+          <div>
+            <h2 className="section-title">브랜드 전용관</h2>
+            <p className="section-sub">브랜드별 중고차 매물을 한눈에</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-12 gap-2 sm:gap-3">
+          {BRAND_GALLERY.map(b => (
+            <Link
+              key={b.makerCode}
+              to={`/cars/maker/${b.makerCode}`}
+              className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white border border-gray-100 hover:border-blue-300 hover:shadow-sm transition-all group"
+            >
+              <BrandLogo makerCode={b.makerCode} name={b.name} />
+              <span className="text-xs text-gray-600 group-hover:text-blue-600 font-medium transition-colors text-center leading-tight">
+                {b.name}
+              </span>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* ── 차종별 전용관 ── */}
+      <section>
+        <div className="flex items-center justify-between mb-3 sm:mb-4">
+          <div>
+            <h2 className="section-title">차종별 전용관</h2>
+            <p className="section-sub">원하는 차종의 중고차를 바로 확인</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 sm:gap-3">
+          {BODY_TYPE_GALLERY.map(b => (
+            <Link
+              key={b.bodyType}
+              to={`/cars/type/${encodeURIComponent(b.bodyType)}`}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-gray-100 hover:border-green-300 hover:shadow-sm transition-all group"
+            >
+              <span className="text-xl">{b.icon}</span>
+              <span className="text-sm font-semibold text-gray-700 group-hover:text-green-700 transition-colors">
+                {b.label} 중고차
+              </span>
+            </Link>
+          ))}
         </div>
       </section>
 

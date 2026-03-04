@@ -76,6 +76,7 @@ public class SitemapService {
         Set<String> dedup = new LinkedHashSet<>();
         LocalDate today = LocalDate.now();
 
+        // 브랜드 전용관 페이지: /cars/maker/{makerCode}
         List<String> makers = jdbc.query("""
             SELECT cm.maker_code
             FROM car_master cm
@@ -91,12 +92,13 @@ public class SitemapService {
         """, (rs, i) -> rs.getString(1), clamp(makerLimit, 0, 200));
         for (String makerCode : makers) {
             if (makerCode == null || makerCode.isBlank()) continue;
-            String path = "/search?makerCode=" + urlEncode(makerCode.trim());
+            String path = "/cars/maker/" + urlEncode(makerCode.trim());
             if (dedup.add(path)) {
                 entries.add(new SitemapEntry(path, today.toString()));
             }
         }
 
+        // 차종 전용관 페이지: /cars/type/{bodyType}
         List<String> bodyTypes = jdbc.query("""
             SELECT cm.body_type
             FROM car_master cm
@@ -110,27 +112,30 @@ public class SitemapService {
         """, (rs, i) -> rs.getString(1), clamp(bodyTypeLimit, 0, 200));
         for (String bodyType : bodyTypes) {
             if (bodyType == null || bodyType.isBlank()) continue;
-            String path = "/search?bodyType=" + urlEncode(bodyType.trim());
+            String path = "/cars/type/" + urlEncode(bodyType.trim());
             if (dedup.add(path)) {
                 entries.add(new SitemapEntry(path, today.toString()));
             }
         }
 
-        List<String> models = jdbc.query("""
-            SELECT cm.model_code
-            FROM car_master cm
-            LEFT JOIN cz_model mo ON mo.model_code = cm.model_code
-            WHERE cm.adv_status = 'ONSALE'
-              AND cm.model_code IS NOT NULL
-              AND TRIM(cm.model_code) <> ''
-              AND IFNULL(TRIM(mo.model_name), '') <> ''
-            GROUP BY cm.model_code
+        // 모델 전용관 페이지: /cars/maker/{makerCode}/{modelCode}
+        // embed_text3 있는 모델만 포함 (콘텐츠가 있는 페이지만 sitemap에 노출)
+        List<String[]> models = jdbc.query("""
+            SELECT mo.maker_code, mo.model_code
+            FROM cz_model mo
+            INNER JOIN cz_model_embedding_source es ON es.model_code = mo.model_code
+                AND es.embed_text_3 IS NOT NULL AND TRIM(es.embed_text_3) <> ''
+            INNER JOIN car_master cm ON cm.model_code = mo.model_code
+                AND cm.adv_status = 'ONSALE'
+            WHERE mo.maker_code IS NOT NULL AND TRIM(mo.maker_code) <> ''
+              AND mo.maker_code <> '106'
+            GROUP BY mo.maker_code, mo.model_code
             ORDER BY COUNT(*) DESC
             LIMIT ?
-        """, (rs, i) -> rs.getString(1), clamp(modelLimit, 0, 500));
-        for (String modelCode : models) {
-            if (modelCode == null || modelCode.isBlank()) continue;
-            String path = "/search?modelCode=" + urlEncode(modelCode.trim());
+        """, (rs, i) -> new String[]{rs.getString(1), rs.getString(2)}, clamp(modelLimit, 0, 500));
+        for (String[] row : models) {
+            if (row[0] == null || row[0].isBlank() || row[1] == null || row[1].isBlank()) continue;
+            String path = "/cars/maker/" + urlEncode(row[0].trim()) + "/" + urlEncode(row[1].trim());
             if (dedup.add(path)) {
                 entries.add(new SitemapEntry(path, today.toString()));
             }

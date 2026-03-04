@@ -572,6 +572,8 @@ public class CarTextConverterService {
         
         CarDetailRow car = new CarDetailRow(
             ((Number) carMap.get("carId")).longValue(),
+            (String) carMap.get("maker_code"),
+            (String) carMap.get("model_code"),
             (String) carMap.get("maker_name"),
             (String) carMap.get("model_group_name"),
             (String) carMap.get("model_name"),
