@@ -8,19 +8,23 @@ import { getMyLikes } from '@/api/likes'
 import { getRecommendations } from '@/api/recommendations'
 import { trackFilterApply, trackSearch } from '@/lib/analytics'
 
-const SORT_OPTIONS = [
+const SIMPLE_SORTS = [
   { value: '', label: '추천순' },
   { value: 'RECENT', label: '최신순' },
-  { value: 'LOW_PRICE', label: '가격 낮은순' },
-  { value: 'LOW_KM', label: '주행 적은순' },
-  { value: 'NEW_YEAR', label: '신형순' },
-]
+] as const
+
+// 두 번 클릭 시 반전되는 정렬: [기본값, 반전값]
+const TOGGLE_SORTS = [
+  { a: 'LOW_PRICE',  b: 'HIGH_PRICE', labelA: '가격 낮은순', labelB: '가격 높은순' },
+  { a: 'LOW_KM',    b: 'HIGH_KM',    labelA: '주행 적은순', labelB: '주행 많은순' },
+  { a: 'NEW_YEAR',  b: 'OLD_YEAR',   labelA: '신형순',       labelB: '구형순' },
+] as const
 
 /** 로딩 중 표시할 스켈레톤 카드 */
 function CarCardSkeleton() {
   return (
     <div className="card overflow-hidden flex flex-col animate-pulse">
-      <div className="w-full aspect-[4/3] bg-gray-200" />
+      <div className="w-full aspect-[3/2] bg-gray-200" />
       <div className="p-3 flex flex-col gap-2 flex-1">
         <div className="h-4 bg-gray-200 rounded w-3/4" />
         <div className="flex gap-1 flex-wrap">
@@ -315,7 +319,7 @@ export default function Search() {
 
         {/* 정렬 탭 */}
         <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
-          {SORT_OPTIONS.map(o => (
+          {SIMPLE_SORTS.map(o => (
             <button
               key={o.value}
               onClick={() => setSort(o.value)}
@@ -328,6 +332,32 @@ export default function Search() {
               {o.label}
             </button>
           ))}
+          {TOGGLE_SORTS.map(o => {
+            const isA = currentSort === o.a
+            const isB = currentSort === o.b
+            const isActive = isA || isB
+            const label = isB ? o.labelB : o.labelA
+            const nextSort = isA ? o.b : isB ? o.a : o.a
+            return (
+              <button
+                key={o.a}
+                onClick={() => setSort(nextSort)}
+                className={`whitespace-nowrap inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all shrink-0 ${
+                  isActive
+                    ? 'bg-brand-600 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {label}
+                {isActive && (
+                  <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
+                      d={isA ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'} />
+                  </svg>
+                )}
+              </button>
+            )
+          })}
         </div>
 
         {/* 활성 필터 칩 */}

@@ -611,17 +611,17 @@ public class ElasticsearchCarSearchService {
     private String getSortField(Map<String, Object> params) {
         String sort = params.containsKey("sort") ? String.valueOf(params.get("sort")) : null;
         if (sort == null || sort.isEmpty() || "null".equals(sort)) return "random";
-        if ("LOW_PRICE".equals(sort)) return "priceMin";
-        if ("LOW_KM".equals(sort)) return "km";
-        if ("NEW_YEAR".equals(sort)) return "year";
+        if ("LOW_PRICE".equals(sort) || "HIGH_PRICE".equals(sort)) return "priceMin";
+        if ("LOW_KM".equals(sort) || "HIGH_KM".equals(sort)) return "km";
+        if ("NEW_YEAR".equals(sort) || "OLD_YEAR".equals(sort)) return "year";
         if ("RECENT".equals(sort)) return "priceUpdatedAt";
         return "random";
     }
 
     private SortOrder getSortOrder(Map<String, Object> params) {
         String sort = params.containsKey("sort") ? String.valueOf(params.get("sort")) : null;
-        if ("NEW_YEAR".equals(sort)) return SortOrder.Desc;
-        if ("LOW_PRICE".equals(sort) || "LOW_KM".equals(sort)) return SortOrder.Asc;
+        if ("NEW_YEAR".equals(sort) || "HIGH_PRICE".equals(sort) || "HIGH_KM".equals(sort)) return SortOrder.Desc;
+        if ("LOW_PRICE".equals(sort) || "LOW_KM".equals(sort) || "OLD_YEAR".equals(sort)) return SortOrder.Asc;
         if ("RECENT".equals(sort)) return SortOrder.Desc;
         return SortOrder.Desc;
     }

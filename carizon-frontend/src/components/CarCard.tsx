@@ -158,7 +158,7 @@ export default function CarCard({
       }}
     >
       {/* 이미지 - 4:3 비율 풀폭 */}
-      <div className="relative w-full aspect-[4/3] overflow-hidden bg-gray-50">
+      <div className="relative w-full aspect-[3/2] overflow-hidden bg-gray-50">
         {src ? (
           <img
             src={src}

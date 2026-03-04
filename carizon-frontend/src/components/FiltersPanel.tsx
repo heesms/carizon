@@ -1201,7 +1201,7 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
   }
 
   const hasFilters = Object.entries(value).some(([k, v]) =>
-    k !== 'page' && k !== 'size' && v !== undefined && v !== ''
+    k !== 'page' && k !== 'size' && k !== 'sort' && v !== undefined && v !== ''
   )
 
   const switchToStructuredMode = () => {
@@ -1262,7 +1262,8 @@ export default function FiltersPanel({ value, onChange, onSearch }: Props) {
     setTextQueryDraft('')
     setSelectedModelGroupByCode({})
     setSelectedModelNameByCode({})
-    onChange({})
+    const sortValue = (value as Record<string, string>).sort
+    onChange(sortValue ? { sort: sortValue } : {})
   }
 
   const selectedMaker = makers.find(m => m.code === makerCode)
