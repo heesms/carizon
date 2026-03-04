@@ -104,7 +104,7 @@ export default function Search() {
   const [loading, setLoading]         = useState(false)
   const [hasMore, setHasMore]         = useState(false)
   const [viewMode, setViewMode]       = useState<'card' | 'list'>(() => {
-    return (localStorage.getItem('search_view_mode') as 'card' | 'list') ?? 'card'
+    return (sessionStorage.getItem('search_view_mode') as 'card' | 'list') ?? 'card'
   })
   const [aiFallbackList, setAiFallbackList] = useState<CarListItem[]>([])
   const [aiFallbackMessage, setAiFallbackMessage] = useState('')
@@ -369,12 +369,43 @@ export default function Search() {
               </p>
             )}
           </div>
-          {loading && <div className="spinner shrink-0" />}
+          <div className="flex items-center gap-2 shrink-0">
+            {loading && <div className="spinner" />}
+            {/* 모바일 전용 뷰 토글 */}
+            <div className="sm:hidden flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+              <button
+                onClick={() => { setViewMode('card'); sessionStorage.setItem('search_view_mode', 'card') }}
+                className={`p-1.5 rounded-md transition-all ${viewMode === 'card' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400'}`}
+                aria-label="카드 뷰"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  {/* 이미지 영역 */}
+                  <rect x="3" y="3" width="18" height="11" rx="1.5"/>
+                  {/* 텍스트 라인 */}
+                  <rect x="3" y="16.5" width="13" height="2" rx="1"/>
+                  <rect x="3" y="20" width="9" height="2" rx="1"/>
+                </svg>
+              </button>
+              <button
+                onClick={() => { setViewMode('list'); sessionStorage.setItem('search_view_mode', 'list') }}
+                className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400'}`}
+                aria-label="리스트 뷰"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="3" y="3" width="6" height="6" rx="1"/>
+                  <rect x="11" y="4.5" width="10" height="2" rx="1"/>
+                  <rect x="11" y="7" width="7" height="1.5" rx="0.75"/>
+                  <rect x="3" y="12" width="6" height="6" rx="1"/>
+                  <rect x="11" y="13.5" width="10" height="2" rx="1"/>
+                  <rect x="11" y="16" width="7" height="1.5" rx="0.75"/>
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* 정렬 탭 + 모바일 뷰 토글 */}
-        <div className="flex items-center gap-2">
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5 flex-1" style={{ scrollbarWidth: 'none' }}>
+        {/* 정렬 탭 */}
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
           {SIMPLE_SORTS.map(o => (
             <button
               key={o.value}
@@ -415,32 +446,6 @@ export default function Search() {
             )
           })}
         </div>
-        {/* 모바일 전용 뷰 토글 */}
-        <div className="sm:hidden flex shrink-0 gap-0.5 bg-gray-100 rounded-lg p-0.5">
-          <button
-            onClick={() => { setViewMode('card'); localStorage.setItem('search_view_mode', 'card') }}
-            className={`p-1.5 rounded-md transition-all ${viewMode === 'card' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400'}`}
-            aria-label="카드 뷰"
-          >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-              <rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/>
-              <rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>
-            </svg>
-          </button>
-          <button
-            onClick={() => { setViewMode('list'); localStorage.setItem('search_view_mode', 'list') }}
-            className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400'}`}
-            aria-label="리스트 뷰"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <rect x="3" y="4" width="5" height="5" rx="0.5" strokeWidth={1.5} fill="currentColor" stroke="none"/>
-              <path strokeLinecap="round" strokeWidth={1.5} d="M11 6.5h10M11 12h10M11 17.5h10"/>
-              <rect x="3" y="10" width="5" height="5" rx="0.5" strokeWidth={1.5} fill="currentColor" stroke="none"/>
-              <rect x="3" y="16" width="5" height="5" rx="0.5" strokeWidth={1.5} fill="currentColor" stroke="none"/>
-            </svg>
-          </button>
-        </div>
-        </div>{/* end 정렬 탭 + 뷰 토글 wrapper */}
 
         {/* 활성 필터 칩 */}
         {activeChips.length > 0 && (
