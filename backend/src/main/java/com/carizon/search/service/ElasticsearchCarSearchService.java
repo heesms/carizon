@@ -863,7 +863,17 @@ public class ElasticsearchCarSearchService {
         if (query.isEmpty()) return null;
 
         List<Query> should = new ArrayList<>();
-        should.add(QueryBuilders.multiMatch(m -> m.query(query).fields(TEXT_SEARCH_FIELDS)));
+        // 정확 매치 (높은 점수)
+        should.add(QueryBuilders.multiMatch(m -> m.query(query).fields(TEXT_SEARCH_FIELDS).boost(2.0f)));
+        // 오타 허용 fuzzy 매치 (소렌토→쏘렌토 등 1글자 차이 교정)
+        should.add(QueryBuilders.multiMatch(m -> m
+            .query(query)
+            .fields(TEXT_SEARCH_FIELDS)
+            .fuzziness("AUTO")
+            .prefixLength(0)
+            .maxExpansions(10)
+            .boost(1.0f)
+        ));
         for (String field : TEXT_SEARCH_WILDCARD_FIELDS) {
             should.add(QueryBuilders.wildcard(w -> w.field(field).value("*" + query + "*").caseInsensitive(true)));
         }
@@ -881,7 +891,9 @@ public class ElasticsearchCarSearchService {
         if (query.isEmpty()) return Map.of();
 
         List<Map<String, Object>> should = new ArrayList<>();
-        should.add(Map.of("multi_match", Map.of("query", query, "fields", TEXT_SEARCH_FIELDS)));
+        should.add(Map.of("multi_match", Map.of("query", query, "fields", TEXT_SEARCH_FIELDS, "boost", 2.0)));
+        should.add(Map.of("multi_match", Map.of("query", query, "fields", TEXT_SEARCH_FIELDS,
+            "fuzziness", "AUTO", "prefix_length", 0, "max_expansions", 10, "boost", 1.0)));
         for (String field : TEXT_SEARCH_WILDCARD_FIELDS) {
             should.add(Map.of(
                 "wildcard", Map.of(
