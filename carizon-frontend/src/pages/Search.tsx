@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react'
+import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { useSearchParams, useLocation, useNavigationType } from 'react-router-dom'
 import FiltersPanel from '@/components/FiltersPanel'
 import CarCard from '@/components/CarCard'
@@ -86,17 +86,21 @@ export default function Search() {
   const [sp, setSp] = useSearchParams()
   const location = useLocation()
   const navigationType = useNavigationType()
-  const [list, setList]               = useState<CarListItem[]>([])
+  const [items, setItems]             = useState<CarListItem[]>([])
   const [likedCarIds, setLikedCarIds] = useState<Set<number>>(() => new Set())
-  const [page, setPage]               = useState(0)
-  const [totalPages, setTotalPages]   = useState(0)
   const [totalElements, setTotal]     = useState<number | null>(null)
   const [loading, setLoading]         = useState(false)
+  const [hasMore, setHasMore]         = useState(false)
   const [aiFallbackList, setAiFallbackList] = useState<CarListItem[]>([])
   const [aiFallbackMessage, setAiFallbackMessage] = useState('')
   const [aiFallbackLoading, setAiFallbackLoading] = useState(false)
   const aiRequestedQueryRef = useRef('')
-  const savedScrollRef = useRef<number | null>(null)
+  const savedScrollRef      = useRef<number | null>(null)
+  const busyRef             = useRef(false)
+  const nextPageRef         = useRef(0)
+  const sentinelRef         = useRef<HTMLDivElement>(null)
+  const paramsRef           = useRef<Record<string, string>>({})
+  paramsRef.current = useMemo(() => Object.fromEntries(sp.entries()), [sp])
 
   // 뒤로가기 시 스크롤 위치 복원
   useEffect(() => {
@@ -123,15 +127,11 @@ export default function Search() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const params = useMemo(() => Object.fromEntries(sp.entries()), [sp])
+  const params = paramsRef.current
   const textQuery = useMemo(() => String(sp.get('q') ?? '').trim(), [sp])
-  const currentPage = useMemo(() => {
-    const raw = Number(sp.get('page') ?? 0)
-    return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 0
-  }, [sp])
   const visibleList = useMemo(
-    () => (list.length > 0 ? list : aiFallbackList),
-    [list, aiFallbackList]
+    () => (items.length > 0 ? items : aiFallbackList),
+    [items, aiFallbackList]
   )
   const filteredVisibleList = useMemo(
     () => visibleList.filter((item) => {
@@ -172,22 +172,50 @@ export default function Search() {
     return () => { cancelled = true }
   }, [])
 
-  const fetchPage = async (p = 0) => {
+  const loadPage = useCallback(async (pageNum: number, reset: boolean) => {
+    if (busyRef.current) return
+    busyRef.current = true
     setLoading(true)
     try {
-      const res = await searchCars({ ...params, page: p, size: 30 })
-      setList(res?.content ?? [])
-      setTotalPages(res?.totalPages ?? 0)
+      const res = await searchCars({ ...paramsRef.current, page: pageNum, size: 30 })
+      const content = res?.content ?? []
+      if (reset) setItems(content)
+      else setItems(prev => [...prev, ...content])
+      const tp = res?.totalPages ?? 0
+      setHasMore(pageNum + 1 < tp)
+      nextPageRef.current = pageNum + 1
       setTotal(res?.totalElements ?? 0)
-      setPage(p)
     } catch {
-      setList([])
+      if (reset) setItems([])
     } finally {
       setLoading(false)
+      busyRef.current = false
     }
-  }
+  }, [])
 
-  useEffect(() => { fetchPage(currentPage) }, [sp.toString()])
+  // 필터/정렬 변경 시 초기화 후 첫 페이지 로드
+  useEffect(() => {
+    setItems([])
+    setHasMore(false)
+    nextPageRef.current = 0
+    loadPage(0, true)
+  }, [sp.toString()]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 무한 스크롤: sentinel이 뷰포트에 들어오면 다음 페이지 로드
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasMore && !busyRef.current) {
+          loadPage(nextPageRef.current, false)
+        }
+      },
+      { rootMargin: '400px' }
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasMore, loadPage])
 
   useEffect(() => {
     setAiFallbackList([])
@@ -199,7 +227,7 @@ export default function Search() {
   useEffect(() => {
     if (loading) return
     if (!textQuery) return
-    if (list.length > 0) return
+    if (items.length > 0) return
     if (aiRequestedQueryRef.current === textQuery) return
 
     let cancelled = false
@@ -244,7 +272,7 @@ export default function Search() {
     return () => {
       cancelled = true
     }
-  }, [loading, textQuery, list.length])
+  }, [loading, textQuery, items.length])
 
   const setFilters = (v: Record<string, any>) => {
     if (v.q) trackSearch(v.q)
@@ -253,45 +281,26 @@ export default function Search() {
     Object.entries(v).forEach(([k, val]) => {
       if (val !== undefined && val !== null && val !== '') usp.set(k, String(val))
     })
-    usp.set('page', '0')
     setSp(usp)
   }
 
   const removeChip = (removeKeys: string[]) => {
     const usp = new URLSearchParams(sp)
     removeKeys.forEach(k => usp.delete(k))
-    usp.set('page', '0')
     setSp(usp)
   }
 
   const clearAllFilters = () => setSp(new URLSearchParams())
 
-  // 페이지 번호 배열
-  const pageNums = (() => {
-    const half = 2
-    let start = Math.max(0, page - half)
-    let end   = Math.min(totalPages - 1, start + 4)
-    if (end - start < 4) start = Math.max(0, end - 4)
-    return Array.from({ length: end - start + 1 }, (_, i) => start + i)
-  })()
-
-  const goPage = (p: number) => {
-    const usp = new URLSearchParams(sp)
-    usp.set('page', String(p))
-    setSp(usp)
-    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
-  }
-
   const setSort = (sort: string) => {
     const usp = new URLSearchParams(sp)
     if (sort) usp.set('sort', sort)
     else usp.delete('sort')
-    usp.set('page', '0')
     setSp(usp)
   }
 
   const currentSort = sp.get('sort') ?? ''
-  const isTextFallbackMode = !loading && list.length === 0 && textQuery.length > 0
+  const isTextFallbackMode = !loading && items.length === 0 && textQuery.length > 0
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -407,11 +416,11 @@ export default function Search() {
 
       {/* 카드 그리드 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {loading
+        {loading && filteredVisibleList.length === 0
           ? Array.from({ length: 6 }).map((_, i) => <CarCardSkeleton key={i} />)
           : filteredVisibleList.map((it, idx) => (
               <React.Fragment key={it.carId}>
-                <div className="animate-fade-in" style={{ animationDelay: `${idx * 0.03}s` }}>
+                <div className="animate-fade-in" style={{ animationDelay: `${Math.min(idx, 5) * 0.03}s` }}>
                   <CarCard
                     item={it}
                     showLikeCount={false}
@@ -451,60 +460,16 @@ export default function Search() {
         </div>
       )}
 
-      {/* 페이지네이션 */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-1 pt-4 flex-wrap">
-          <button
-            onClick={() => goPage(0)}
-            disabled={page === 0}
-            className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition hidden sm:block"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-            </svg>
-          </button>
-          <button
-            onClick={() => goPage(Math.max(0, page - 1))}
-            disabled={page === 0}
-            className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          {pageNums.map(p => (
-            <button
-              key={p}
-              onClick={() => goPage(p)}
-              className={`min-w-[2.25rem] h-9 rounded-lg text-sm font-semibold transition-all ${
-                p === page
-                  ? 'bg-brand-600 text-white shadow-sm'
-                  : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              {p + 1}
-            </button>
-          ))}
-          <button
-            onClick={() => goPage(Math.min(totalPages - 1, page + 1))}
-            disabled={page >= totalPages - 1}
-            className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-          <button
-            onClick={() => goPage(totalPages - 1)}
-            disabled={page >= totalPages - 1}
-            className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition hidden sm:block"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-      )}
+      {/* 무한 스크롤 sentinel / 로딩 인디케이터 */}
+      <div ref={sentinelRef} className="flex justify-center py-6">
+        {loading && filteredVisibleList.length > 0 && (
+          <div className="flex items-center gap-2 text-sm text-gray-400">
+            <div className="spinner" />
+            <span>불러오는 중...</span>
+          </div>
+        )}
+      </div>
+
     </div>
   )
 }
