@@ -146,7 +146,7 @@ export default function CarCard({
     <Link
       to={`/cars/${item.carId}`}
       state={state}
-      className="card-hover flex flex-row sm:flex-col group overflow-hidden h-full"
+      className="card-hover flex flex-col group overflow-hidden h-full"
       onClick={() => {
         if (source === 'search') {
           sessionStorage.setItem('search_scroll_y', JSON.stringify({
@@ -158,7 +158,7 @@ export default function CarCard({
       }}
     >
       {/* 이미지 - 모바일: 정사각형 고정, sm+: 4:3 비율 */}
-      <div className="relative w-28 h-28 shrink-0 sm:w-full sm:h-auto sm:aspect-[4/3] overflow-hidden bg-gray-50">
+      <div className="relative w-full aspect-[4/3] overflow-hidden bg-gray-50">
         {src ? (
           <img
             src={src}
@@ -173,9 +173,9 @@ export default function CarCard({
       </div>
 
       {/* 정보 */}
-      <div className="p-3 flex flex-col gap-1.5 flex-1 min-w-0">
+      <div className="p-2.5 sm:p-3 flex flex-col gap-1.5 flex-1 min-w-0">
         {/* 차명 */}
-        <h3 className="font-bold text-sm leading-snug text-gray-900 group-hover:text-brand-600 transition-colors line-clamp-1 truncate">
+        <h3 className="font-bold text-xs sm:text-sm leading-snug text-gray-900 group-hover:text-brand-600 transition-colors line-clamp-1 truncate">
           {maker} {model}
           {trim ? <span className="font-normal text-gray-500 ml-1 text-xs">{trim}</span> : null}
         </h3>
@@ -190,7 +190,7 @@ export default function CarCard({
 
         {/* 가격 + 좋아요 */}
         <div className="flex items-center justify-between">
-          <span className="text-lg font-black text-brand-600">{price}</span>
+          <span className="text-base sm:text-lg font-black text-brand-600">{price}</span>
           <button
             type="button"
             onClick={onToggleLike}
