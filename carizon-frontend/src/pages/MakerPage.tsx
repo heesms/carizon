@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getMakers, type CodeItem } from '@/api/codes'
-import { getMakerLogoUrl } from '@/api/seo'
+import { getMakerLogoUrl, getModelsByMaker, type ModelSeoData } from '@/api/seo'
 import SeoCarsSection from '@/components/SeoCarsSection'
 import { makerSlugToCode, makerSlugToDisplayName } from '@/utils/slugs'
 
@@ -26,11 +26,49 @@ function MakerLogo({ makerCode, makerName }: { makerCode: string; makerName: str
   )
 }
 
+function ModelCard({ model, makerSlug }: { model: ModelSeoData; makerSlug: string }) {
+  const [imgFailed, setImgFailed] = useState(false)
+  const imgSrc = model.imageUrl || `/image/car/model/${model.modelCode}.webp`
+
+  return (
+    <Link
+      to={`/cars/maker/${makerSlug}/${encodeURIComponent(model.modelCode)}`}
+      className="group flex flex-col bg-white border border-gray-100 rounded-2xl overflow-hidden hover:shadow-md hover:border-blue-100 transition-all"
+    >
+      {/* 모델 이미지 */}
+      <div className="aspect-[16/9] bg-gray-50 overflow-hidden">
+        {!imgFailed ? (
+          <img
+            src={imgSrc}
+            alt={model.modelName}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-gray-300">
+            <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4-4 4 4 4-8 4 8" />
+            </svg>
+          </div>
+        )}
+      </div>
+      {/* 모델 정보 */}
+      <div className="px-3 py-2.5">
+        <p className="font-semibold text-gray-900 text-sm truncate">{model.modelName}</p>
+        {model.carCount > 0 && (
+          <p className="text-xs text-gray-400 mt-0.5">{model.carCount.toLocaleString()}대 매물</p>
+        )}
+      </div>
+    </Link>
+  )
+}
+
 export default function MakerPage() {
   const { makerSlug = '' } = useParams<{ makerSlug: string }>()
   const makerCode = makerSlugToCode(makerSlug) ?? ''
   const [maker, setMaker] = useState<CodeItem | null>(null)
   const [loading, setLoading] = useState(true)
+  const [models, setModels] = useState<ModelSeoData[]>([])
 
   useEffect(() => {
     if (!makerCode) { setLoading(false); return }
@@ -41,6 +79,13 @@ export default function MakerPage() {
       })
       .catch(() => setMaker(null))
       .finally(() => setLoading(false))
+  }, [makerCode])
+
+  useEffect(() => {
+    if (!makerCode) return
+    getModelsByMaker(makerCode)
+      .then(setModels)
+      .catch(() => setModels([]))
   }, [makerCode])
 
   const makerName = maker?.name ?? makerSlugToDisplayName(makerSlug) ?? ''
@@ -146,7 +191,21 @@ export default function MakerPage() {
         </div>
       </div>
 
-      {/* ── 차량 목록 ── */}
+      {/* ── 모델별 전용관 ── */}
+      {models.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold text-gray-800 mb-3">
+            {makerName} 모델별 보기
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            {models.map(model => (
+              <ModelCard key={model.modelCode} model={model} makerSlug={makerSlug} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 전체 차량 목록 ── */}
       <h2 className="text-lg font-semibold text-gray-800 mb-4">
         {makerName} 중고차 매물
       </h2>

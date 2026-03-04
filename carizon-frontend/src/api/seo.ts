@@ -30,3 +30,7 @@ export const getModelSeo = (modelCode: string): Promise<ModelSeoData> => {
 
 export const getMakerLogoUrl = (makerCode: string): string =>
   `https://img.kbchachacha.com/IMG/statics/maker/o/maker${makerCode}.png`
+
+export const getModelsByMaker = (makerCode: string, limit = 30): Promise<ModelSeoData[]> =>
+  fetch(`/api/seo/models?makerCode=${encodeURIComponent(makerCode)}&limit=${limit}`)
+    .then(j)
