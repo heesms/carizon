@@ -57,20 +57,24 @@ const QUICK_SEARCHES = [
   { label: '전기차', param: { fuel: '전기' } },
 ]
 
-// 브랜드 전용관 (국산/수입 구분)
+// 브랜드 전용관
 const BRAND_GALLERY = [
-  { makerCode: '101', slug: 'hyundai', name: 'HYUNDAI' },
-  { makerCode: '102', slug: 'kia', name: 'KIA' },
-  { makerCode: '104', slug: 'kg-mobility', name: 'KG모빌리티' },
-  { makerCode: '103', slug: 'chevrolet', name: '쉐보레' },
-  { makerCode: '189', slug: 'genesis', name: 'GENESIS' },
-  { makerCode: '107', slug: 'bmw', name: 'BMW' },
-  { makerCode: '108', slug: 'mercedes-benz', name: '벤츠' },
-  { makerCode: '109', slug: 'audi', name: '아우디' },
-  { makerCode: '110', slug: 'volkswagen', name: '폭스바겐' },
-  { makerCode: '111', slug: 'volvo', name: '볼보' },
-  { makerCode: '113', slug: 'lexus', name: '렉서스' },
-  { makerCode: '114', slug: 'toyota', name: '토요타' },
+  { makerCode: '101', slug: 'hyundai',       name: 'HYUNDAI' },
+  { makerCode: '102', slug: 'kia',           name: 'KIA' },
+  { makerCode: '103', slug: 'chevrolet',     name: 'CHEVROLET' },
+  { makerCode: '189', slug: 'genesis',       name: 'GENESIS' },
+  { makerCode: '104', slug: 'kg-mobility',   name: 'KG Mobility' },
+  { makerCode: '105', slug: 'renault',       name: 'RENAULT' },
+  { makerCode: '108', slug: 'mercedes-benz', name: 'Mercedes-Benz' },
+  { makerCode: '107', slug: 'bmw',           name: 'BMW' },
+  { makerCode: '109', slug: 'audi',          name: 'AUDI' },
+  { makerCode: '110', slug: 'volkswagen',    name: 'Volkswagen' },
+  { makerCode: '120', slug: 'mini',          name: 'MINI' },
+  { makerCode: '117', slug: 'porsche',       name: 'Porsche' },
+  { makerCode: '118', slug: 'land-rover',    name: 'Land Rover' },
+  { makerCode: '135', slug: 'tesla',         name: 'Tesla' },
+  { makerCode: '113', slug: 'lexus',         name: 'LEXUS' },
+  { makerCode: '111', slug: 'volvo',         name: 'Volvo' },
 ]
 
 const BODY_TYPE_GALLERY = [

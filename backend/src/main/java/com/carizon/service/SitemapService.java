@@ -39,6 +39,7 @@ public class SitemapService {
         java.util.Map.entry("120", "mini"),
         java.util.Map.entry("118", "land-rover"),
         java.util.Map.entry("121", "jeep"),
+        java.util.Map.entry("135", "tesla"),
         java.util.Map.entry("189", "genesis")
     );
 
