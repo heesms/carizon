@@ -80,11 +80,11 @@ const BRAND_GALLERY = [
 const BODY_TYPE_GALLERY = [
   { slug: 'micro',    icon: '🚗',  label: '경차' },
   { slug: 'small',    icon: '🚕',  label: '소형' },
-  { slug: 'compact',  icon: '🚙',  label: '준중형' },
+  { slug: 'compact',  icon: '🛻',  label: '준중형' },
   { slug: 'midsize',  icon: '🚘',  label: '중형' },
   { slug: 'fullsize', icon: '🚌',  label: '대형' },
   { slug: 'rv',       icon: '🚐',  label: 'RV' },
-  { slug: 'suv',      icon: '🛻',  label: 'SUV' },
+  { slug: 'suv',      icon: '🚙',  label: 'SUV' },
   { slug: 'sports',   icon: '🏎️', label: '스포츠카' },
   { slug: 'cargo',    icon: '🚚',  label: '화물' },
 ]
