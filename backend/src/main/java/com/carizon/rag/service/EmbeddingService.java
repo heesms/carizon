@@ -76,20 +76,87 @@ public class EmbeddingService implements EmbeddingServiceInterface {
     }
     
     /**
+     * 텍스트 목록을 배치로 벡터 임베딩으로 변환 (HTTP 왕복 최소화)
+     */
+    @Override
+    public List<float[]> generateEmbeddingsBatch(List<String> texts) throws IOException {
+        if (texts == null || texts.isEmpty()) return List.of();
+        String provider = ragProperties.getEmbedding().getProvider();
+        if ("huggingface".equalsIgnoreCase(provider)) {
+            return generateHuggingFaceEmbeddingsBatch(texts);
+        } else if ("ollama".equalsIgnoreCase(provider)) {
+            return generateOllamaEmbeddingsBatch(texts);
+        } else {
+            throw new IllegalArgumentException("Unknown embedding provider: " + provider);
+        }
+    }
+
+    /**
+     * Ollama /api/embed 배치 API 사용 (Ollama >= 0.1.26 필요)
+     */
+    private List<float[]> generateOllamaEmbeddingsBatch(List<String> texts) throws IOException {
+        RagProperties.Embedding.Ollama config = ragProperties.getEmbedding().getOllama();
+        String url = config.getBaseUrl() + "/api/embed";
+
+        try (Response response = httpClientService.postJson(url, new OllamaEmbedBatchRequest(config.getModel(), texts))) {
+            if (!response.isSuccessful()) {
+                throw new IOException("Ollama batch API error: " + response.code() + " " + response.message());
+            }
+            JsonNode root = objectMapper.readTree(response.body().string());
+            JsonNode embeddingsNode = root.get("embeddings");
+            if (embeddingsNode == null || !embeddingsNode.isArray()) {
+                throw new IOException("Unexpected Ollama batch response format");
+            }
+            List<float[]> result = new ArrayList<>();
+            for (JsonNode emb : embeddingsNode) {
+                result.add(convertToFloatArray(emb));
+            }
+            return result;
+        }
+    }
+
+    /**
+     * HuggingFace 배치 임베딩
+     */
+    private List<float[]> generateHuggingFaceEmbeddingsBatch(List<String> texts) throws IOException {
+        RagProperties.Embedding.HuggingFace config = ragProperties.getEmbedding().getHuggingface();
+        String url = "https://api-inference.huggingface.co/pipeline/feature-extraction/" + config.getModel();
+        Headers headers = new Headers.Builder()
+                .add("Authorization", "Bearer " + config.getApiKey())
+                .add("Content-Type", "application/json")
+                .build();
+
+        try (Response response = httpClientService.postJson(url, new HuggingFaceBatchRequest(texts), headers)) {
+            if (!response.isSuccessful()) {
+                throw new IOException("HuggingFace batch API error: " + response.code() + " " + response.message());
+            }
+            JsonNode root = objectMapper.readTree(response.body().string());
+            if (!root.isArray()) {
+                throw new IOException("Unexpected HuggingFace batch response format");
+            }
+            List<float[]> result = new ArrayList<>();
+            for (JsonNode emb : root) {
+                result.add(convertToFloatArray(emb));
+            }
+            return result;
+        }
+    }
+
+    /**
      * Ollama를 사용한 임베딩 생성 (로컬 실행 필요)
      */
     private float[] generateOllamaEmbedding(String text) throws IOException {
         RagProperties.Embedding.Ollama config = ragProperties.getEmbedding().getOllama();
         String baseUrl = config.getBaseUrl();
         String model = config.getModel();
-        
+
         String url = baseUrl + "/api/embeddings";
-        
+
         try (Response response = httpClientService.postJson(url, new OllamaEmbeddingRequest(model, text))) {
             if (!response.isSuccessful()) {
                 throw new IOException("Ollama API error: " + response.code() + " " + response.message());
             }
-            
+
             JsonNode jsonNode = objectMapper.readTree(response.body().string());
             if (jsonNode.has("embedding")) {
                 return convertToFloatArray(jsonNode.get("embedding"));
@@ -98,7 +165,7 @@ public class EmbeddingService implements EmbeddingServiceInterface {
             }
         }
     }
-    
+
     private float[] convertToFloatArray(JsonNode jsonNode) {
         List<Float> list = new ArrayList<>();
         if (jsonNode.isArray()) {
@@ -116,4 +183,6 @@ public class EmbeddingService implements EmbeddingServiceInterface {
     // DTO 클래스들
     private record EmbeddingRequest(String inputs) {}
     private record OllamaEmbeddingRequest(String model, String prompt) {}
+    private record OllamaEmbedBatchRequest(String model, List<String> input) {}
+    private record HuggingFaceBatchRequest(List<String> inputs) {}
 }

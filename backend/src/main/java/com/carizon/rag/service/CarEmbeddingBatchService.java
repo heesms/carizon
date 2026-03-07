@@ -29,9 +29,10 @@ public class CarEmbeddingBatchService {
     private final EmbeddingService embeddingService;
     private final ChromaVectorStoreService vectorStoreService;
 
-    private static final int WORKERS = 10;         // 병렬 워커 수 (Ollama 병목 시 조정)
-    private static final int BATCH_SIZE_DB = 400;  // DB에서 끊어 처리할 청크 크기
-    private static final int BATCH_SIZE_CHROMA = 80; // Chroma add 배치 크기
+    private static final int WORKERS = 10;            // 병렬 워커 수 (DB pool 10개 기준 유지)
+    private static final int BATCH_SIZE_DB = 400;     // DB에서 끊어 처리할 청크 크기
+    private static final int BATCH_SIZE_EMBED = 50;   // Ollama 배치 API 호출 단위
+    private static final int BATCH_SIZE_CHROMA = 300; // Chroma add 배치 크기
     private static final int PROGRESS_LOG_INTERVAL = 50; // N건마다 진행 로그
 
     private final AtomicInteger metadataLogCount = new AtomicInteger(0); // Metadata 로그 출력 카운터
@@ -72,17 +73,16 @@ public class CarEmbeddingBatchService {
         log.info("[embedding] start: carId={}", carId);
         
         // 차량 데이터를 텍스트로 변환
-        CarEmbeddingDto carEmbedding = textConverterService.createCarEmbedding(carId);
+        CarEmbeddingDto carEmbedding = buildTextDto(carId);
         if (carEmbedding == null) {
             throw new IllegalArgumentException("Car not found: " + carId);
         }
-        
-        // Metadata 정보 로그
+
         log.info("[embedding] info [carId={}]:", carId);
         log.info("   - Metadata: {}", carEmbedding.getMetadata());
         log.info("   - Text: {}", carEmbedding.getText().replace("\n", " | "));
-        
-        // 임베딩 생성
+
+        // 임베딩 생성 (단건은 기존 API 사용)
         float[] embedding = embeddingService.generateEmbedding(carEmbedding.getText());
         carEmbedding.setEmbedding(embedding);
         log.info("   - Embedding size: {} dims", embedding.length);
@@ -158,22 +158,19 @@ public class CarEmbeddingBatchService {
         return embedCarIdsParallel(carIds, "EMBEDDING JOB", "전체 임베딩");
     }
 
-    private CarEmbeddingDto buildEmbeddingDto(Long carId) throws Exception {
+    /** 텍스트 변환만 수행 (DB 사용, 임베딩 없음) */
+    private CarEmbeddingDto buildTextDto(Long carId) {
         CarEmbeddingDto dto = textConverterService.createCarEmbedding(carId);
         if (dto == null) {
             log.warn("[embedding] no car data: carId={}", carId);
             return null;
         }
-        
-        // Metadata 정보 로그 출력 (처음 3개만 상세 로그)
         int logCount = metadataLogCount.incrementAndGet();
         if (logCount <= 3) {
             log.info("[embedding] info [carId={}]:", carId);
             log.info("   - Metadata: {}", dto.getMetadata());
             log.info("   - Text: {}", dto.getText().replace("\n", " | "));
         }
-        
-        dto.setEmbedding(embeddingService.generateEmbedding(dto.getText()));
         return dto;
     }
 
@@ -255,34 +252,43 @@ public class CarEmbeddingBatchService {
 
         try {
             for (List<Long> chunk : partition(carIds, BATCH_SIZE_DB)) {
+                // Phase 1: 텍스트 변환 (10 workers, DB 사용)
                 List<Future<CarEmbeddingDto>> futures = new ArrayList<>();
                 for (Long carId : chunk) {
-                    futures.add(executor.submit(() -> buildEmbeddingDto(carId)));
+                    futures.add(executor.submit(() -> buildTextDto(carId)));
                 }
-
-                List<CarEmbeddingDto> ready = new ArrayList<>();
+                List<CarEmbeddingDto> textDtos = new ArrayList<>();
                 for (Future<CarEmbeddingDto> f : futures) {
                     try {
                         CarEmbeddingDto dto = f.get();
-                        if (dto != null && dto.getEmbedding() != null) {
-                            ready.add(dto);
-                            success.incrementAndGet();
-                        } else {
-                            fail.incrementAndGet();
-                        }
+                        if (dto != null) textDtos.add(dto);
+                        else fail.incrementAndGet();
                     } catch (Exception e) {
                         fail.incrementAndGet();
-                        log.warn("[embedding] dto build fail: {}", e.getMessage());
-                    } finally {
-                        int cur = processed.incrementAndGet();
-                        progressProcessed = cur;
-                        progressOk = success.get();
-                        progressFail = fail.get();
-                        if (cur % PROGRESS_LOG_INTERVAL == 0 || cur == totalCount) {
-                            log.info("[embedding] 진행: {}/{} 건 (성공: {}, 실패: {})", cur, totalCount, success.get(), fail.get());
-                        }
+                        log.warn("[embedding] text build fail: {}", e.getMessage());
                     }
                 }
+
+                // Phase 2: 배치 임베딩 (Ollama /api/embed, DB 미사용)
+                for (List<CarEmbeddingDto> embedBatch : partition(textDtos, BATCH_SIZE_EMBED)) {
+                    try {
+                        List<String> texts = embedBatch.stream().map(CarEmbeddingDto::getText).toList();
+                        List<float[]> embeddings = embeddingService.generateEmbeddingsBatch(texts);
+                        for (int i = 0; i < embedBatch.size(); i++) {
+                            embedBatch.get(i).setEmbedding(embeddings.get(i));
+                        }
+                    } catch (Exception e) {
+                        log.warn("[embedding] batch embed fail ({}건): {}", embedBatch.size(), e.getMessage());
+                        embedBatch.forEach(dto -> dto.setEmbedding(null));
+                    }
+                }
+
+                // Phase 3: Chroma 배치 저장
+                List<CarEmbeddingDto> ready = textDtos.stream()
+                        .filter(dto -> dto.getEmbedding() != null)
+                        .toList();
+                success.addAndGet(ready.size());
+                fail.addAndGet(textDtos.size() - ready.size());
 
                 for (List<CarEmbeddingDto> chromaBatch : partition(ready, BATCH_SIZE_CHROMA)) {
                     try {
@@ -291,10 +297,16 @@ public class CarEmbeddingBatchService {
                         int batchSize = chromaBatch.size();
                         fail.addAndGet(batchSize);
                         success.addAndGet(-batchSize);
-                        progressFail = fail.get();
-                        progressOk = success.get();
                         log.warn("[ChromaDB] batch save failed ({}): {}", batchSize, e.getMessage());
                     }
+                }
+
+                int cur = processed.addAndGet(chunk.size());
+                progressProcessed = cur;
+                progressOk = success.get();
+                progressFail = fail.get();
+                if (cur % PROGRESS_LOG_INTERVAL == 0 || cur >= totalCount) {
+                    log.info("[embedding] 진행: {}/{} 건 (성공: {}, 실패: {})", cur, totalCount, success.get(), fail.get());
                 }
             }
         } finally {
