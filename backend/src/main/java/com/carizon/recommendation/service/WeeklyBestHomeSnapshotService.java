@@ -65,6 +65,7 @@ public class WeeklyBestHomeSnapshotService {
             return 0;
         }
         try {
+            rankingService.evictCache(); // 캐시 제거 후 DB에서 신선한 데이터 조회
             List<WeeklyBestCarDto> cars = rankingService.getWeeklyBestCars(null, null, limit);
             upsertSnapshot(cars, limit, scheduled ? "scheduled" : "manual");
             return cars.size();
