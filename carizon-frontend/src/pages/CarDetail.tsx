@@ -214,7 +214,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
       .then(data => {
         setDetail(data)
         const url = data.car.representativeImageUrl
-        const modelImgUrl = data.car.modelCode ? `/image/car/model/${data.car.modelCode}.webp` : undefined
+        const modelImgUrl = data.car.modelCode ? `/image/model/${data.car.modelCode}.png` : undefined
         if (url) setImgSrc(url)
         else if (modelImgUrl) setImgSrc(modelImgUrl)
 
