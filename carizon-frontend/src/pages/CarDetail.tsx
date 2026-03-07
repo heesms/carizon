@@ -8,6 +8,7 @@ import { trackViewItem, trackPlatformLinkClick } from '@/lib/analytics'
 import { applyCarDetailSeo, clearCarDetailSeo } from '@/utils/seo'
 import CarImagePlaceholder from '@/components/CarImagePlaceholder'
 import { getMakerLogoUrl } from '@/api/seo'
+import { makerCodeToSlug, bodyTypeKrToSlug } from '@/utils/slugs'
 
 /** null / "null" / 빈문자열 → undefined 로 정리 */
 const clean = (v: any): string | undefined => {
@@ -345,7 +346,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
           <span>›</span>
           {car.makerCode && (
             <>
-              <Link to={`/cars/maker/${car.makerCode}`} className="hover:text-blue-600">
+              <Link to={`/cars/maker/${makerCodeToSlug(car.makerCode!)}`} className="hover:text-blue-600">
                 {clean(car.maker)} 중고차
               </Link>
               <span>›</span>
@@ -353,7 +354,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
           )}
           {car.makerCode && car.modelCode && clean(car.model) && (
             <>
-              <Link to={`/cars/maker/${car.makerCode}/${car.modelCode}`} className="hover:text-blue-600">
+              <Link to={`/cars/maker/${makerCodeToSlug(car.makerCode!)}/${car.modelCode}`} className="hover:text-blue-600">
                 {clean(car.model)} 중고차
               </Link>
               <span>›</span>
@@ -670,7 +671,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
               <div className="flex flex-wrap gap-2">
                 {car.makerCode && clean(car.maker) && (
                   <Link
-                    to={`/cars/maker/${car.makerCode}`}
+                    to={`/cars/maker/${makerCodeToSlug(car.makerCode!)}`}
                     className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-sm text-gray-700 hover:text-blue-700"
                   >
                     <img
@@ -684,7 +685,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                 )}
                 {car.makerCode && car.modelCode && clean(car.model) && (
                   <Link
-                    to={`/cars/maker/${car.makerCode}/${car.modelCode}`}
+                    to={`/cars/maker/${makerCodeToSlug(car.makerCode!)}/${car.modelCode}`}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-sm text-gray-700 hover:text-blue-700"
                   >
                     <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -695,7 +696,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                 )}
                 {clean(car.bodyType) && (
                   <Link
-                    to={`/cars/type/${encodeURIComponent(car.bodyType!)}`}
+                    to={`/cars/type/${bodyTypeKrToSlug(car.bodyType!)}`}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 hover:border-green-400 hover:bg-green-50 transition-all text-sm text-gray-700 hover:text-green-700"
                   >
                     🚙 {car.bodyType} 중고차 보기
