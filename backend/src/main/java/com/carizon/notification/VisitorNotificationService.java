@@ -226,12 +226,79 @@ public class VisitorNotificationService {
 
 
     /** UA 문자열 → "Chrome 131 / Windows 10 (모바일)" 형태로 파싱 */
+    // 삼성 모델번호 → 제품명 (SM-XXXXX 앞 코드 기준, 지역 suffix 무시)
+    private static final java.util.Map<String, String> SAMSUNG_MODELS = java.util.Map.ofEntries(
+        // Galaxy S25 시리즈
+        java.util.Map.entry("SM-S931", "갤럭시 S25"),
+        java.util.Map.entry("SM-S936", "갤럭시 S25+"),
+        java.util.Map.entry("SM-S938", "갤럭시 S25 Ultra"),
+        // Galaxy S24 시리즈
+        java.util.Map.entry("SM-S921", "갤럭시 S24"),
+        java.util.Map.entry("SM-S926", "갤럭시 S24+"),
+        java.util.Map.entry("SM-S928", "갤럭시 S24 Ultra"),
+        // Galaxy S24 FE
+        java.util.Map.entry("SM-S721", "갤럭시 S24 FE"),
+        // Galaxy S23 시리즈
+        java.util.Map.entry("SM-S911", "갤럭시 S23"),
+        java.util.Map.entry("SM-S916", "갤럭시 S23+"),
+        java.util.Map.entry("SM-S918", "갤럭시 S23 Ultra"),
+        // Galaxy S23 FE
+        java.util.Map.entry("SM-S711", "갤럭시 S23 FE"),
+        // Galaxy S22 시리즈
+        java.util.Map.entry("SM-S901", "갤럭시 S22"),
+        java.util.Map.entry("SM-S906", "갤럭시 S22+"),
+        java.util.Map.entry("SM-S908", "갤럭시 S22 Ultra"),
+        // Galaxy S21 시리즈
+        java.util.Map.entry("SM-G991", "갤럭시 S21"),
+        java.util.Map.entry("SM-G996", "갤럭시 S21+"),
+        java.util.Map.entry("SM-G998", "갤럭시 S21 Ultra"),
+        // Galaxy Z Fold
+        java.util.Map.entry("SM-F956", "갤럭시 Z Fold 6"),
+        java.util.Map.entry("SM-F946", "갤럭시 Z Fold 5"),
+        java.util.Map.entry("SM-F936", "갤럭시 Z Fold 4"),
+        java.util.Map.entry("SM-F926", "갤럭시 Z Fold 3"),
+        // Galaxy Z Flip
+        java.util.Map.entry("SM-F741", "갤럭시 Z Flip 6"),
+        java.util.Map.entry("SM-F731", "갤럭시 Z Flip 5"),
+        java.util.Map.entry("SM-F721", "갤럭시 Z Flip 4"),
+        java.util.Map.entry("SM-F711", "갤럭시 Z Flip 3"),
+        // Galaxy A 시리즈 (인기 모델)
+        java.util.Map.entry("SM-A566", "갤럭시 A56"),
+        java.util.Map.entry("SM-A546", "갤럭시 A54"),
+        java.util.Map.entry("SM-A536", "갤럭시 A53"),
+        java.util.Map.entry("SM-A526", "갤럭시 A52"),
+        java.util.Map.entry("SM-A356", "갤럭시 A35"),
+        java.util.Map.entry("SM-A346", "갤럭시 A34"),
+        java.util.Map.entry("SM-A256", "갤럭시 A25"),
+        java.util.Map.entry("SM-A246", "갤럭시 A24"),
+        java.util.Map.entry("SM-A156", "갤럭시 A15"),
+        java.util.Map.entry("SM-A146", "갤럭시 A14"),
+        java.util.Map.entry("SM-A736", "갤럭시 A73"),
+        java.util.Map.entry("SM-A528", "갤럭시 A52s"),
+        // Galaxy Tab S
+        java.util.Map.entry("SM-X916", "갤럭시 Tab S9 Ultra"),
+        java.util.Map.entry("SM-X816", "갤럭시 Tab S9+"),
+        java.util.Map.entry("SM-X716", "갤럭시 Tab S9"),
+        java.util.Map.entry("SM-X900", "갤럭시 Tab S8 Ultra"),
+        java.util.Map.entry("SM-X800", "갤럭시 Tab S8+"),
+        java.util.Map.entry("SM-X700", "갤럭시 Tab S8")
+    );
+
+    private String resolveSamsungModel(String ua) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("; (SM-[A-Z0-9]+)").matcher(ua);
+        if (!m.find()) return null;
+        String rawModel = m.group(1).toUpperCase();
+        // 앞 7자리(SM-XXXX)로 매핑 시도, 없으면 원본 코드 반환
+        String prefix = rawModel.length() >= 7 ? rawModel.substring(0, 7) : rawModel;
+        return SAMSUNG_MODELS.getOrDefault(prefix, rawModel);
+    }
+
     private String parseUa(String ua) {
         if (ua == null || ua.isBlank()) return "알 수 없음";
 
         // ── 기기 타입 ──
         String device;
-        if (ua.contains("Mobile") || ua.contains("Android") && !ua.contains("Tablet")) {
+        if (ua.contains("Mobile") || (ua.contains("Android") && !ua.contains("Tablet"))) {
             device = "모바일";
         } else if (ua.contains("Tablet") || ua.contains("iPad")) {
             device = "태블릿";
@@ -239,14 +306,26 @@ public class VisitorNotificationService {
             device = "데스크톱";
         }
 
-        // ── OS ──
+        // ── OS + 기기모델 ──
         String os;
-        if (ua.contains("iPhone") || ua.contains("iPad")) {
+        String modelLabel = null;
+        if (ua.contains("iPhone")) {
             java.util.regex.Matcher m = java.util.regex.Pattern.compile("OS ([\\d_]+)").matcher(ua);
             os = "iOS" + (m.find() ? " " + m.group(1).replace("_", ".") : "");
+            modelLabel = "iPhone";
+        } else if (ua.contains("iPad")) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("OS ([\\d_]+)").matcher(ua);
+            os = "iOS" + (m.find() ? " " + m.group(1).replace("_", ".") : "");
+            modelLabel = "iPad";
         } else if (ua.contains("Android")) {
             java.util.regex.Matcher m = java.util.regex.Pattern.compile("Android ([\\d.]+)").matcher(ua);
             os = "Android" + (m.find() ? " " + m.group(1) : "");
+            if (ua.contains("SM-")) {
+                modelLabel = resolveSamsungModel(ua);
+            } else if (ua.contains("Pixel")) {
+                java.util.regex.Matcher pm = java.util.regex.Pattern.compile("(Pixel [\\w]+)").matcher(ua);
+                modelLabel = pm.find() ? pm.group(1) : null;
+            }
         } else if (ua.contains("Windows NT")) {
             java.util.regex.Matcher m = java.util.regex.Pattern.compile("Windows NT ([\\d.]+)").matcher(ua);
             String ver = m.find() ? m.group(1) : "";
@@ -290,7 +369,8 @@ public class VisitorNotificationService {
             browser = "기타";
         }
 
-        return browser + " / " + os + " (" + device + ")";
+        String osAndModel = modelLabel != null ? os + " · " + modelLabel : os;
+        return browser + " / " + osAndModel + " (" + device + ")";
     }
 
     private String majorVer(String ver) {
