@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { getModelSeo, getMakerLogoUrl, type ModelSeoData } from '@/api/seo'
 import SeoCarsSection from '@/components/SeoCarsSection'
 import { makerSlugToCode } from '@/utils/slugs'
@@ -54,6 +54,7 @@ function formatPriceRange(min?: number | null, max?: number | null): string | nu
 export default function ModelPage() {
   const { makerSlug = '', modelCode = '' } = useParams<{ makerSlug: string; modelCode: string }>()
   const makerCode = makerSlugToCode(makerSlug) ?? ''
+  const navigate = useNavigate()
   const [data, setData] = useState<ModelSeoData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -133,14 +134,26 @@ export default function ModelPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
-      {/* 브레드크럼 */}
-      <nav className="text-xs text-gray-400 mb-4 flex items-center gap-1.5">
-        <Link to="/" className="hover:text-blue-600">홈</Link>
-        <span>›</span>
-        <Link to={`/cars/maker/${makerSlug}`} className="hover:text-blue-600">{makerName} 중고차</Link>
-        <span>›</span>
-        <span className="text-gray-600 font-medium">{modelName} 중고차</span>
-      </nav>
+      {/* 뒤로가기 + 브레드크럼 */}
+      <div className="flex items-center gap-2 mb-4">
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          aria-label="뒤로가기"
+          className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 active:bg-gray-300 transition-colors"
+        >
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <nav className="text-xs text-gray-400 flex items-center gap-1.5">
+          <Link to="/" className="hover:text-blue-600">홈</Link>
+          <span>›</span>
+          <Link to={`/cars/maker/${makerSlug}`} className="hover:text-blue-600">{makerName} 중고차</Link>
+          <span>›</span>
+          <span className="text-gray-600 font-medium">{modelName} 중고차</span>
+        </nav>
+      </div>
 
       {/* ── 모델 배너 ── */}
       <div className="bg-gradient-to-br from-slate-50 to-blue-50 rounded-2xl overflow-hidden border border-slate-100 mb-8">

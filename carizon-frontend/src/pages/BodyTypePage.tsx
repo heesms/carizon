@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { getBodyTypes, type CodeItem } from '@/api/codes'
 import SeoCarsSection from '@/components/SeoCarsSection'
 import { bodyTypeSlugToKr, bodyTypeSlugToEntry } from '@/utils/slugs'
@@ -8,6 +8,7 @@ const SITE_NAME = 'Carizon'
 
 export default function BodyTypePage() {
   const { bodyTypeSlug = '' } = useParams<{ bodyTypeSlug: string }>()
+  const navigate = useNavigate()
   const krValue = bodyTypeSlugToKr(bodyTypeSlug) ?? bodyTypeSlug
   const slugEntry = bodyTypeSlugToEntry(bodyTypeSlug)
   const [bodyTypeData, setBodyTypeData] = useState<CodeItem | null>(null)
@@ -70,12 +71,24 @@ export default function BodyTypePage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
-      {/* 브레드크럼 */}
-      <nav className="text-xs text-gray-400 mb-4 flex items-center gap-1.5">
-        <Link to="/" className="hover:text-blue-600">홈</Link>
-        <span>›</span>
-        <span className="text-gray-600 font-medium">{displayName} 중고차</span>
-      </nav>
+      {/* 뒤로가기 + 브레드크럼 */}
+      <div className="flex items-center gap-2 mb-4">
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          aria-label="뒤로가기"
+          className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 active:bg-gray-300 transition-colors"
+        >
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <nav className="text-xs text-gray-400 flex items-center gap-1.5">
+          <Link to="/" className="hover:text-blue-600">홈</Link>
+          <span>›</span>
+          <span className="text-gray-600 font-medium">{displayName} 중고차</span>
+        </nav>
+      </div>
 
       {/* ── 차종 배너 ── */}
       <div className="bg-gradient-to-br from-slate-50 to-green-50 rounded-2xl p-6 mb-8 border border-slate-100">
