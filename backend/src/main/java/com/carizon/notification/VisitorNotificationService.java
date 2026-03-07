@@ -224,6 +224,79 @@ public class VisitorNotificationService {
         return sb.toString();
     }
 
+
+    /** UA 문자열 → "Chrome 131 / Windows 10 (모바일)" 형태로 파싱 */
+    private String parseUa(String ua) {
+        if (ua == null || ua.isBlank()) return "알 수 없음";
+
+        // ── 기기 타입 ──
+        String device;
+        if (ua.contains("Mobile") || ua.contains("Android") && !ua.contains("Tablet")) {
+            device = "모바일";
+        } else if (ua.contains("Tablet") || ua.contains("iPad")) {
+            device = "태블릿";
+        } else {
+            device = "데스크톱";
+        }
+
+        // ── OS ──
+        String os;
+        if (ua.contains("iPhone") || ua.contains("iPad")) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("OS ([\\d_]+)").matcher(ua);
+            os = "iOS" + (m.find() ? " " + m.group(1).replace("_", ".") : "");
+        } else if (ua.contains("Android")) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("Android ([\\d.]+)").matcher(ua);
+            os = "Android" + (m.find() ? " " + m.group(1) : "");
+        } else if (ua.contains("Windows NT")) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("Windows NT ([\\d.]+)").matcher(ua);
+            String ver = m.find() ? m.group(1) : "";
+            os = switch (ver) { case "10.0" -> "Windows 10/11"; case "6.3" -> "Windows 8.1";
+                                 case "6.2" -> "Windows 8";     case "6.1" -> "Windows 7"; default -> "Windows"; };
+        } else if (ua.contains("Mac OS X")) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("Mac OS X ([\\d_]+)").matcher(ua);
+            os = "macOS" + (m.find() ? " " + m.group(1).replace("_", ".") : "");
+        } else if (ua.contains("Linux")) {
+            os = "Linux";
+        } else {
+            os = "기타 OS";
+        }
+
+        // ── 브라우저 ──
+        String browser;
+        java.util.regex.Matcher m;
+        if (ua.contains("Edg/")) {
+            m = java.util.regex.Pattern.compile("Edg/([\\d.]+)").matcher(ua);
+            browser = "Edge" + (m.find() ? " " + majorVer(m.group(1)) : "");
+        } else if (ua.contains("OPR/") || ua.contains("Opera/")) {
+            m = java.util.regex.Pattern.compile("(?:OPR|Opera)/([\\d.]+)").matcher(ua);
+            browser = "Opera" + (m.find() ? " " + majorVer(m.group(1)) : "");
+        } else if (ua.contains("SamsungBrowser/")) {
+            m = java.util.regex.Pattern.compile("SamsungBrowser/([\\d.]+)").matcher(ua);
+            browser = "삼성인터넷" + (m.find() ? " " + majorVer(m.group(1)) : "");
+        } else if (ua.contains("KAKAOTALK")) {
+            browser = "카카오톡";
+        } else if (ua.contains("NAVER")) {
+            browser = "네이버앱";
+        } else if (ua.contains("Chrome/")) {
+            m = java.util.regex.Pattern.compile("Chrome/([\\d.]+)").matcher(ua);
+            browser = "Chrome" + (m.find() ? " " + majorVer(m.group(1)) : "");
+        } else if (ua.contains("Firefox/")) {
+            m = java.util.regex.Pattern.compile("Firefox/([\\d.]+)").matcher(ua);
+            browser = "Firefox" + (m.find() ? " " + majorVer(m.group(1)) : "");
+        } else if (ua.contains("Safari/") && ua.contains("Version/")) {
+            m = java.util.regex.Pattern.compile("Version/([\\d.]+)").matcher(ua);
+            browser = "Safari" + (m.find() ? " " + majorVer(m.group(1)) : "");
+        } else {
+            browser = "기타";
+        }
+
+        return browser + " / " + os + " (" + device + ")";
+    }
+
+    private String majorVer(String ver) {
+        return ver.contains(".") ? ver.substring(0, ver.indexOf('.')) : ver;
+    }
+
     private boolean isPrivateIp(String ip) {
         if (ip == null || ip.isBlank()) return true;
         return ip.startsWith("127.") || ip.startsWith("10.") || ip.startsWith("192.168.")
