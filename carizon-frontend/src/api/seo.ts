@@ -18,10 +18,11 @@ export type ModelSeoData = {
 
 const modelSeoCache = new Map<string, Promise<ModelSeoData>>()
 
-export const getModelSeo = (modelCode: string): Promise<ModelSeoData> => {
-  const key = modelCode.trim()
+export const getModelSeo = (modelCode: string, makerCode?: string): Promise<ModelSeoData> => {
+  const key = `${modelCode.trim()}:${makerCode ?? ''}`
   if (modelSeoCache.has(key)) return modelSeoCache.get(key)!
-  const req = fetch(`/api/seo/model/${encodeURIComponent(key)}`)
+  const qs = makerCode ? `?makerCode=${encodeURIComponent(makerCode)}` : ''
+  const req = fetch(`/api/seo/model/${encodeURIComponent(modelCode.trim())}${qs}`)
     .then(j)
     .finally(() => modelSeoCache.delete(key))
   modelSeoCache.set(key, req)

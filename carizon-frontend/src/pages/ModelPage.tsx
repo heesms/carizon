@@ -60,11 +60,11 @@ export default function ModelPage() {
 
   useEffect(() => {
     if (!modelCode) return
-    getModelSeo(modelCode)
+    getModelSeo(modelCode, makerCode || undefined)
       .then(d => setData(d))
       .catch(() => setData(null))
       .finally(() => setLoading(false))
-  }, [modelCode])
+  }, [modelCode, makerCode])
 
   const modelName = data?.modelName ?? ''
   const makerName = data?.makerName ?? ''
@@ -206,7 +206,7 @@ export default function ModelPage() {
       <h2 className="text-lg font-semibold text-gray-800 mb-4">
         {modelName} 중고차 매물
       </h2>
-      <SeoCarsSection fixedParams={{ modelCode }} />
+      <SeoCarsSection fixedParams={{ modelCode, ...(makerCode ? { makerCode } : {}) }} />
     </div>
   )
 }

@@ -20,8 +20,10 @@ public class SeoDataController {
 
     /** 모델 SEO 데이터 (embed_text3 + 이미지 + 매물 통계) */
     @GetMapping("/model/{modelCode}")
-    public ResponseEntity<ApiResponse<SeoModelDto>> getModelSeo(@PathVariable String modelCode) {
-        return seoDataService.getModelSeo(modelCode)
+    public ResponseEntity<ApiResponse<SeoModelDto>> getModelSeo(
+            @PathVariable String modelCode,
+            @RequestParam(required = false) String makerCode) {
+        return seoDataService.getModelSeo(modelCode, makerCode)
                 .map(dto -> ResponseEntity.ok()
                         .cacheControl(CacheControl.maxAge(Duration.ofMinutes(30)).cachePublic())
                         .<ApiResponse<SeoModelDto>>body(ApiResponse.success(dto)))

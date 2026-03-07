@@ -18,10 +18,11 @@ public class SeoDataService {
      * 모델 SEO 페이지용 데이터.
      * cz_model + cz_maker + cz_model_embedding_source + cz_model_image + car_master 집계
      */
-    public Optional<SeoModelDto> getModelSeo(String modelCode) {
+    public Optional<SeoModelDto> getModelSeo(String modelCode, String makerCode) {
         if (modelCode == null || modelCode.isBlank()) return Optional.empty();
 
-        List<SeoModelDto> results = jdbc.query("""
+        boolean hasMaker = makerCode != null && !makerCode.isBlank();
+        String sql = """
             SELECT
                 mo.model_code        AS modelCode,
                 mo.model_name        AS modelName,
@@ -51,8 +52,9 @@ public class SeoDataService {
                 GROUP BY cm.model_code
             ) agg ON agg.model_code = mo.model_code
             WHERE mo.model_code = ?
-            LIMIT 1
-        """, (rs, i) -> new SeoModelDto(
+        """ + (hasMaker ? " AND mo.maker_code = ?" : "") + " LIMIT 1";
+
+        var mapper = (org.springframework.jdbc.core.RowMapper<SeoModelDto>) (rs, i) -> new SeoModelDto(
                 rs.getString("modelCode"),
                 rs.getString("modelName"),
                 rs.getString("makerCode"),
@@ -62,7 +64,11 @@ public class SeoDataService {
                 rs.getLong("carCount"),
                 (Integer) rs.getObject("priceMin"),
                 (Integer) rs.getObject("priceMax")
-        ), modelCode.trim());
+        );
+
+        List<SeoModelDto> results = hasMaker
+                ? jdbc.query(sql, mapper, modelCode.trim(), makerCode.trim())
+                : jdbc.query(sql, mapper, modelCode.trim());
 
         return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
     }
