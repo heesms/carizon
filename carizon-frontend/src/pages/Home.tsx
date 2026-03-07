@@ -78,46 +78,95 @@ const BRAND_GALLERY = [
 ]
 
 const BODY_TYPE_GALLERY = [
-  { slug: 'micro',    icon: '🚗',  label: '경차' },
-  { slug: 'small',    icon: null,  label: '소형',   carColor: '#FACC15' },
-  { slug: 'compact',  icon: null,  label: '준중형', carColor: '#EF4444' },
-  { slug: 'midsize',  icon: null,  label: '중형',   carColor: '#F1F5F9' },
-  { slug: 'fullsize', icon: null,  label: '대형',   carColor: '#1F2937' },
-  { slug: 'rv',       icon: '🚐',  label: 'RV' },
-  { slug: 'suv',      icon: '🚙',  label: 'SUV' },
-  { slug: 'sports',   icon: '🏎️', label: '스포츠카' },
-  { slug: 'cargo',    icon: '🚚',  label: '화물' },
+  { slug: 'micro',    svgType: 'micro',    color: '#3B82F6', label: '경차' },
+  { slug: 'small',    svgType: 'small',    color: '#FACC15', label: '소형' },
+  { slug: 'compact',  svgType: 'compact',  color: '#EF4444', label: '준중형' },
+  { slug: 'midsize',  svgType: 'midsize',  color: '#E5E7EB', label: '중형' },
+  { slug: 'fullsize', svgType: 'fullsize', color: '#1F2937', label: '대형' },
+  { slug: 'rv',       svgType: 'rv',       color: '#8B5CF6', label: 'RV' },
+  { slug: 'suv',      svgType: 'suv',      color: '#10B981', label: 'SUV' },
+  { slug: 'sports',   svgType: 'sports',   color: '#F97316', label: '스포츠카' },
+  { slug: 'cargo',    svgType: 'cargo',    color: '#6B7280', label: '화물' },
 ]
 
-function CarIcon({ color }: { color: string }) {
-  const isLight = color === '#F1F5F9'
-  const bodyColor = color
-  const windowColor = '#BAE6FD'
-  const wheelColor = '#374151'
-  const wheelCenterColor = '#6B7280'
-  const borderColor = isLight ? '#CBD5E1' : 'none'
+function VehicleIcon({ type, color }: { type: string; color: string }) {
+  const isLight = color === '#E5E7EB'
+  const stroke = isLight ? '#9CA3AF' : 'none'
+  const sw = isLight ? 0.8 : 0
+  const svgProps = { viewBox: '0 0 64 64', xmlns: 'http://www.w3.org/2000/svg', className: 'w-9 h-9', style: { color } }
+  if (type === 'micro') return (
+    <svg {...svgProps}>
+      <polygon points="10,40 10,26 16,20 34,20 42,28 50,28 50,40" fill="currentColor" stroke={stroke} strokeWidth={sw}/>
+      <polygon points="17,21 33,21 39,27 12,27" fill="white"/>
+      <rect x="25" y="21" width="2" height="6" fill="white"/>
+      <circle cx="16" cy="40" r="6" fill="#111827"/><circle cx="42" cy="40" r="6" fill="#111827"/>
+    </svg>
+  )
+  if (type === 'small') return (
+    <svg {...svgProps}>
+      <polygon points="6,40 6,28 16,20 38,20 48,28 54,28 54,40" fill="currentColor" stroke={stroke} strokeWidth={sw}/>
+      <polygon points="17,21 36,21 44,27 8,27" fill="white"/>
+      <rect x="28" y="21" width="2" height="6" fill="white"/>
+      <circle cx="16" cy="40" r="6" fill="#111827"/><circle cx="48" cy="40" r="6" fill="#111827"/>
+    </svg>
+  )
+  if (type === 'compact') return (
+    <svg {...svgProps}>
+      <polygon points="4,40 4,30 16,20 36,20 46,28 58,28 58,40" fill="currentColor" stroke={stroke} strokeWidth={sw}/>
+      <polygon points="17,21 35,21 42,27 8,29" fill="white"/>
+      <rect x="26" y="21" width="2" height="7" fill="white"/>
+      <circle cx="16" cy="40" r="6" fill="#111827"/><circle cx="48" cy="40" r="6" fill="#111827"/>
+    </svg>
+  )
+  if (type === 'midsize') return (
+    <svg {...svgProps}>
+      <polygon points="2,40 2,30 14,20 40,20 50,28 60,28 60,40" fill="currentColor" stroke={stroke} strokeWidth={sw}/>
+      <polygon points="15,21 38,21 46,27 6,29" fill="white"/>
+      <rect x="28" y="21" width="2" height="7" fill="white"/>
+      <circle cx="16" cy="40" r="6" fill="#111827"/><circle cx="48" cy="40" r="6" fill="#111827"/>
+    </svg>
+  )
+  if (type === 'fullsize') return (
+    <svg {...svgProps}>
+      <polygon points="2,40 2,28 14,18 44,18 54,28 62,28 62,40" fill="currentColor" stroke={stroke} strokeWidth={sw}/>
+      <polygon points="15,19 42,19 50,27 6,27" fill="white"/>
+      <rect x="30" y="19" width="3" height="8" fill="white"/>
+      <circle cx="16" cy="40" r="6" fill="#111827"/><circle cx="48" cy="40" r="6" fill="#111827"/>
+    </svg>
+  )
+  if (type === 'rv') return (
+    <svg {...svgProps}>
+      <polygon points="4,40 4,20 12,18 42,18 54,30 58,30 58,40" fill="currentColor" stroke={stroke} strokeWidth={sw}/>
+      <polygon points="6,21 13,19 41,19 50,29 6,29" fill="white"/>
+      <rect x="22" y="19" width="2" height="10" fill="white"/>
+      <rect x="36" y="19" width="2" height="10" fill="white"/>
+      <circle cx="16" cy="40" r="6" fill="#111827"/><circle cx="48" cy="40" r="6" fill="#111827"/>
+    </svg>
+  )
+  if (type === 'suv') return (
+    <svg {...svgProps}>
+      <polygon points="4,38 4,22 16,18 42,18 52,26 58,26 58,38" fill="currentColor" stroke={stroke} strokeWidth={sw}/>
+      <polygon points="7,23 17,19 41,19 49,25 7,25" fill="white"/>
+      <rect x="24" y="19" width="2" height="6" fill="white"/>
+      <rect x="36" y="19" width="2" height="6" fill="white"/>
+      <circle cx="16" cy="40" r="7" fill="#111827"/><circle cx="48" cy="40" r="7" fill="#111827"/>
+    </svg>
+  )
+  if (type === 'sports') return (
+    <svg {...svgProps}>
+      <polygon points="6,40 6,32 22,22 36,22 48,30 60,30 60,40" fill="currentColor" stroke={stroke} strokeWidth={sw}/>
+      <polygon points="21,23 35,23 44,29 13,31" fill="white"/>
+      <rect x="28" y="23" width="2" height="7" fill="white"/>
+      <circle cx="16" cy="40" r="6" fill="#111827"/><circle cx="48" cy="40" r="6" fill="#111827"/>
+    </svg>
+  )
+  // cargo / truck
   return (
-    <svg viewBox="0 0 100 52" xmlns="http://www.w3.org/2000/svg" className="w-9 h-9">
-      {/* 차체 */}
-      <rect x="4" y="26" width="92" height="18" rx="4"
-        fill={bodyColor} stroke={borderColor} strokeWidth={isLight ? 1 : 0} />
-      {/* 루프 */}
-      <path d="M22,26 L34,10 L68,10 L80,26 Z"
-        fill={bodyColor} stroke={borderColor} strokeWidth={isLight ? 1 : 0} />
-      {/* 앞유리 */}
-      <path d="M57,24 L65,13 L78,13 L78,24 Z" fill={windowColor} opacity="0.85" />
-      {/* 뒷유리 */}
-      <path d="M24,24 L32,13 L54,13 L54,24 Z" fill={windowColor} opacity="0.85" />
-      {/* 앞바퀴 */}
-      <circle cx="74" cy="44" r="8" fill={wheelColor} />
-      <circle cx="74" cy="44" r="3.5" fill={wheelCenterColor} />
-      {/* 뒷바퀴 */}
-      <circle cx="26" cy="44" r="8" fill={wheelColor} />
-      <circle cx="26" cy="44" r="3.5" fill={wheelCenterColor} />
-      {/* 헤드라이트 */}
-      <rect x="93" y="30" width="4" height="6" rx="1" fill="#FDE68A" opacity="0.9" />
-      {/* 테일라이트 */}
-      <rect x="3" y="30" width="4" height="6" rx="1" fill="#FCA5A5" opacity="0.9" />
+    <svg {...svgProps}>
+      <polygon points="4,40 4,22 20,22 26,30 26,40" fill="currentColor" stroke={stroke} strokeWidth={sw}/>
+      <polygon points="6,29 6,23 19,23 23,29" fill="white"/>
+      <polygon points="28,40 28,30 60,30 60,40" fill="currentColor" stroke={stroke} strokeWidth={sw}/>
+      <circle cx="16" cy="40" r="6" fill="#111827"/><circle cx="48" cy="40" r="6" fill="#111827"/>
     </svg>
   )
 }
@@ -592,10 +641,7 @@ export default function Home() {
               to={`/cars/type/${b.slug}`}
               className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white border border-gray-100 hover:border-green-300 hover:shadow-sm transition-all group"
             >
-              {b.carColor
-                ? <CarIcon color={b.carColor} />
-                : <span className="text-2xl">{b.icon}</span>
-              }
+              <VehicleIcon type={b.svgType} color={b.color} />
               <span className="text-xs font-semibold text-gray-700 group-hover:text-green-700 transition-colors text-center leading-tight">
                 {b.label}
               </span>
