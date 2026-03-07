@@ -29,17 +29,18 @@ public class WeeklyBestAdminController {
     private final WeeklyBestCarBatchService batchService;
 
     @PostMapping("/batch/run")
-    @Operation(summary = "주간 Best 매물 배치 작업 실행", 
-               description = "주간 Best 매물 선정 및 블로그 포스팅 내용 생성 배치 작업을 수동 실행합니다.")
+    @Operation(summary = "주간 Best 매물 배치 작업 실행",
+               description = "주간 Best 매물 선정 및 블로그 포스팅 내용 생성 배치 작업을 수동 실행합니다. 비동기로 실행되며 즉시 응답합니다.")
     public ApiResponse<String> runBatch() {
-        try {
-            log.info("[admin] weekly Best batch job manual run");
-            batchService.runManually();
-            return ApiResponse.success("배치 작업 실행 완료");
-        } catch (Exception e) {
-            log.error("[admin] weekly Best batch run failed", e);
-            return ApiResponse.error("배치 작업 실행 실패: " + e.getMessage());
-        }
+        log.info("[admin] weekly Best batch job manual run (async)");
+        Thread.ofVirtual().name("weekly-best-batch-manual").start(() -> {
+            try {
+                batchService.runManually();
+            } catch (Exception e) {
+                log.error("[admin] weekly Best batch run failed", e);
+            }
+        });
+        return ApiResponse.success("배치 작업 시작됨 (백그라운드 실행 중, 서버 로그 확인)");
     }
 
     @PostMapping("/model/{modelCode}/generate")

@@ -38,7 +38,7 @@ public class WeeklyBestHomeSnapshotService {
 
     private final AtomicBoolean refreshRunning = new AtomicBoolean(false);
 
-    @Scheduled(cron = "0 0 */6 * * *", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 0 * * * *", zone = "Asia/Seoul")
     public void refreshOnSchedule() {
         log.info("[weekly-best-home-snapshot] scheduled refresh start");
         refreshSnapshot(DEFAULT_LIMIT, true);

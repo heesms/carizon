@@ -93,7 +93,7 @@ public class WeeklyBestCarBatchService {
      */
     private List<String> getPopularModels(int minCount) {
         String sql = """
-            SELECT cm.model_code, COUNT(*) AS car_count
+            SELECT cm.model_code
             FROM car_master cm
             INNER JOIN platform_car pc ON pc.car_id = cm.car_id
             WHERE cm.adv_status = 'ONSALE'

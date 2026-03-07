@@ -1,7 +1,7 @@
 :80 {
   encode gzip
   route {
-    @api path /api/*
+    @api path /api/* /admin/*
     handle @api {
       reverse_proxy backend:8080
     }
