@@ -105,7 +105,7 @@ public class WeeklyBestCarBatchService {
               AND cm.model_code IS NOT NULL
             GROUP BY cm.model_code
             HAVING COUNT(*) >= ?
-            ORDER BY car_count DESC
+            ORDER BY COUNT(*) DESC
             LIMIT 50
         """;
 
