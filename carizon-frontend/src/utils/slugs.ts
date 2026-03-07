@@ -81,18 +81,18 @@ export const makerCodeToDisplayName = (code: string): string | undefined =>
   CODE_TO_MAKER.get(code)?.displayName
 
 // Body type slug mapping: English slug ↔ Korean value
-export type BodyTypeSlugEntry = { slug: string; kr: string; icon: string; desc: string }
+export type BodyTypeSlugEntry = { slug: string; kr: string; icon: string; color: string; desc: string }
 
 export const BODY_TYPE_SLUG_MAP: BodyTypeSlugEntry[] = [
-  { slug: 'micro',       kr: '경차',   icon: '🚗', desc: '연비 좋고 주차 편한 경차 중고차를 비교해 보세요.' },
-  { slug: 'small',       kr: '소형',   icon: '🚘', desc: '도심 주행에 최적화된 소형 중고차를 확인하세요.' },
-  { slug: 'compact',     kr: '준중형', icon: '🚙', desc: '실용성과 경제성을 갖춘 준중형 중고차를 비교하세요.' },
-  { slug: 'midsize',     kr: '중형',   icon: '🚗', desc: '균형 잡힌 성능의 중형 중고차를 한눈에 비교하세요.' },
-  { slug: 'fullsize',    kr: '대형',   icon: '🚐', desc: '넉넉한 공간과 고급스러운 승차감의 대형 중고차입니다.' },
-  { slug: 'rv',          kr: 'RV',     icon: '🚐', desc: '다목적 공간 활용이 뛰어난 RV 중고차 매물을 통합 비교하세요.' },
-  { slug: 'suv',         kr: 'SUV',    icon: '🚙', desc: '넉넉한 공간과 높은 시야로 패밀리카로 인기 있는 SUV 중고차를 비교해 보세요.' },
-  { slug: 'sports',      kr: '스포츠카', icon: '🏎️', desc: '역동적인 주행 성능의 스포츠카 중고차를 비교하세요.' },
-  { slug: 'cargo',       kr: '화물',   icon: '🚚', desc: '다양한 용도의 화물차 중고차 매물을 확인하세요.' },
+  { slug: 'micro',    kr: '경차',   icon: '🚗',  color: '#3B82F6', desc: '연비 좋고 주차 편한 경차 중고차를 비교해 보세요.' },
+  { slug: 'small',    kr: '소형',   icon: '🚘',  color: '#FACC15', desc: '도심 주행에 최적화된 소형 중고차를 확인하세요.' },
+  { slug: 'compact',  kr: '준중형', icon: '🚙',  color: '#EF4444', desc: '실용성과 경제성을 갖춘 준중형 중고차를 비교하세요.' },
+  { slug: 'midsize',  kr: '중형',   icon: '🚗',  color: '#E5E7EB', desc: '균형 잡힌 성능의 중형 중고차를 한눈에 비교하세요.' },
+  { slug: 'fullsize', kr: '대형',   icon: '🚐',  color: '#1F2937', desc: '넉넉한 공간과 고급스러운 승차감의 대형 중고차입니다.' },
+  { slug: 'rv',       kr: 'RV',     icon: '🚐',  color: '#8B5CF6', desc: '다목적 공간 활용이 뛰어난 RV 중고차 매물을 통합 비교하세요.' },
+  { slug: 'suv',      kr: 'SUV',    icon: '🚙',  color: '#10B981', desc: '넉넉한 공간과 높은 시야로 패밀리카로 인기 있는 SUV 중고차를 비교해 보세요.' },
+  { slug: 'sports',   kr: '스포츠카', icon: '🏎️', color: '#F97316', desc: '역동적인 주행 성능의 스포츠카 중고차를 비교하세요.' },
+  { slug: 'cargo',    kr: '화물',   icon: '🚚',  color: '#6B7280', desc: '다양한 용도의 화물차 중고차 매물을 확인하세요.' },
 ]
 
 const KR_TO_BODY = new Map(BODY_TYPE_SLUG_MAP.map(e => [e.kr, e]))

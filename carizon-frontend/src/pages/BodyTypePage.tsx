@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { getBodyTypes, type CodeItem } from '@/api/codes'
 import SeoCarsSection from '@/components/SeoCarsSection'
+import VehicleIcon from '@/components/VehicleIcon'
 import { bodyTypeSlugToKr, bodyTypeSlugToEntry } from '@/utils/slugs'
 
 const SITE_NAME = 'Carizon'
@@ -27,7 +28,7 @@ export default function BodyTypePage() {
 
   const displayName = bodyTypeData?.name ?? krValue
   const carCount = bodyTypeData?.carCount ?? 0
-  const icon = slugEntry?.icon ?? '🚗'
+  const color = slugEntry?.color ?? '#6B7280'
   const desc = slugEntry?.desc ?? `${displayName} 중고차를 여러 플랫폼에서 통합 비교하세요.`
 
   // SEO 메타 동적 적용
@@ -93,8 +94,8 @@ export default function BodyTypePage() {
       {/* ── 차종 배너 ── */}
       <div className="bg-gradient-to-br from-slate-50 to-green-50 rounded-2xl p-6 mb-8 border border-slate-100">
         <div className="flex items-center gap-4 mb-4">
-          <div className="w-16 h-16 rounded-2xl bg-white shadow-sm flex items-center justify-center text-3xl">
-            {icon}
+          <div className="w-16 h-16 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+            <VehicleIcon type={bodyTypeSlug} color={color} className="w-10 h-10" />
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
