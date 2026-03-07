@@ -79,15 +79,48 @@ const BRAND_GALLERY = [
 
 const BODY_TYPE_GALLERY = [
   { slug: 'micro',    icon: '🚗',  label: '경차' },
-  { slug: 'small',    icon: '🚕',  label: '소형' },
-  { slug: 'compact',  icon: '🛻',  label: '준중형' },
-  { slug: 'midsize',  icon: '🚘',  label: '중형' },
-  { slug: 'fullsize', icon: '🚌',  label: '대형' },
+  { slug: 'small',    icon: null,  label: '소형',   carColor: '#FACC15' },
+  { slug: 'compact',  icon: null,  label: '준중형', carColor: '#EF4444' },
+  { slug: 'midsize',  icon: null,  label: '중형',   carColor: '#F1F5F9' },
+  { slug: 'fullsize', icon: null,  label: '대형',   carColor: '#1F2937' },
   { slug: 'rv',       icon: '🚐',  label: 'RV' },
   { slug: 'suv',      icon: '🚙',  label: 'SUV' },
   { slug: 'sports',   icon: '🏎️', label: '스포츠카' },
   { slug: 'cargo',    icon: '🚚',  label: '화물' },
 ]
+
+function CarIcon({ color }: { color: string }) {
+  const isLight = color === '#F1F5F9'
+  const bodyColor = color
+  const windowColor = '#BAE6FD'
+  const wheelColor = '#374151'
+  const wheelCenterColor = '#6B7280'
+  const borderColor = isLight ? '#CBD5E1' : 'none'
+  return (
+    <svg viewBox="0 0 100 52" xmlns="http://www.w3.org/2000/svg" className="w-9 h-9">
+      {/* 차체 */}
+      <rect x="4" y="26" width="92" height="18" rx="4"
+        fill={bodyColor} stroke={borderColor} strokeWidth={isLight ? 1 : 0} />
+      {/* 루프 */}
+      <path d="M22,26 L34,10 L68,10 L80,26 Z"
+        fill={bodyColor} stroke={borderColor} strokeWidth={isLight ? 1 : 0} />
+      {/* 앞유리 */}
+      <path d="M57,24 L65,13 L78,13 L78,24 Z" fill={windowColor} opacity="0.85" />
+      {/* 뒷유리 */}
+      <path d="M24,24 L32,13 L54,13 L54,24 Z" fill={windowColor} opacity="0.85" />
+      {/* 앞바퀴 */}
+      <circle cx="74" cy="44" r="8" fill={wheelColor} />
+      <circle cx="74" cy="44" r="3.5" fill={wheelCenterColor} />
+      {/* 뒷바퀴 */}
+      <circle cx="26" cy="44" r="8" fill={wheelColor} />
+      <circle cx="26" cy="44" r="3.5" fill={wheelCenterColor} />
+      {/* 헤드라이트 */}
+      <rect x="93" y="30" width="4" height="6" rx="1" fill="#FDE68A" opacity="0.9" />
+      {/* 테일라이트 */}
+      <rect x="3" y="30" width="4" height="6" rx="1" fill="#FCA5A5" opacity="0.9" />
+    </svg>
+  )
+}
 
 function BrandLogo({ makerCode, name }: { makerCode: string; name: string }) {
   const [failed, setFailed] = useState(false)
@@ -559,7 +592,10 @@ export default function Home() {
               to={`/cars/type/${b.slug}`}
               className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white border border-gray-100 hover:border-green-300 hover:shadow-sm transition-all group"
             >
-              <span className="text-2xl">{b.icon}</span>
+              {b.carColor
+                ? <CarIcon color={b.carColor} />
+                : <span className="text-2xl">{b.icon}</span>
+              }
               <span className="text-xs font-semibold text-gray-700 group-hover:text-green-700 transition-colors text-center leading-tight">
                 {b.label}
               </span>
