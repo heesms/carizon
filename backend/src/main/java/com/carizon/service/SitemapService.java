@@ -70,15 +70,15 @@ public class SitemapService {
     );
 
     private static final java.util.Map<String, String> BODY_TYPE_TO_SLUG = java.util.Map.ofEntries(
-        java.util.Map.entry("SUV", "suv"),
-        java.util.Map.entry("세단", "sedan"),
+        java.util.Map.entry("경차", "micro"),
+        java.util.Map.entry("소형", "small"),
+        java.util.Map.entry("준중형", "compact"),
+        java.util.Map.entry("중형", "midsize"),
+        java.util.Map.entry("대형", "fullsize"),
         java.util.Map.entry("RV", "rv"),
-        java.util.Map.entry("해치백", "hatchback"),
-        java.util.Map.entry("쿠페", "coupe"),
-        java.util.Map.entry("컨버터블", "convertible"),
-        java.util.Map.entry("픽업트럭", "pickup"),
-        java.util.Map.entry("트럭", "truck"),
-        java.util.Map.entry("미니밴", "minivan")
+        java.util.Map.entry("SUV", "suv"),
+        java.util.Map.entry("스포츠카", "sports"),
+        java.util.Map.entry("화물", "cargo")
     );
 
     private final JdbcTemplate jdbc;

@@ -78,11 +78,15 @@ const BRAND_GALLERY = [
 ]
 
 const BODY_TYPE_GALLERY = [
-  { slug: 'suv',       icon: '🚙', label: 'SUV' },
-  { slug: 'sedan',     icon: '🚗', label: '세단' },
-  { slug: 'rv',        icon: '🚐', label: 'RV' },
-  { slug: 'hatchback', icon: '🚗', label: '해치백' },
-  { slug: 'coupe',     icon: '🏎️', label: '쿠페' },
+  { slug: 'micro',    icon: '🚗',  label: '경차' },
+  { slug: 'small',    icon: '🚘',  label: '소형' },
+  { slug: 'compact',  icon: '🚙',  label: '준중형' },
+  { slug: 'midsize',  icon: '🚗',  label: '중형' },
+  { slug: 'fullsize', icon: '🚐',  label: '대형' },
+  { slug: 'rv',       icon: '🚐',  label: 'RV' },
+  { slug: 'suv',      icon: '🚙',  label: 'SUV' },
+  { slug: 'sports',   icon: '🏎️', label: '스포츠카' },
+  { slug: 'cargo',    icon: '🚚',  label: '화물' },
 ]
 
 function BrandLogo({ makerCode, name }: { makerCode: string; name: string }) {
@@ -524,7 +528,7 @@ export default function Home() {
             <p className="section-sub">브랜드별 중고차 매물을 한눈에</p>
           </div>
         </div>
-        <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-12 gap-2 sm:gap-3">
+        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-3">
           {BRAND_GALLERY.map(b => (
             <Link
               key={b.makerCode}
@@ -548,16 +552,16 @@ export default function Home() {
             <p className="section-sub">원하는 차종의 중고차를 바로 확인</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 sm:gap-3">
+        <div className="grid grid-cols-3 lg:grid-cols-9 gap-2 sm:gap-3">
           {BODY_TYPE_GALLERY.map(b => (
             <Link
               key={b.slug}
               to={`/cars/type/${b.slug}`}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-gray-100 hover:border-green-300 hover:shadow-sm transition-all group"
+              className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white border border-gray-100 hover:border-green-300 hover:shadow-sm transition-all group"
             >
-              <span className="text-xl">{b.icon}</span>
-              <span className="text-sm font-semibold text-gray-700 group-hover:text-green-700 transition-colors">
-                {b.label} 중고차
+              <span className="text-2xl">{b.icon}</span>
+              <span className="text-xs font-semibold text-gray-700 group-hover:text-green-700 transition-colors text-center leading-tight">
+                {b.label}
               </span>
             </Link>
           ))}
