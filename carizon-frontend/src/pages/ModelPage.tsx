@@ -70,7 +70,7 @@ export default function ModelPage() {
   const makerName = data?.makerName ?? ''
   const carCount = data?.carCount ?? 0
   const priceRange = formatPriceRange(data?.priceMin, data?.priceMax)
-  const imageUrl = data?.imageUrl ?? `/image/car/model/${modelCode}.webp`
+  const imageUrl = data?.imageUrl ?? `/image/model/${modelCode}.png`
   const description = data?.description ?? ''
 
   // SEO 메타 동적 적용

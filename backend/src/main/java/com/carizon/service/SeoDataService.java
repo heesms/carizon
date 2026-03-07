@@ -22,6 +22,7 @@ public class SeoDataService {
         if (modelCode == null || modelCode.isBlank()) return Optional.empty();
 
         boolean hasMaker = makerCode != null && !makerCode.isBlank();
+        String makerFilter = hasMaker ? " AND mo.maker_code = ?" : "";
         String sql = """
             SELECT
                 mo.model_code        AS modelCode,
@@ -37,10 +38,12 @@ public class SeoDataService {
             LEFT JOIN cz_maker mk ON mk.maker_code COLLATE utf8mb4_unicode_ci = mo.maker_code
             LEFT JOIN cz_model_embedding_source es ON es.model_code COLLATE utf8mb4_unicode_ci = mo.model_code
             LEFT JOIN (
-                SELECT model_code COLLATE utf8mb4_unicode_ci AS model_code, is_main, image_url,
-                       ROW_NUMBER() OVER (PARTITION BY model_code ORDER BY is_main DESC, sort_order ASC) AS rn
+                SELECT model_code COLLATE utf8mb4_unicode_ci AS model_code, image_url
                 FROM cz_model_image
-            ) mi ON mi.model_code = mo.model_code AND mi.rn = 1
+                WHERE model_code = ?
+                ORDER BY is_main DESC, sort_order ASC
+                LIMIT 1
+            ) mi ON mi.model_code = mo.model_code
             LEFT JOIN (
                 SELECT cm.model_code COLLATE utf8mb4_unicode_ci AS model_code,
                        COUNT(*) AS carCount,
@@ -48,11 +51,11 @@ public class SeoDataService {
                        MAX(pc.price) AS priceMax
                 FROM car_master cm
                 LEFT JOIN platform_car pc ON pc.car_id = cm.car_id AND pc.price > 0
-                WHERE cm.adv_status = 'ONSALE'
+                WHERE cm.adv_status = 'ONSALE' AND cm.model_code = ?
                 GROUP BY cm.model_code
             ) agg ON agg.model_code = mo.model_code
             WHERE mo.model_code = ?
-        """ + (hasMaker ? " AND mo.maker_code = ?" : "") + " LIMIT 1";
+        """ + makerFilter + " LIMIT 1";
 
         var mapper = (org.springframework.jdbc.core.RowMapper<SeoModelDto>) (rs, i) -> new SeoModelDto(
                 rs.getString("modelCode"),
@@ -66,9 +69,10 @@ public class SeoDataService {
                 (Integer) rs.getObject("priceMax")
         );
 
+        String mc = modelCode.trim();
         List<SeoModelDto> results = hasMaker
-                ? jdbc.query(sql, mapper, modelCode.trim(), makerCode.trim())
-                : jdbc.query(sql, mapper, modelCode.trim());
+                ? jdbc.query(sql, mapper, mc, mc, mc, makerCode.trim())
+                : jdbc.query(sql, mapper, mc, mc, mc);
 
         return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
     }
