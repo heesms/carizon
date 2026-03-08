@@ -8,7 +8,7 @@ import { trackViewItem, trackPlatformLinkClick } from '@/lib/analytics'
 import { applyCarDetailSeo, clearCarDetailSeo } from '@/utils/seo'
 import CarImagePlaceholder from '@/components/CarImagePlaceholder'
 import { getMakerLogoUrl } from '@/api/seo'
-import { makerCodeToSlug, bodyTypeKrToSlug } from '@/utils/slugs'
+import { makerCodeToSlug, bodyTypeKrToSlug, bodyTypeSlugToEntry } from '@/utils/slugs'
 
 /** null / "null" / 빈문자열 → undefined 로 정리 */
 const clean = (v: any): string | undefined => {
@@ -688,20 +688,27 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                     to={`/cars/maker/${makerCodeToSlug(car.makerCode!)}/${car.modelCode}`}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-sm text-gray-700 hover:text-blue-700"
                   >
-                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                    </svg>
+                    <img
+                      src={`/image/model/${car.modelCode}.png`}
+                      alt=""
+                      className="w-5 h-5 object-contain rounded"
+                      onError={e => (e.currentTarget.style.display = 'none')}
+                    />
                     {clean(car.model)} 중고차 전체
                   </Link>
                 )}
-                {clean(car.bodyType) && (
-                  <Link
-                    to={`/cars/type/${bodyTypeKrToSlug(car.bodyType!)}`}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 hover:border-green-400 hover:bg-green-50 transition-all text-sm text-gray-700 hover:text-green-700"
-                  >
-                    🚙 {car.bodyType} 중고차 보기
-                  </Link>
-                )}
+                {clean(car.bodyType) && (() => {
+                  const slug = bodyTypeKrToSlug(car.bodyType!)
+                  const icon = bodyTypeSlugToEntry(slug)?.icon ?? '🚗'
+                  return (
+                    <Link
+                      to={`/cars/type/${slug}`}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 hover:border-green-400 hover:bg-green-50 transition-all text-sm text-gray-700 hover:text-green-700"
+                    >
+                      {icon} {car.bodyType} 중고차 보기
+                    </Link>
+                  )
+                })()}
               </div>
             </div>
           )}
