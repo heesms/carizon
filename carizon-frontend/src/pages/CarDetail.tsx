@@ -9,6 +9,7 @@ import { applyCarDetailSeo, clearCarDetailSeo } from '@/utils/seo'
 import CarImagePlaceholder from '@/components/CarImagePlaceholder'
 import { getMakerLogoUrl } from '@/api/seo'
 import { makerCodeToSlug, bodyTypeKrToSlug, bodyTypeSlugToEntry } from '@/utils/slugs'
+import VehicleIcon from '@/components/VehicleIcon'
 
 /** null / "null" / 빈문자열 → undefined 로 정리 */
 const clean = (v: any): string | undefined => {
@@ -699,13 +700,14 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                 )}
                 {clean(car.bodyType) && (() => {
                   const slug = bodyTypeKrToSlug(car.bodyType!)
-                  const icon = bodyTypeSlugToEntry(slug)?.icon ?? '🚗'
+                  const entry = bodyTypeSlugToEntry(slug)
                   return (
                     <Link
                       to={`/cars/type/${slug}`}
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 hover:border-green-400 hover:bg-green-50 transition-all text-sm text-gray-700 hover:text-green-700"
                     >
-                      {icon} {car.bodyType} 중고차 보기
+                      <VehicleIcon type={slug} color={entry?.color ?? '#6B7280'} className="w-5 h-5" />
+                      {car.bodyType} 중고차 보기
                     </Link>
                   )
                 })()}
