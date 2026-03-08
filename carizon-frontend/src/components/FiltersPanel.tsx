@@ -189,7 +189,6 @@ function MakerLogo({ makerCode, makerName, className }: { makerCode: string; mak
 
 function ModelLogo({ modelCode, modelName, className }: { modelCode: string; modelName: string; className?: string }) {
   const local = `/image/model/${modelCode}.png`
-  const remote = `https://img.kbchachacha.com/IMG/statics/carimg/${modelCode}.png`
   const fallback = makeFallbackSvg(modelName)
   const [src, setSrc] = useState(local)
 
@@ -200,10 +199,7 @@ function ModelLogo({ modelCode, modelName, className }: { modelCode: string; mod
       src={src}
       alt={modelName}
       className={className ?? "w-9 h-9 rounded-lg object-contain bg-white border border-gray-200 p-1 shrink-0"}
-      onError={() => {
-        if (src !== remote) setSrc(remote)
-        else if (src !== fallback) setSrc(fallback)
-      }}
+      onError={() => { if (src !== fallback) setSrc(fallback) }}
     />
   )
 }
