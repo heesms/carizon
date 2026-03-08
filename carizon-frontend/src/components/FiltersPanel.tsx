@@ -178,6 +178,7 @@ function MakerLogo({ makerCode, makerName, className }: { makerCode: string; mak
     <img
       src={src}
       alt={makerName}
+      loading="lazy"
       className={className ?? "w-10 h-10 rounded-lg object-contain bg-white border border-gray-200 p-1 shrink-0"}
       onError={() => { if (src !== NO_CAR) setSrc(NO_CAR) }}
     />
@@ -194,6 +195,7 @@ function ModelLogo({ modelCode, modelName, className }: { modelCode: string; mod
     <img
       src={src}
       alt={modelName}
+      loading="lazy"
       className={className ?? "w-9 h-9 rounded-lg object-contain bg-white border border-gray-200 p-1 shrink-0"}
       onError={() => { if (src !== NO_CAR) setSrc(NO_CAR) }}
     />

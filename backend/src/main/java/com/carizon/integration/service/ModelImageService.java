@@ -8,6 +8,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -200,6 +205,8 @@ public class ModelImageService {
         return IMG_BASE + "img" + folderTwoDigits + "/img" + firstFour + "/" + fileName + "?width=720";
     }
 
+    private static final int MAX_IMAGE_DIM = 256;
+
     private boolean download(HttpClient http, String url, Path out, boolean skipExisting) {
         try {
             if (skipExisting && Files.exists(out) && Files.size(out) > 0) {
@@ -214,7 +221,8 @@ public class ModelImageService {
             HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofSeconds(20)).GET().build();
             HttpResponse<byte[]> resp = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
             if (resp.statusCode() == 200 && resp.body() != null && resp.body().length > 0) {
-                Files.write(out, resp.body());
+                byte[] data = resizeIfNeeded(resp.body(), MAX_IMAGE_DIM);
+                Files.write(out, data);
                 return true;
             } else {
                 log.warn("[HTTP {}] {}", resp.statusCode(), url);
@@ -223,6 +231,35 @@ public class ModelImageService {
         } catch (Exception e) {
             log.warn("download fail: {} -> {}", url, e.getMessage());
             return false;
+        }
+    }
+
+    /** 이미지 최대 크기를 maxDim px로 리사이즈 (비율 유지). 이미 작으면 그대로 반환. */
+    private byte[] resizeIfNeeded(byte[] original, int maxDim) {
+        try {
+            BufferedImage img = ImageIO.read(new ByteArrayInputStream(original));
+            if (img == null) return original;
+            int w = img.getWidth(), h = img.getHeight();
+            if (Math.max(w, h) <= maxDim) return original;
+
+            double ratio = (double) maxDim / Math.max(w, h);
+            int nw = (int) (w * ratio), nh = (int) (h * ratio);
+
+            BufferedImage resized = new BufferedImage(nw, nh, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = resized.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.drawImage(img.getScaledInstance(nw, nh, Image.SCALE_SMOOTH), 0, 0, null);
+            g.dispose();
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(resized, "PNG", baos);
+            byte[] resizedBytes = baos.toByteArray();
+            log.debug("resized {}x{} → {}x{}: {}KB → {}KB", w, h, nw, nh,
+                    original.length / 1024, resizedBytes.length / 1024);
+            return resizedBytes;
+        } catch (Exception e) {
+            log.warn("resize failed, using original: {}", e.getMessage());
+            return original;
         }
     }
 
