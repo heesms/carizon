@@ -23,12 +23,14 @@ function ModelImage({ src, alt }: { src: string; alt: string }) {
   const [imgSrc, setImgSrc] = useState(src || '/image/no-car.svg')
   useEffect(() => { setImgSrc(src || '/image/no-car.svg') }, [src])
   return (
-    <img
-      src={imgSrc}
-      alt={alt}
-      className="w-full h-full object-cover rounded-xl"
-      onError={() => { if (imgSrc !== '/image/no-car.svg') setImgSrc('/image/no-car.svg') }}
-    />
+    <div className="w-full h-full flex items-center justify-center bg-gray-50 rounded-xl p-4">
+      <img
+        src={imgSrc}
+        alt={alt}
+        className="max-w-full max-h-full object-contain"
+        onError={() => { if (imgSrc !== '/image/no-car.svg') setImgSrc('/image/no-car.svg') }}
+      />
+    </div>
   )
 }
 
