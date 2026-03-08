@@ -39,6 +39,10 @@ spring:
 app:
   kafka:
     enabled: ${KAFKA_ENABLED:false}
+  image:
+    # 모델/메이커 이미지 저장 루트 디렉토리 (하위 model/, maker/ 디렉토리에 저장)
+    # Docker: APP_IMAGE_DIR=/data/image 등 볼륨 경로 설정, 프론트 nginx도 동일 볼륨 마운트
+    dir: ${APP_IMAGE_DIR:}
   notification:
     slack:
       webhook-url: ${SLACK_WEBHOOK_URL:}

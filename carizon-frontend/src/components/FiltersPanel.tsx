@@ -166,10 +166,10 @@ const formatPriceManwonLabel = (value: number) => {
   return `${eok}억${rest.toLocaleString()}만원`
 }
 
+const NO_CAR = '/image/no-car.svg'
+
 function MakerLogo({ makerCode, makerName, className }: { makerCode: string; makerName: string; className?: string }) {
   const local = `/image/maker/maker${makerCode}.png`
-  const remote = `https://img.kbchachacha.com/IMG/statics/maker/o/maker${makerCode}.png`
-  const fallback = makeFallbackSvg(makerName)
   const [src, setSrc] = useState(local)
 
   useEffect(() => { setSrc(local) }, [makerCode])
@@ -179,17 +179,13 @@ function MakerLogo({ makerCode, makerName, className }: { makerCode: string; mak
       src={src}
       alt={makerName}
       className={className ?? "w-10 h-10 rounded-lg object-contain bg-white border border-gray-200 p-1 shrink-0"}
-      onError={() => {
-        if (src !== remote) setSrc(remote)
-        else if (src !== fallback) setSrc(fallback)
-      }}
+      onError={() => { if (src !== NO_CAR) setSrc(NO_CAR) }}
     />
   )
 }
 
 function ModelLogo({ modelCode, modelName, className }: { modelCode: string; modelName: string; className?: string }) {
   const local = `/image/model/${modelCode}.png`
-  const fallback = makeFallbackSvg(modelName)
   const [src, setSrc] = useState(local)
 
   useEffect(() => { setSrc(local) }, [modelCode])
@@ -199,7 +195,7 @@ function ModelLogo({ modelCode, modelName, className }: { modelCode: string; mod
       src={src}
       alt={modelName}
       className={className ?? "w-9 h-9 rounded-lg object-contain bg-white border border-gray-200 p-1 shrink-0"}
-      onError={() => { if (src !== fallback) setSrc(fallback) }}
+      onError={() => { if (src !== NO_CAR) setSrc(NO_CAR) }}
     />
   )
 }

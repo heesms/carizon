@@ -75,15 +75,21 @@ public class ModelImageService {
             return;
         }
         List<String> candidates = applyLimit(makerCodes, limit);
+        // 저장 파일명: maker{code}.png (프론트 /image/maker/maker{code}.png 경로와 일치)
         downloadByCodes(
                 targetDir,
                 candidates,
                 skipExisting,
-                makerCode -> STATIC_MAKER_IMG_BASE + "maker" + makerCode + ".png"
+                makerCode -> STATIC_MAKER_IMG_BASE + "maker" + makerCode + ".png",
+                makerCode -> "maker" + makerCode + ".png"
         );
     }
 
     private void downloadByCodes(Path targetDir, List<String> codes, boolean skipExisting, Function<String, String> urlResolver) throws Exception {
+        downloadByCodes(targetDir, codes, skipExisting, urlResolver, code -> code + ".png");
+    }
+
+    private void downloadByCodes(Path targetDir, List<String> codes, boolean skipExisting, Function<String, String> urlResolver, Function<String, String> fileNameResolver) throws Exception {
         if (codes == null || codes.isEmpty()) {
             return;
         }
@@ -94,7 +100,7 @@ public class ModelImageService {
                 continue;
             }
             String url = urlResolver.apply(code);
-            Path out = targetDir.resolve(code + ".png");
+            Path out = targetDir.resolve(fileNameResolver.apply(code));
             boolean downloaded = download(http, url, out, skipExisting);
             log.info("{} {} <- {}", downloaded ? "[OK ]" : "[ERR]", out, url);
             ok += downloaded ? 1 : 0;
@@ -238,8 +244,8 @@ public class ModelImageService {
         if (candidateMakerCodes == null) return missing;
         for (String makerCode : new LinkedHashSet<>(candidateMakerCodes)) {
             if (makerCode == null) continue;
-            Path first = targetDir.resolve(makerCode + ".png");
-            if (!Files.exists(first) || Files.size(first) == 0) {
+            Path file = targetDir.resolve("maker" + makerCode + ".png");
+            if (!Files.exists(file) || Files.size(file) == 0) {
                 missing.add(makerCode);
             }
         }

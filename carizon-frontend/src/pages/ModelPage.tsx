@@ -20,22 +20,14 @@ function MakerLogo({ makerCode, makerName }: { makerCode: string; makerName: str
 }
 
 function ModelImage({ src, alt }: { src: string; alt: string }) {
-  const [failed, setFailed] = useState(false)
-  if (failed || !src) {
-    return (
-      <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center rounded-xl">
-        <svg className="w-16 h-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16l-4-4 4-4m8 8l4-4-4-4" />
-        </svg>
-      </div>
-    )
-  }
+  const [imgSrc, setImgSrc] = useState(src || '/image/no-car.svg')
+  useEffect(() => { setImgSrc(src || '/image/no-car.svg') }, [src])
   return (
     <img
-      src={src}
+      src={imgSrc}
       alt={alt}
       className="w-full h-full object-cover rounded-xl"
-      onError={() => setFailed(true)}
+      onError={() => { if (imgSrc !== '/image/no-car.svg') setImgSrc('/image/no-car.svg') }}
     />
   )
 }

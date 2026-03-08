@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.carizon.integration.service.ModelImageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -39,6 +40,9 @@ public class ChachaCodeSyncService {
 
     private final WebClient webClient;
     private static final String HOST = "https://www.kbchachacha.com";
+
+    @Value("${app.image.dir:}")
+    private String configuredImageDir;
 
 
 
@@ -114,21 +118,26 @@ public class ChachaCodeSyncService {
     }
 
     private Path resolveImageBaseDir(String imageDir) {
+        // 1) API 파라미터 우선
         if (imageDir != null && !imageDir.isBlank()) {
             return Paths.get(imageDir);
         }
-
+        // 2) application.yaml / 환경변수 APP_IMAGE_DIR
+        if (configuredImageDir != null && !configuredImageDir.isBlank()) {
+            return Paths.get(configuredImageDir);
+        }
+        // 3) 상대 경로 자동 탐색 (로컬 개발용)
         Path cwd = Paths.get("").toAbsolutePath().normalize();
         Path primary = cwd.resolve("carizon-frontend").resolve("public").resolve("image");
         if (Files.isDirectory(primary)) {
             return primary;
         }
-
-        Path fallback = cwd.getParent() != null ? cwd.getParent().resolve("carizon-frontend").resolve("public").resolve("image") : null;
+        Path fallback = cwd.getParent() != null
+                ? cwd.getParent().resolve("carizon-frontend").resolve("public").resolve("image")
+                : null;
         if (fallback != null && Files.isDirectory(fallback)) {
             return fallback;
         }
-
         return primary;
     }
 
