@@ -102,8 +102,8 @@ public class SeoDataService {
             Integer priceMax = (Double.isInfinite(rawMax) || Double.isNaN(rawMax) || rawMax <= 0) ? null : (int) rawMax;
 
             return Optional.of(new SeoModelDto(
-                    meta.getModelCode(), meta.getModelName(), meta.getMakerCode(), meta.getMakerName(),
-                    meta.getDescription(), meta.getImageUrl(), count, priceMin, priceMax));
+                    meta.modelCode(), meta.modelName(), meta.makerCode(), meta.makerName(),
+                    meta.description(), meta.imageUrl(), count, priceMin, priceMax));
 
         } catch (Exception e) {
             log.warn("[SeoDataService] ES aggregation failed for modelCode={}: {}", mc, e.getMessage());
@@ -171,7 +171,7 @@ public class SeoDataService {
 
             List<SeoModelDto> metaList = jdbc.query(metaListSql, META_MAPPER, params);
             Map<String, SeoModelDto> metaByCode = metaList.stream()
-                    .collect(Collectors.toMap(SeoModelDto::getModelCode, m -> m, (a, b) -> a));
+                    .collect(Collectors.toMap(SeoModelDto::modelCode, m -> m, (a, b) -> a));
 
             // 3) ES 집계 결과와 메타데이터 병합 (bucket 순서 = carCount 내림차순)
             List<SeoModelDto> result = new ArrayList<>();
@@ -187,8 +187,8 @@ public class SeoDataService {
                 Integer pMax = (Double.isInfinite(rawMax) || rawMax <= 0) ? null : (int) rawMax;
 
                 result.add(new SeoModelDto(
-                        base.getModelCode(), base.getModelName(), base.getMakerCode(), base.getMakerName(),
-                        base.getDescription(), base.getImageUrl(), count, pMin, pMax));
+                        base.modelCode(), base.modelName(), base.makerCode(), base.makerName(),
+                        base.description(), base.imageUrl(), count, pMin, pMax));
             }
             return result;
 
