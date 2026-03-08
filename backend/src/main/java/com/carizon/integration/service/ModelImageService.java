@@ -205,7 +205,7 @@ public class ModelImageService {
         return IMG_BASE + "img" + folderTwoDigits + "/img" + firstFour + "/" + fileName + "?width=720";
     }
 
-    private static final int MAX_IMAGE_DIM = 256;
+    private static final int MAX_IMAGE_DIM = 512;
 
     private boolean download(HttpClient http, String url, Path out, boolean skipExisting) {
         try {

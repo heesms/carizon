@@ -151,7 +151,7 @@ export default function ModelPage() {
       <div className="bg-gradient-to-br from-slate-50 to-blue-50 rounded-2xl overflow-hidden border border-slate-100 mb-8">
         <div className="flex flex-col sm:flex-row">
           {/* 모델 이미지 */}
-          <div className="sm:w-72 lg:w-96 h-48 sm:h-auto shrink-0">
+          <div className="sm:w-56 h-48 sm:h-auto shrink-0">
             <ModelImage src={imageUrl} alt={`${modelName} 이미지`} />
           </div>
 
