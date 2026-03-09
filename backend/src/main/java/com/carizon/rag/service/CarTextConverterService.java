@@ -596,7 +596,8 @@ public class CarTextConverterService {
             (String) carMap.get("m_url"),
             (String) carMap.get("lastSeenDate"),
             (String) carMap.get("optionArray"),
-            (String) carMap.get("representativeImageUrl")
+            (String) carMap.get("representativeImageUrl"),
+            false
         );
         
         String text = convertCarToText(car, modelBasicInfo);

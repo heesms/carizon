@@ -37,8 +37,8 @@ function ModelImage({ src, alt }: { src: string; alt: string }) {
 function formatPriceRange(min?: number | null, max?: number | null): string | null {
   if (min == null && max == null) return null
   // 너무 벗어난 가격 제거 (0 또는 너무 극단적인 값)
-  const safeMin = (min != null && min > 0 && min < 100000) ? min : null
-  const safeMax = (max != null && max > 0 && max < 100000) ? max : null
+  const safeMin = (min != null && min > 0 && min < 100000 && min !== 9999) ? min : null
+  const safeMax = (max != null && max > 0 && max < 100000 && max !== 9999) ? max : null
   if (safeMin != null && safeMax != null) return `${safeMin.toLocaleString()}만원 ~ ${safeMax.toLocaleString()}만원`
   if (safeMin != null) return `${safeMin.toLocaleString()}만원 ~`
   if (safeMax != null) return `~ ${safeMax.toLocaleString()}만원`

@@ -67,6 +67,7 @@ export type CarDetailData = {
     representativeImageUrl?: string
     seatCount?: number
     myAccidentCnt?: number
+    hasModelPage?: boolean
   }
   platformRows: PlatformRow[]
   priceHistory?: PricePoint[]
@@ -162,6 +163,7 @@ export const getCarDetail = async (id: string | number): Promise<CarDetailData> 
       representativeImageUrl: raw.representativeImageUrl ?? first.representativeImageUrl,
       seatCount: first.seatCount ?? first.seat_count ?? inferredSeatCount,
       myAccidentCnt: first.myAccidentCnt ?? first.my_accident_cnt ?? inferredMyAccidentCnt,
+      hasModelPage: !!(first.hasModelPage),
     },
     platformRows: rows.map(r => ({
       platformCarId: r.platformCarId,

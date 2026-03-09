@@ -89,10 +89,12 @@
            pc.platform_car_id AS platformCarId, pc.platform_name, pc.price, pc.status, pc.pc_url, pc.m_url,
            DATE_FORMAT(pc.last_seen_date, '%Y-%m-%d') AS lastSeenDate,
            CONCAT_WS(' ', NULLIF(TRIM(pc.option_array), ''), NULLIF(TRIM(pc.sel_option_array), '')) AS optionArray,
-           pc.car_image_url AS representativeImageUrl
+           pc.car_image_url AS representativeImageUrl,
+           (mo.embed_text3 IS NOT NULL AND mo.embed_text3 <> '') AS hasModelPage
     FROM car_master cm
     INNER JOIN platform_car pc ON pc.car_id = cm.car_id
     LEFT JOIN cz_platform_priority pp ON pp.platform_name = pc.platform_name
+    LEFT JOIN cz_model mo ON mo.model_code = cm.model_code AND mo.maker_code = cm.maker_code
     WHERE cm.car_id = #{carId}
     ORDER BY pc.price ASC, COALESCE(pp.priority, 999) ASC
   </select>

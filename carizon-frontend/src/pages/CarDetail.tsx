@@ -353,7 +353,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
               <span>›</span>
             </>
           )}
-          {car.makerCode && car.modelCode && clean(car.model) && (
+          {car.hasModelPage && car.makerCode && car.modelCode && makerCodeToSlug(car.makerCode!) && (
             <>
               <Link to={`/cars/maker/${makerCodeToSlug(car.makerCode!)}/${car.modelCode}`} className="hover:text-blue-600">
                 {clean(car.model)} 중고차
@@ -684,7 +684,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
                     {clean(car.maker)} 중고차 전체
                   </Link>
                 )}
-                {car.makerCode && car.modelCode && clean(car.model) && (
+                {car.hasModelPage && car.makerCode && car.modelCode && makerCodeToSlug(car.makerCode!) && (
                   <Link
                     to={`/cars/maker/${makerCodeToSlug(car.makerCode!)}/${car.modelCode}`}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-sm text-gray-700 hover:text-blue-700"
