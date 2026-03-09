@@ -90,7 +90,7 @@
            DATE_FORMAT(pc.last_seen_date, '%Y-%m-%d') AS lastSeenDate,
            CONCAT_WS(' ', NULLIF(TRIM(pc.option_array), ''), NULLIF(TRIM(pc.sel_option_array), '')) AS optionArray,
            pc.car_image_url AS representativeImageUrl,
-           (mo.embed_text3 IS NOT NULL AND mo.embed_text3 <> '') AS hasModelPage
+           (mo.embed_text3 IS NOT NULL AND mo.embed_text3 != '') AS hasModelPage
     FROM car_master cm
     INNER JOIN platform_car pc ON pc.car_id = cm.car_id
     LEFT JOIN cz_platform_priority pp ON pp.platform_name = pc.platform_name
