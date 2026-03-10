@@ -94,7 +94,7 @@
     FROM car_master cm
     INNER JOIN platform_car pc ON pc.car_id = cm.car_id
     LEFT JOIN cz_platform_priority pp ON pp.platform_name = pc.platform_name
-    LEFT JOIN cz_model_embedding_source mes ON mes.model_code COLLATE utf8mb4_general_ci = cm.model_code
+    LEFT JOIN cz_model_embedding_source mes ON mes.model_code = cm.model_code
     WHERE cm.car_id = #{carId}
     ORDER BY pc.price ASC, COALESCE(pp.priority, 999) ASC
   </select>

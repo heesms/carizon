@@ -189,7 +189,7 @@ public class SitemapService {
         List<String[]> models = jdbc.query("""
             SELECT cm.model_code, cm.maker_code
             FROM car_master cm
-            INNER JOIN cz_model_embedding_source mes ON mes.model_code COLLATE utf8mb4_general_ci = cm.model_code
+            INNER JOIN cz_model_embedding_source mes ON mes.model_code = cm.model_code
             WHERE cm.adv_status = 'ONSALE'
               AND cm.model_code IS NOT NULL
               AND TRIM(cm.model_code) <> ''
