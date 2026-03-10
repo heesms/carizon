@@ -184,7 +184,7 @@ export default function CarDetail({ carId: carIdProp, onClose }: { carId?: numbe
     </button>
   )
   const modalHeader = isModal ? (
-    <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-4 sm:px-6 py-2.5 flex items-center justify-between">
+    <div className="sticky top-0 z-20 bg-white border-b border-gray-100 px-4 sm:px-6 py-2.5 flex items-center justify-between">
       <span className="text-sm font-semibold text-gray-700 truncate mr-3">차량 상세</span>
       <div className="flex items-center gap-2">
         <button

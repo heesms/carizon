@@ -213,7 +213,7 @@ export default function Recommendation() {
       </div>
 
       {/* 하단 고정: 광고 + 입력창 */}
-      <div className="fixed bottom-14 sm:bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-sm border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.07)]">
+      <div className="fixed bottom-14 sm:bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.07)]">
         <div className="max-w-3xl mx-auto px-4 pt-2">
           <AdSlot id="recommendation-banner" variant="leaderboard" />
           <div className="flex gap-2 items-end py-2">

@@ -352,7 +352,7 @@ export default function Home() {
                       {i + 1}
                     </span>
                     {!!w.carizonScore && (
-                      <span className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm text-brand-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
+                      <span className="absolute top-2 right-2 bg-white text-brand-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
                         {Math.round(Number(w.carizonScore))}점
                       </span>
                     )}
