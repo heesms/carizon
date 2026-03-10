@@ -14,7 +14,14 @@
     @apply bg-white rounded-2xl shadow-sm border border-gray-100;
   }
   .card-hover {
-    @apply card transition-all duration-200 hover:shadow-md hover:-translate-y-0.5;
+    @apply card;
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+  }
+  /* 마우스 있는 환경(PC)에서만 hover 효과 */
+  @media (hover: hover) {
+    .card-hover:hover {
+      @apply shadow-md -translate-y-0.5;
+    }
   }
 
   /* 버튼 */

@@ -168,7 +168,7 @@ export default function CarCard({
           <img
             src={src}
             alt={`${maker} ${model}`.trim()}
-            className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+            className="w-full h-full object-cover object-center [@media(hover:hover)]:transition-transform [@media(hover:hover)]:duration-300 [@media(hover:hover)]:group-hover:scale-105"
             loading="lazy"
             decoding="async"
             onError={() => setSrc(null)}
