@@ -266,7 +266,7 @@ export default function SeoCarsSection({ fixedParams }: Props) {
         </div>
 
         {/* 정렬 탭 */}
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5 touch-auto" style={{ scrollbarWidth: 'none' }}>
           {SIMPLE_SORTS.map(o => (
             <button
               key={o.value}

@@ -92,6 +92,11 @@
 /* 부드러운 스크롤 */
 html { scroll-behavior: smooth; }
 
+/* 터치 스크롤 최적화
+   React의 non-passive touchstart/touchmove 리스너가 있어도
+   브라우저가 JS를 기다리지 않고 바로 세로 스크롤 시작 */
+html, body { touch-action: pan-y; }
+
 /* 이미지 오버플로우 방지 */
 img { max-width: 100%; height: auto; }
 
