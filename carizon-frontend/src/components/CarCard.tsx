@@ -170,6 +170,7 @@ export default function CarCard({
             alt={`${maker} ${model}`.trim()}
             className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
+            decoding="async"
             onError={() => setSrc(null)}
           />
         ) : (

@@ -77,22 +77,19 @@ class _CarizonHomePageState extends State<CarizonHomePage> {
   void _initWebView() {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.white)
       ..setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: _handleNavigationRequest,
           onPageStarted: (url) {
-            if (!mounted) {
-              return;
-            }
+            if (!mounted) return;
             setState(() {
               _currentUrl = url;
               _progress = 0.05;
             });
           },
           onPageFinished: (url) {
-            if (!mounted) {
-              return;
-            }
+            if (!mounted) return;
             setState(() {
               _currentUrl = url;
               _progress = 1.0;
@@ -100,30 +97,17 @@ class _CarizonHomePageState extends State<CarizonHomePage> {
             _dismissLaunchScreen();
           },
           onProgress: (progress) {
-            if (!mounted) {
-              return;
+            if (!mounted) return;
+            // 완료(100)이거나 현재 값과 5% 이상 차이날 때만 갱신
+            final next = (progress / 100).clamp(0.0, 1.0);
+            if (next == 1.0 || (next - _progress).abs() >= 0.05) {
+              setState(() { _progress = next; });
             }
-            setState(() {
-              _progress = (progress / 100).clamp(0.0, 1.0);
-            });
-          },
-          onUrlChange: (change) {
-            final url = change.url;
-            if (!mounted || url == null || url.isEmpty) {
-              return;
-            }
-            setState(() {
-              _currentUrl = url;
-            });
           },
           onWebResourceError: (error) {
-            if (!mounted) {
-              return;
-            }
+            if (!mounted) return;
             // 서브리소스 오류(ORB 차단 등)는 무시, 메인 프레임 오류만 표시
-            if (error.isForMainFrame != true) {
-              return;
-            }
+            if (error.isForMainFrame != true) return;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('페이지 로딩 오류: ${error.description}'),
