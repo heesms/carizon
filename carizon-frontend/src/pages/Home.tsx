@@ -22,6 +22,8 @@ function WeeklyCardImage({ src, alt, className }: { src: string | null; alt: str
       src={src}
       alt={alt}
       className={className}
+      loading="lazy"
+      decoding="async"
       onError={() => setFailed(true)}
     />
   )
@@ -131,10 +133,6 @@ function resolveWeeklyImage(item: WeeklyItem) {
     return img && img !== 'null' ? img : null
   }
 
-  function hasWeeklyImage(item: WeeklyItem) {
-    return !!resolveWeeklyImage(item)
-  }
-
   function checkImageUrl(url: string) {
     return new Promise<boolean>(resolve => {
       const img = new Image()
@@ -173,28 +171,33 @@ export default function Home() {
     getWeeklyBest()
       .then(async (d: any) => {
         const source = Array.isArray(d) ? d : []
-        const items: Array<{ item: WeeklyItem; imageUrl: string }> = source
+        const candidates: Array<{ item: WeeklyItem; imageUrl: string }> = source
           .map((item: any) => {
             const normalized = item as WeeklyItem
             const imageUrl = resolveWeeklyImage(normalized)
             return imageUrl ? { item: normalized, imageUrl } : null
           })
           .filter((x): x is { item: WeeklyItem; imageUrl: string } => !!x)
+          .slice(0, 20)
 
-        const weeklyItems: WeeklyItem[] = []
+        // 병렬로 이미지 유효성 체크
+        const results = await Promise.allSettled(
+          candidates.map(({ item, imageUrl }) =>
+            checkImageUrl(imageUrl).then(ok => ok ? { item, imageUrl } : null)
+          )
+        )
+        if (!active) return
 
-        for (let i = 0; i < items.length && weeklyItems.length < 12; i += 1) {
-          const { item, imageUrl } = items[i]
-          const ok = await checkImageUrl(imageUrl)
-          if (!active) return
-          if (!ok) continue
-          weeklyItems.push({ ...item, _resolvedImageUrl: imageUrl })
-        }
+        const weeklyItems = results
+          .filter((r): r is PromiseFulfilledResult<{ item: WeeklyItem; imageUrl: string }> =>
+            r.status === 'fulfilled' && r.value !== null
+          )
+          .slice(0, 12)
+          .map(r => ({ ...r.value.item, _resolvedImageUrl: r.value.imageUrl }))
 
         if (active) setWeekly(weeklyItems)
       })
       .catch(() => {})
-      .finally(() => {})
     setHistory(getSearchHistory())
     // 방문자 알림 (fire-and-forget)
     fetch('/api/analytics/visit', {
@@ -343,7 +346,7 @@ export default function Home() {
                     <WeeklyCardImage
                       src={imgUrl}
                       alt={name}
-                      className="w-full h-full object-cover object-[center_65%] group-hover:scale-105 transition-transform duration-300"
+                      className="w-full h-full object-cover object-[center_65%] [@media(hover:hover)]:transition-transform [@media(hover:hover)]:duration-300 [@media(hover:hover)]:group-hover:scale-105"
                     />
                     <span className="absolute top-2 left-2 w-7 h-7 rounded-full bg-brand-600 text-white text-xs font-black flex items-center justify-center shadow">
                       {i + 1}
