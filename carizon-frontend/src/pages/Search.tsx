@@ -130,6 +130,10 @@ export default function Search() {
   const loadPageRef         = useRef<(pageNum: number, reset: boolean) => Promise<void>>(async () => {})
   paramsRef.current = useMemo(() => Object.fromEntries(sp.entries()), [sp])
 
+  useEffect(() => {
+    document.title = '중고차 매물 검색 | Carizon'
+  }, [])
+
   // 뒤로가기 시 스크롤 위치 복원
   useEffect(() => {
     const routeState = (location.state ?? {}) as { restoreSearchScrollFromDetail?: boolean }
