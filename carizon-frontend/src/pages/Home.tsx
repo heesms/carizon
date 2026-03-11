@@ -167,6 +167,10 @@ export default function Home() {
   const location = useLocation()
 
   useEffect(() => {
+    document.title = '중고차 매물 추천, 중고차 플랫폼 비교 | Carizon'
+  }, [])
+
+  useEffect(() => {
     let active = true
     getWeeklyBest()
       .then(async (d: any) => {
