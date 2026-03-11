@@ -35,7 +35,7 @@ const getRouteMetadata = (pathname: string, search = ''): SeoMetadata => {
 
   if (trimmed === '/' || trimmed === '') {
     return {
-      title: '홈',
+      title: '중고차 매물 추천, 중고차 플랫폼 비교',
       description: '차량을 한눈에 비교하고 AI 추천으로 빠르게 찾는 중고차 통합 서비스',
       keywords: `차량검색, 중고차 검색, AI 추천, ${DEFAULT_KEYWORDS}`,
     }
@@ -79,7 +79,7 @@ const getRouteMetadata = (pathname: string, search = ''): SeoMetadata => {
 
     const suffix = searchSummary ? ` ${searchSummary}` : ''
     return {
-      title: '차량 검색',
+      title: '중고차 매물 검색',
       description: `중고차 검색 조건${suffix}에 맞는 매물을 조회합니다.`,
       keywords: `중고차 검색${suffix}, 조건 검색, ${DEFAULT_KEYWORDS}`,
       canonicalPath,
@@ -89,7 +89,7 @@ const getRouteMetadata = (pathname: string, search = ''): SeoMetadata => {
 
   if (trimmed === '/recommendation') {
     return {
-      title: 'AI 추천',
+      title: '중고차 매물 AI 추천',
       description: '희망 조건을 기반으로 AI가 중고차 후보를 추천합니다.',
       keywords: `AI 추천, 중고차 추천, Carizon AI, ${DEFAULT_KEYWORDS}`,
     }
@@ -97,7 +97,7 @@ const getRouteMetadata = (pathname: string, search = ''): SeoMetadata => {
 
   if (trimmed === '/ai-ranking') {
     return {
-      title: 'AI 매물 랭킹',
+      title: '중고차 매물 AI 랭킹',
       description: 'AI 점수 기반 중고차 추천 랭킹으로 가격/품질 정보를 한 번에 비교합니다.',
       keywords: `AI 랭킹, 중고차 랭킹, 가격 비교, ${DEFAULT_KEYWORDS}`,
     }

@@ -55,10 +55,6 @@ export default function Recommendation() {
   const autoSentQueryRef = useRef('')
 
   useEffect(() => {
-    document.title = '중고차 매물 AI 추천 | Carizon'
-  }, [])
-
-  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 

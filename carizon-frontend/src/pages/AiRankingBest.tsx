@@ -108,10 +108,6 @@ export default function AiRankingBest() {
   const location = useLocation()
   const rankingContentRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    document.title = '중고차 매물 AI 랭킹 | Carizon'
-  }, [])
-
   // picker 상태
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerStep, setPickerStep] = useState<'maker' | 'model'>('maker')
