@@ -79,6 +79,7 @@ public class VisitorNotificationService {
         log.info("[slack-notify] visit ip={} page={} query={}", ip, page, query);
         if (!slack.isEnabled()) { log.warn("[slack-notify] slack disabled (webhook-url empty)"); return; }
         if (!visitorEnabled)    { log.warn("[slack-notify] visitor notification disabled"); return; }
+        if (isBotUserAgent(userAgent)) { log.debug("[slack-notify] skip bot ua={}", userAgent); return; }
 
         if (isPrivateIp(ip)) {
             if (localTestEnabled) {
@@ -381,5 +382,18 @@ public class VisitorNotificationService {
         if (ip == null || ip.isBlank()) return true;
         return ip.startsWith("127.") || ip.startsWith("10.") || ip.startsWith("192.168.")
                 || ip.startsWith("172.") || ip.equals("0:0:0:0:0:0:0:1") || ip.equals("::1");
+    }
+
+    private static final java.util.regex.Pattern BOT_UA_PATTERN = java.util.regex.Pattern.compile(
+        "(?i)bot|crawler|spider|slurp|facebookexternalhit|meta-externalagent|" +
+        "Twitterbot|LinkedInBot|WhatsApp|TelegramBot|Discordbot|Slackbot|" +
+        "Googlebot|bingbot|Baiduspider|YandexBot|DuckDuckBot|" +
+        "AhrefsBot|SemrushBot|MJ12bot|DotBot|PetalBot|GPTBot|" +
+        "python-requests|okhttp|Wget|curl|libwww"
+    );
+
+    private boolean isBotUserAgent(String ua) {
+        if (ua == null || ua.isBlank()) return false;
+        return BOT_UA_PATTERN.matcher(ua).find();
     }
 }
