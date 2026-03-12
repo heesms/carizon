@@ -2,7 +2,7 @@ name: Deploy Frontend
 on:
   push:
     branches: [ main ]
-    paths: [ "frontend/**", ".github/workflows/deploy-frontend.yml", "infra/**" ]
+    paths: [ "carizon-frontend/**", ".github/workflows/deploy-frontend.yml", "infra/**" ]
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -12,7 +12,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - name: Build
-        working-directory: frontend
+        working-directory: carizon-frontend
         run: |
           npm ci
           npm run build
@@ -21,7 +21,7 @@ jobs:
           echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} --password-stdin
           IMAGE=ghcr.io/${{ secrets.GHCR_USERNAME }}/carizon-frontend
           TAG=main-${{ github.sha }}
-          docker build -t $IMAGE:$TAG -t $IMAGE:latest frontend
+          docker build -t $IMAGE:$TAG -t $IMAGE:latest carizon-frontend
           docker push $IMAGE:$TAG
           docker push $IMAGE:latest
       - name: SSH deploy
