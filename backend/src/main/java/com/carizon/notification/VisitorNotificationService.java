@@ -135,6 +135,7 @@ public class VisitorNotificationService {
      */
     public void notifyUserAction(String ip, String ua, String emoji, String title, String details) {
         if (!slack.isEnabled()) return;
+        if (isBotUserAgent(ua)) { log.debug("[slack-notify] skip bot ua={}", ua); return; }
         boolean isPrivate = isPrivateIp(ip);
         if (isPrivate && !localTestEnabled) {
             log.info("[slack-notify] skip private ip for user action ip={}", ip);
