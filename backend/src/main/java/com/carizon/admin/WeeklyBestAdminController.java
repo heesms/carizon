@@ -5,6 +5,7 @@ import com.carizon.recommendation.dto.WeeklyBestCarDto;
 import com.carizon.recommendation.service.BlogPostService;
 import com.carizon.recommendation.service.WeeklyBestCarBatchService;
 import com.carizon.recommendation.service.WeeklyBestCarRankingService;
+import com.carizon.recommendation.service.WeeklyBestHomeSnapshotService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,7 @@ public class WeeklyBestAdminController {
     private final WeeklyBestCarRankingService rankingService;
     private final BlogPostService blogPostService;
     private final WeeklyBestCarBatchService batchService;
+    private final WeeklyBestHomeSnapshotService homeSnapshotService;
 
     @PostMapping("/batch/run")
     @Operation(summary = "주간 Best 매물 배치 작업 실행",
@@ -41,6 +43,23 @@ public class WeeklyBestAdminController {
             }
         });
         return ApiResponse.success("배치 작업 시작됨 (백그라운드 실행 중, 서버 로그 확인)");
+    }
+
+    @PostMapping("/home/refresh")
+    @Operation(summary = "홈 실시간 BEST 스냅샷 수동 갱신",
+               description = "홈 노출용 주간 BEST 스냅샷을 즉시 재생성합니다.")
+    public ApiResponse<Map<String, Object>> refreshHomeSnapshot(
+            @RequestParam(defaultValue = "20") int limit) {
+        try {
+            int count = homeSnapshotService.refreshSnapshot(Math.max(1, Math.min(limit, 100)));
+            return ApiResponse.success(Map.of(
+                    "path", "/admin/recommendation/weekly-best/home/refresh",
+                    "count", count
+            ));
+        } catch (Exception e) {
+            log.error("[admin] weekly-best home snapshot refresh failed", e);
+            return ApiResponse.error("홈 스냅샷 갱신 실패: " + e.getMessage());
+        }
     }
 
     @PostMapping("/model/{modelCode}/generate")
