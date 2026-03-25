@@ -157,15 +157,27 @@ public class FridayNightPipelineScheduler {
             // STEP 5: ES 재인덱스 + 임베딩 병렬
             currentStep = "PARALLEL:/admin/search/reindex + /admin/embedding/reset-and-all";
             String stepId5 = apiRunRecorder.recordStart("/admin/search/reindex+embedding", "SCHEDULED", "friday-reindex-embedding", runId);
+            ParallelReindexEmbeddingJobs parallelJobs = null;
             try {
-                Map<String, Object> parallelResult = runReindexAndEmbeddingInParallel();
-                totalItems += toInt(parallelResult.get("indexedCount"));
-                totalItems += toInt(parallelResult.get("embeddedCount"));
+                parallelJobs = startReindexAndEmbeddingInParallel();
+                int indexedCount = parallelJobs.reindexFuture.join();
+                totalItems += Math.max(indexedCount, 0);
+
+                Map<String, Object> parallelResult = new LinkedHashMap<>();
+                parallelResult.put("paths", "/admin/search/reindex, /admin/embedding/reset-and-all");
+                parallelResult.put("indexedCount", indexedCount);
+                parallelResult.put("indexedDoneAtMs", System.currentTimeMillis() - parallelJobs.startedAtMs);
                 result.put("parallel", parallelResult);
-                apiRunRecorder.recordSuccess(stepId5, toInt(parallelResult.get("indexedCount")) + toInt(parallelResult.get("embeddedCount")), parallelResult);
+                apiRunRecorder.recordSuccess(stepId5, Math.max(indexedCount, 0), parallelResult);
             } catch (Exception e) {
                 apiRunRecorder.recordFail(stepId5, 0, e);
                 throw e;
+            } finally {
+                if (parallelJobs == null || parallelJobs.reindexFuture.isDone()) {
+                    if (parallelJobs != null) {
+                        parallelJobs.executor.shutdown();
+                    }
+                }
             }
 
             // STEP 6: 메인 주간 베스트 스냅샷 즉시 갱신
@@ -182,6 +194,20 @@ public class FridayNightPipelineScheduler {
                 log.warn("[friday-night] home weekly best snapshot refresh failed: {}", e.getMessage(), e);
                 result.put("homeWeeklyBestRefreshError", e.getMessage());
                 apiRunRecorder.recordFail(stepId6, 0, e);
+            }
+
+            if (parallelJobs != null) {
+                try {
+                    int embeddedCount = parallelJobs.embeddingFuture.join();
+                    totalItems += Math.max(embeddedCount, 0);
+                    Map<String, Object> parallelResult = (Map<String, Object>) result.get("parallel");
+                    if (parallelResult != null) {
+                        parallelResult.put("embeddedCount", embeddedCount);
+                        parallelResult.put("embeddedDoneAtMs", System.currentTimeMillis() - parallelJobs.startedAtMs);
+                    }
+                } finally {
+                    parallelJobs.executor.shutdown();
+                }
             }
 
             long totalDurationMs = System.currentTimeMillis() - totalStart;
@@ -216,14 +242,11 @@ public class FridayNightPipelineScheduler {
         return totalMapped;
     }
 
-    private Map<String, Object> runReindexAndEmbeddingInParallel() {
+    private ParallelReindexEmbeddingJobs startReindexAndEmbeddingInParallel() {
         long start = System.currentTimeMillis();
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
-            CompletableFuture<Integer> reindexFuture = CompletableFuture.supplyAsync(
-                    indexingService::reindexAllCars,
-                    executor
-            );
+            CompletableFuture<Integer> reindexFuture = CompletableFuture.supplyAsync(indexingService::reindexAllCars, executor);
             CompletableFuture<Integer> embeddingFuture = CompletableFuture.supplyAsync(() -> {
                 try {
                     vectorStoreService.deleteCollection();
@@ -233,24 +256,19 @@ public class FridayNightPipelineScheduler {
                 }
             }, executor);
 
-            CompletableFuture.allOf(reindexFuture, embeddingFuture).join();
-
-            int indexedCount = reindexFuture.join();
-            int embeddedCount = embeddingFuture.join();
-
-            return Map.of(
-                    "paths", "/admin/search/reindex, /admin/embedding/reset-and-all",
-                    "indexedCount", indexedCount,
-                    "embeddedCount", embeddedCount,
-                    "durationMs", System.currentTimeMillis() - start
-            );
+            return new ParallelReindexEmbeddingJobs(reindexFuture, embeddingFuture, executor, start);
         } catch (CompletionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             throw new RuntimeException("parallel jobs failed: " + cause.getMessage(), cause);
-        } finally {
-            executor.shutdown();
         }
     }
+
+    private record ParallelReindexEmbeddingJobs(
+            CompletableFuture<Integer> reindexFuture,
+            CompletableFuture<Integer> embeddingFuture,
+            ExecutorService executor,
+            long startedAtMs
+    ) {}
 
     private int toInt(Object value) {
         if (value == null) return 0;
